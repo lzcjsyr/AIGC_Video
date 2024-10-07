@@ -170,23 +170,51 @@ def text_to_speech(text, output_filename="output.wav", voice_name="en-US-JennyNe
     
 ################ Video Creation ################
 def create_video(audio_path, image_paths, output_path):
-    # Load the audio file
-    audio = AudioFileClip(audio_path)
-    duration = audio.duration
+    try:
+        # Load the audio file
+        audio = AudioFileClip(audio_path)
+        duration = audio.duration
 
-    # Calculate the duration for each image
-    image_duration = duration / len(image_paths)
+        # Ensure we have at least one image
+        if not image_paths:
+            raise ValueError("No images provided for video creation")
 
-    # Create image clips
-    image_clips = [ImageClip(img_path).set_duration(image_duration) for img_path in image_paths]
+        # Calculate the duration for each image
+        image_duration = duration / len(image_paths)
 
-    # Concatenate image clips
-    video = concatenate_videoclips(image_clips, method="compose")
+        # Create image clips
+        image_clips = []
+        for img_path in image_paths:
+            try:
+                clip = ImageClip(img_path).set_duration(image_duration)
+                image_clips.append(clip)
+            except Exception as e:
+                print(f"Error processing image {img_path}: {str(e)}")
 
-    # Set the audio of the video
-    video = video.set_audio(audio)
+        if not image_clips:
+            raise ValueError("No valid image clips created")
 
-    # Write the result to a file
-    video.write_videofile(output_path, fps=24)
+        # Concatenate image clips
+        video = concatenate_videoclips(image_clips, method="compose")
 
-    return output_path
+        # Set the audio of the video
+        video = video.set_audio(audio)
+
+        # Write the result to a file
+        video.write_videofile(output_path, fps=24)
+
+        return output_path
+    except Exception as e:
+        print(f"Error in video creation: {str(e)}")
+        return None
+
+# Function to ensure we have the correct number of images
+def prepare_images_for_video(image_paths, num_plots):
+    if len(image_paths) < num_plots:
+        # If we have fewer images than plots, repeat the last image
+        last_image = image_paths[-1] if image_paths else None
+        image_paths.extend([last_image] * (num_plots - len(image_paths)))
+    elif len(image_paths) > num_plots:
+        # If we have more images than plots, take only the first image of each plot
+        image_paths = image_paths[:num_plots]
+    return image_paths
