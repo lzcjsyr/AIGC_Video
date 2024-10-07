@@ -55,7 +55,7 @@ def main(story, model_type = "FLUX", num_plots=5, num_images=1, output_dir = Non
     return None
 
 if __name__ == "__main__":
-    result = main(story, model_type = "FLUX", num_plots=5, num_images=0, output_dir=None, voice_name="en-US-AvaMultilingualNeural")
+    result = main(story, model_type = "FLUX", num_plots=5, num_images=0, output_dir=None, voice_name = "en-US-JennyNeural")
     if result and result["audio"]:
         print("Hooray! The AIGC task was completed successfully!")
     elif result:
