@@ -1,5 +1,23 @@
+# Azure OpenAI
 openai==1.12.0
-Pillow==10.2.0
-python-dotenv==1.0.1
-requests==2.31.0
+azure-openai==1.0.0
+
+# LangChain
+langchain==0.1.11
+langchain-openai==0.0.8
+
+# Azure Speech SDK
 azure-cognitiveservices-speech==1.34.0
+
+# Image and Video Processing
+Pillow==10.2.0
+moviepy==1.0.3
+
+# HTTP Requests
+requests==2.31.0
+
+# Type Hints
+typing-extensions==4.10.0
+
+# Utility
+python-dotenv==1.0.1

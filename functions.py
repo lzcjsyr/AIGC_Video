@@ -3,12 +3,12 @@ import requests
 from PIL import Image
 from io import BytesIO
 from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips
-from langchain.chat_models import AzureChatOpenAI
+from langchain_openai import AzureOpenAI
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
-from langchain.tools import TextToSpeechTool
-from langchain.tools.base import BaseTool
-from typing import Dict, Any, List
+from langchain.tools import BaseTool
+from typing import Dict, Any, List, Optional
+import azure.cognitiveservices.speech as speechsdk
 
 from input_text_en import (
     AZURE_SPEECH_KEY,
@@ -21,14 +21,12 @@ from input_text_en import (
     AZURE_OPENAI_KEY
 )
 
+os.environ["AZURE_OPENAI_API_KEY"] = AZURE_OPENAI_KEY
+os.environ["AZURE_OPENAI_ENDPOINT"] = AZURE_OPENAI_ENDPOINT
+os.environ["OPENAI_API_VERSION"] = "2024-02-15-preview"
+
 # Initialize Azure ChatOpenAI
-llm = AzureChatOpenAI(
-    openai_api_base=AZURE_OPENAI_ENDPOINT,
-    openai_api_version="2024-06-01",
-    deployment_name="gpt-4o",
-    openai_api_key=AZURE_OPENAI_KEY,
-    temperature=0.1
-)
+llm = AzureOpenAI(deployment_name="gpt-4", temperature=0.3, max_tokens=4000)
 
 # Create LLMChains for text generation tasks
 summarize_chain = LLMChain(
@@ -57,8 +55,8 @@ image_prompt_chain = LLMChain(
 
 # Custom tool for image generation
 class ImageGenerationTool(BaseTool):
-    name = "image_generation"
-    description = "Generate images based on a prompt"
+    name: str = "image_generation"
+    description: str = "Generate images based on a prompt"
 
     def _run(self, prompt: str, model_type: str) -> str:
         if model_type == "OpenAI":
@@ -73,16 +71,33 @@ class ImageGenerationTool(BaseTool):
         else:
             raise ValueError("Invalid model_type. Choose 'OpenAI' or 'FLUX'.")
 
-    def _arun(self, prompt: str, model_type: str) -> str:
+    async def _arun(self, prompt: str, model_type: str) -> str:
         # Async implementation if needed
-        raise NotImplementedError("Async not implemented")
+        return self._run(prompt, model_type)
 
 image_gen_tool = ImageGenerationTool()
 
-# Use LangChain's TextToSpeechTool
-tts_tool = TextToSpeechTool(api_key=AZURE_SPEECH_KEY, region=AZURE_SPEECH_REGION)
+# Custom function for text-to-speech using Azure
+def text_to_speech(text: str, output_path: str, voice_name: str = "en-US-JennyNeural") -> Optional[str]:
+    speech_config = speechsdk.SpeechConfig(subscription=AZURE_SPEECH_KEY, region=AZURE_SPEECH_REGION)
+    speech_config.speech_synthesis_voice_name = voice_name
 
-def create_video(audio_path: str, image_paths: List[str], output_path: str) -> str:
+    audio_config = speechsdk.audio.AudioOutputConfig(filename=output_path)
+    speech_synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=audio_config)
+
+    speech_synthesis_result = speech_synthesizer.speak_text_async(text).get()
+
+    if speech_synthesis_result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+        print("Speech synthesized for text [{}], and the audio was saved to [{}]".format(text, output_path))
+        return output_path
+    elif speech_synthesis_result.reason == speechsdk.ResultReason.Canceled:
+        cancellation_details = speech_synthesis_result.cancellation_details
+        print("Speech synthesis canceled: {}".format(cancellation_details.reason))
+        if cancellation_details.reason == speechsdk.CancellationReason.Error:
+            print("Error details: {}".format(cancellation_details.error_details))
+        return None
+
+def create_video(audio_path: str, image_paths: List[str], output_path: str) -> Optional[str]:
     try:
         audio = AudioFileClip(audio_path)
         duration = audio.duration

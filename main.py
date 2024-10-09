@@ -5,8 +5,8 @@ from PIL import Image
 from io import BytesIO
 from typing import Dict, Any, Optional
 from functions import (
-    summarize_chain, plot_splitter_chain, image_prompt_chain, image_gen_tool, tts_tool,
-    create_video, prepare_images_for_video, write_summary_and_plots
+    summarize_chain, plot_splitter_chain, image_prompt_chain, image_gen_tool,
+    text_to_speech, create_video, prepare_images_for_video, write_summary_and_plots
 )
 
 def main(story: str, model_type: str = "FLUX", num_plots: int = 5, num_images: int = 1, output_dir: Optional[str] = None, voice_name: str = "en-US-JennyNeural") -> Dict[str, Any]:
@@ -57,7 +57,7 @@ def main(story: str, model_type: str = "FLUX", num_plots: int = 5, num_images: i
         audio_path = None
         if voice_name:
             audio_path = os.path.join(visualization_folder, "story_summary.wav")
-            tts_tool.run({"text": summary_json['summary'], "file_path": audio_path, "voice": voice_name})
+            audio_path = text_to_speech(summary_json['summary'], audio_path, voice_name)
 
         # Create video
         video_path = None
