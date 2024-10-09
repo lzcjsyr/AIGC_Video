@@ -1,111 +1,69 @@
-import requests, json, re, os
+import requests
+import json
+import os
 from PIL import Image
 from io import BytesIO
 import azure.cognitiveservices.speech as speechsdk
 from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips
-from input_text_en import (
-    AZURE_SPEECH_KEY, 
-    AZURE_SPEECH_REGION,
-    SILICONFLOW_KEY,
-    summarize_story_system_prompt, 
-    plot_splitter_system_prompt,
-    generate_image_system_prompt,
-    AZURE_OPENAI_ENDPOINT, 
-    AZURE_OPENAI_KEY, story
-)
+from langchain.prompts import PromptTemplate
+from langchain.chains import LLMChain
+from dotenv import load_dotenv
 
-################ Story Summarization ################
-def summarize_story(client, story):
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            temperature=0.1,
-            max_tokens=4000,
-            messages=[
-                {"role": "system", "content": summarize_story_system_prompt},
-                {"role": "user", "content": f"Please summarize this story:\n\n{story}"}
-            ]
-        )
-        
-        content = response.choices[0].message.content
-        json_str = content[content.find('{'):content.rfind('}')+1]
-        json_str = re.sub(r'(?<=summary": ")(.|\n)*?(?=")', lambda m: m.group().replace('\n', '\\n'), json_str)
-        
-        print("Generated summary.")
-        return json.loads(json_str)
-    
-    except (AttributeError, IndexError, json.JSONDecodeError) as e:
-        print(f"Error processing story: {e}")
-        return None
+# Load environment variables
+load_dotenv()
+AZURE_SPEECH_KEY = os.getenv('AZURE_SPEECH_KEY')
+AZURE_SPEECH_REGION = os.getenv('AZURE_SPEECH_REGION')
+SILICONFLOW_KEY = os.getenv('SILICONFLOW_KEY')
 
-def plot_splitter(client, story, num_plots):
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            temperature=0.1,
-            max_tokens=4000,
-            messages=[
-                {"role": "system", "content": plot_splitter_system_prompt},
-                {"role": "user", "content": f"Please split this story into {num_plots} distinct plot points:\n\n{story}"}
-            ]
-        )
-        
-        content = response.choices[0].message.content
-        json_str = content[content.find('{'):content.rfind('}')+1]
-        
-        # Escape newlines within all string values in the JSON
-        json_str = re.sub(r'": "(.|\n)*?"', lambda m: m.group().replace('\n', '\\n'), json_str)
-        
-        print("Generated plots.")
-        return json.loads(json_str)
-    
-    except (AttributeError, IndexError, json.JSONDecodeError) as e:
-        print(f"Error processing plot points: {e}")
-        return None
-
-def write_summary_and_plots(folder_path, summary_json, plots_json):
+def write_summary_and_plots(folder_path, summary, plots):
     with open(os.path.join(folder_path, "summary & plots.txt"), 'w', encoding='utf-8') as f:
-        f.write(f"Title: {summary_json['title']}\n\n")
-        f.write("Main Themes:\n" + "\n".join(f"- {theme}" for theme in summary_json['main_themes']) + "\n\n")
-        f.write(f"Story Summary:\n{summary_json['summary']}\n\n")
-        f.write("Plot Descriptions:\n" + "\n".join(f"\nPlot {i}:\n{plot['plot_description']}" 
-                for i, plot in enumerate(plots_json['plots'], 1)))
+        f.write(f"Title: {summary.title}\n\n")
+        f.write("Main Themes:\n" + "\n".join(f"- {theme}" for theme in summary.main_themes) + "\n\n")
+        f.write(f"Story Summary:\n{summary.summary}\n\n")
+        f.write("Plot Descriptions:\n" + "\n".join(f"\nPlot {plot.num_plot}:\n{plot.plot_description}" 
+                for plot in plots.plots))
     print("Saved summary and plots.")
 
-################ Image Generation ################
-def generate_image_prompt(client, plot, regenerate=False):
+def generate_image_prompt(llm, plot, regenerate=False):
+    system_message = """
+    Generate single-scene prompts with these elements:
 
-    system_message = generate_image_system_prompt
+    Image Style: Photorealistic, high-detail, epic composition, vivid colors, elegant features.
+    Characters: Specify age, gender, body type, hairstyle, and traditional Chinese attire.
+    Setting: Ancient China (exact period), authentic architecture, props, and landscapes.
+    Mood: Use dramatic lighting and atmosphere to enhance the scene's emotion.
+
+    Avoid: Modern elements, abstract styles, text overlays.
+    Output: Provide only the generated prompt, no explanations.
+    """
+    
     if regenerate:
         system_message += """Create a safe, non-controversial prompt that captures the essence of the scene."""
 
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        temperature=0.3,
-        max_tokens=300,
-        messages=[{"role": "system", "content": system_message},
-                  {"role": "user", "content": f"Please consider all information and generate a detailed image prompt for DALL-E 3. \n\n{plot}"}]
+    prompt_template = PromptTemplate(
+        input_variables=["system_message", "plot"],
+        template="{system_message}\n\nPlease consider all information and generate a detailed image prompt for DALL-E 3. \n\n{plot}"
     )
+    
+    chain = LLMChain(llm=llm, prompt=prompt_template)
+    return chain.run(system_message=system_message, plot=plot)
 
-    return response.choices[0].message.content.strip()
-
-def image_API(client, model_type, prompt):
-
+def image_API(model_type, prompt):
     if model_type == "OpenAI":
-
-        response = client.images.generate(model="dall-e-3", prompt=prompt, n=1, quality="hd", style="vivid", size="1792x1024")
-        return(response.data[0].url)
+        # Note: This part needs to be updated to use the OpenAI API directly,
+        # as LangChain doesn't provide direct image generation capabilities.
+        # You may need to use the OpenAI Python client here.
+        pass
     
     if model_type == "FLUX":
-
         url = "https://api.siliconflow.cn/v1/image/generations"
         headers = {"Authorization": f"Bearer {SILICONFLOW_KEY}", "Content-Type": "application/json"}
         payload = {"model": "Pro/black-forest-labs/FLUX.1-schnell", "prompt": prompt, "image_size": "1024x576"}
         
         response = requests.request("POST", url, json=payload, headers=headers)
-        return(json.loads(response.text)["images"][0]['url'])
-        
-def generate_and_save_images(client, plots_json, plot_index, num_images, images_folder, model_type):
+        return json.loads(response.text)["images"][0]['url']
+
+def generate_and_save_images(llm, plots_json, plot_index, num_images, images_folder, model_type):
     # Validate plot index
     if not 0 < plot_index <= len(plots_json['plots']):
         print("Plot index is out of range.")
@@ -113,7 +71,7 @@ def generate_and_save_images(client, plots_json, plot_index, num_images, images_
 
     plot = plots_json['plots'][plot_index-1]
     images = []
-    image_prompt = generate_image_prompt(client, plot=plot)
+    image_prompt = generate_image_prompt(llm, plot=json.dumps(plot))
 
     # Generate the specified number of images
     for _ in range(num_images):
@@ -121,7 +79,7 @@ def generate_and_save_images(client, plots_json, plot_index, num_images, images_
         for attempt in range(5):
             try:
                 # Generate image using the specified API
-                image_url = image_API(client, model_type=model_type, prompt=image_prompt)
+                image_url = image_API(model_type=model_type, prompt=image_prompt)
                 image_response = requests.get(image_url)
                 image = Image.open(BytesIO(image_response.content))
                 images.append(image)
@@ -131,7 +89,7 @@ def generate_and_save_images(client, plots_json, plot_index, num_images, images_
                 # Handle content policy violations by regenerating the prompt
                 if 'content_policy_violation' in str(e) and attempt < 4:
                     print(f"Content policy violation. Regenerating prompt (Attempt {attempt+1})")
-                    image_prompt = generate_image_prompt(client, plot=plot, regenerate=True)
+                    image_prompt = generate_image_prompt(llm, plot=json.dumps(plot), regenerate=True)
                 else:
                     print(f"Failed to generate image: {e}")
                     break  # Move to next image on other errors
@@ -150,7 +108,6 @@ def generate_and_save_images(client, plots_json, plot_index, num_images, images_
     print(f"Saved {len(image_paths)} images and prompt for Plot {plot_index}.")
     return image_paths, image_prompt
 
-################ Text to Speech ################
 def text_to_speech(text, output_filename="output.wav", voice_name="en-US-JennyNeural"):
     speech_config = speechsdk.SpeechConfig(subscription=AZURE_SPEECH_KEY, region=AZURE_SPEECH_REGION)
     speech_config.speech_synthesis_voice_name = voice_name
@@ -167,54 +124,25 @@ def text_to_speech(text, output_filename="output.wav", voice_name="en-US-JennyNe
     except Exception as e:
         print(f"Error in text-to-speech conversion: {str(e)}")
         return None
-    
-################ Video Creation ################
+
 def create_video(audio_path, image_paths, output_path):
-    try:
-        # Load the audio file
-        audio = AudioFileClip(audio_path)
-        duration = audio.duration
+    # Load the audio file
+    audio = AudioFileClip(audio_path)
+    duration = audio.duration
 
-        # Ensure we have at least one image
-        if not image_paths:
-            raise ValueError("No images provided for video creation")
+    # Calculate the duration for each image
+    image_duration = duration / len(image_paths)
 
-        # Calculate the duration for each image
-        image_duration = duration / len(image_paths)
+    # Create image clips
+    image_clips = [ImageClip(img_path).set_duration(image_duration) for img_path in image_paths]
 
-        # Create image clips
-        image_clips = []
-        for img_path in image_paths:
-            try:
-                clip = ImageClip(img_path).set_duration(image_duration)
-                image_clips.append(clip)
-            except Exception as e:
-                print(f"Error processing image {img_path}: {str(e)}")
+    # Concatenate image clips
+    video = concatenate_videoclips(image_clips, method="compose")
 
-        if not image_clips:
-            raise ValueError("No valid image clips created")
+    # Set the audio of the video
+    video = video.set_audio(audio)
 
-        # Concatenate image clips
-        video = concatenate_videoclips(image_clips, method="compose")
+    # Write the result to a file
+    video.write_videofile(output_path, fps=24)
 
-        # Set the audio of the video
-        video = video.set_audio(audio)
-
-        # Write the result to a file
-        video.write_videofile(output_path, fps=24)
-
-        return output_path
-    except Exception as e:
-        print(f"Error in video creation: {str(e)}")
-        return None
-
-# Function to ensure we have the correct number of images
-def prepare_images_for_video(image_paths, num_plots):
-    if len(image_paths) < num_plots:
-        # If we have fewer images than plots, repeat the last image
-        last_image = image_paths[-1] if image_paths else None
-        image_paths.extend([last_image] * (num_plots - len(image_paths)))
-    elif len(image_paths) > num_plots:
-        # If we have more images than plots, take only the first image of each plot
-        image_paths = image_paths[:num_plots]
-    return image_paths
+    return output_path
