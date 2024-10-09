@@ -1,148 +1,111 @@
-import requests
-import json
 import os
+import requests
 from PIL import Image
 from io import BytesIO
-import azure.cognitiveservices.speech as speechsdk
 from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips
+from langchain.chat_models import AzureChatOpenAI
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
-from dotenv import load_dotenv
+from langchain.tools import TextToSpeechTool
+from langchain.tools.base import BaseTool
+from typing import Dict, Any, List
 
-# Load environment variables
-load_dotenv()
-AZURE_SPEECH_KEY = os.getenv('AZURE_SPEECH_KEY')
-AZURE_SPEECH_REGION = os.getenv('AZURE_SPEECH_REGION')
-SILICONFLOW_KEY = os.getenv('SILICONFLOW_KEY')
+from input_text_en import (
+    AZURE_SPEECH_KEY,
+    AZURE_SPEECH_REGION,
+    SILICONFLOW_KEY,
+    summarize_story_system_prompt,
+    plot_splitter_system_prompt,
+    generate_image_system_prompt,
+    AZURE_OPENAI_ENDPOINT,
+    AZURE_OPENAI_KEY
+)
 
-def write_summary_and_plots(folder_path, summary, plots):
-    with open(os.path.join(folder_path, "summary & plots.txt"), 'w', encoding='utf-8') as f:
-        f.write(f"Title: {summary.title}\n\n")
-        f.write("Main Themes:\n" + "\n".join(f"- {theme}" for theme in summary.main_themes) + "\n\n")
-        f.write(f"Story Summary:\n{summary.summary}\n\n")
-        f.write("Plot Descriptions:\n" + "\n".join(f"\nPlot {plot.num_plot}:\n{plot.plot_description}" 
-                for plot in plots.plots))
-    print("Saved summary and plots.")
+# Initialize Azure ChatOpenAI
+llm = AzureChatOpenAI(
+    openai_api_base=AZURE_OPENAI_ENDPOINT,
+    openai_api_version="2024-06-01",
+    deployment_name="gpt-4o",
+    openai_api_key=AZURE_OPENAI_KEY,
+    temperature=0.1
+)
 
-def generate_image_prompt(llm, plot, regenerate=False):
-    system_message = """
-    Generate single-scene prompts with these elements:
-
-    Image Style: Photorealistic, high-detail, epic composition, vivid colors, elegant features.
-    Characters: Specify age, gender, body type, hairstyle, and traditional Chinese attire.
-    Setting: Ancient China (exact period), authentic architecture, props, and landscapes.
-    Mood: Use dramatic lighting and atmosphere to enhance the scene's emotion.
-
-    Avoid: Modern elements, abstract styles, text overlays.
-    Output: Provide only the generated prompt, no explanations.
-    """
-    
-    if regenerate:
-        system_message += """Create a safe, non-controversial prompt that captures the essence of the scene."""
-
-    prompt_template = PromptTemplate(
-        input_variables=["system_message", "plot"],
-        template="{system_message}\n\nPlease consider all information and generate a detailed image prompt for DALL-E 3. \n\n{plot}"
+# Create LLMChains for text generation tasks
+summarize_chain = LLMChain(
+    llm=llm,
+    prompt=PromptTemplate(
+        input_variables=["story"],
+        template=summarize_story_system_prompt + "\n\nPlease summarize this story:\n\n{story}"
     )
-    
-    chain = LLMChain(llm=llm, prompt=prompt_template)
-    return chain.run(system_message=system_message, plot=plot)
+)
 
-def image_API(model_type, prompt):
-    if model_type == "OpenAI":
-        # Note: This part needs to be updated to use the OpenAI API directly,
-        # as LangChain doesn't provide direct image generation capabilities.
-        # You may need to use the OpenAI Python client here.
-        pass
-    
-    if model_type == "FLUX":
-        url = "https://api.siliconflow.cn/v1/image/generations"
-        headers = {"Authorization": f"Bearer {SILICONFLOW_KEY}", "Content-Type": "application/json"}
-        payload = {"model": "Pro/black-forest-labs/FLUX.1-schnell", "prompt": prompt, "image_size": "1024x576"}
-        
-        response = requests.request("POST", url, json=payload, headers=headers)
-        return json.loads(response.text)["images"][0]['url']
+plot_splitter_chain = LLMChain(
+    llm=llm,
+    prompt=PromptTemplate(
+        input_variables=["story", "num_plots"],
+        template=plot_splitter_system_prompt + "\n\nPlease split this story into {num_plots} distinct plot points:\n\n{story}"
+    )
+)
 
-def generate_and_save_images(llm, plots_json, plot_index, num_images, images_folder, model_type):
-    # Validate plot index
-    if not 0 < plot_index <= len(plots_json['plots']):
-        print("Plot index is out of range.")
-        return None, None
+image_prompt_chain = LLMChain(
+    llm=llm,
+    prompt=PromptTemplate(
+        input_variables=["plot", "regenerate"],
+        template=generate_image_system_prompt + "\n\n{regenerate}\n\nPlease consider all information and generate a detailed image prompt for DALL-E 3.\n\n{plot}"
+    )
+)
 
-    plot = plots_json['plots'][plot_index-1]
-    images = []
-    image_prompt = generate_image_prompt(llm, plot=json.dumps(plot))
+# Custom tool for image generation
+class ImageGenerationTool(BaseTool):
+    name = "image_generation"
+    description = "Generate images based on a prompt"
 
-    # Generate the specified number of images
-    for _ in range(num_images):
-        # Allow up to 5 attempts per image
-        for attempt in range(5):
-            try:
-                # Generate image using the specified API
-                image_url = image_API(model_type=model_type, prompt=image_prompt)
-                image_response = requests.get(image_url)
-                image = Image.open(BytesIO(image_response.content))
-                images.append(image)
-                print(f"Generated image {len(images)} for Plot {plot_index} using {model_type}.")
-                break  # Success, move to next image
-            except Exception as e:
-                # Handle content policy violations by regenerating the prompt
-                if 'content_policy_violation' in str(e) and attempt < 4:
-                    print(f"Content policy violation. Regenerating prompt (Attempt {attempt+1})")
-                    image_prompt = generate_image_prompt(llm, plot=json.dumps(plot), regenerate=True)
-                else:
-                    print(f"Failed to generate image: {e}")
-                    break  # Move to next image on other errors
-
-    # Save generated images
-    image_paths = []
-    for j, image in enumerate(images, 1):
-        image_path = os.path.join(images_folder, f"plot_{plot_index}_image_{j}_{model_type}.png")
-        image.save(image_path)
-        image_paths.append(image_path)
-
-    # Record the image prompt used
-    with open(os.path.join(images_folder, "image_prompts.txt"), "a") as f:
-        f.write(f"Plot {plot_index} Prompt:\n{image_prompt}\n\n")
-
-    print(f"Saved {len(image_paths)} images and prompt for Plot {plot_index}.")
-    return image_paths, image_prompt
-
-def text_to_speech(text, output_filename="output.wav", voice_name="en-US-JennyNeural"):
-    speech_config = speechsdk.SpeechConfig(subscription=AZURE_SPEECH_KEY, region=AZURE_SPEECH_REGION)
-    speech_config.speech_synthesis_voice_name = voice_name
-    audio_config = speechsdk.audio.AudioOutputConfig(filename=output_filename)
-    
-    try:
-        synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=audio_config)
-        result = synthesizer.speak_text_async(text).get()
-        
-        if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
-            return output_filename
+    def _run(self, prompt: str, model_type: str) -> str:
+        if model_type == "OpenAI":
+            response = llm.client.images.generate(model="dall-e-3", prompt=prompt, n=1, quality="hd", style="vivid", size="1792x1024")
+            return response.data[0].url
+        elif model_type == "FLUX":
+            url = "https://api.siliconflow.cn/v1/image/generations"
+            headers = {"Authorization": f"Bearer {SILICONFLOW_KEY}", "Content-Type": "application/json"}
+            payload = {"model": "Pro/black-forest-labs/FLUX.1-schnell", "prompt": prompt, "image_size": "1024x576"}
+            response = requests.post(url, json=payload, headers=headers)
+            return response.json()["images"][0]['url']
         else:
-            raise Exception(f"Speech synthesis failed: {result.reason}")
+            raise ValueError("Invalid model_type. Choose 'OpenAI' or 'FLUX'.")
+
+    def _arun(self, prompt: str, model_type: str) -> str:
+        # Async implementation if needed
+        raise NotImplementedError("Async not implemented")
+
+image_gen_tool = ImageGenerationTool()
+
+# Use LangChain's TextToSpeechTool
+tts_tool = TextToSpeechTool(api_key=AZURE_SPEECH_KEY, region=AZURE_SPEECH_REGION)
+
+def create_video(audio_path: str, image_paths: List[str], output_path: str) -> str:
+    try:
+        audio = AudioFileClip(audio_path)
+        duration = audio.duration
+        image_duration = duration / len(image_paths)
+        image_clips = [ImageClip(img_path).set_duration(image_duration) for img_path in image_paths]
+        video = concatenate_videoclips(image_clips, method="compose").set_audio(audio)
+        video.write_videofile(output_path, fps=24)
+        return output_path
     except Exception as e:
-        print(f"Error in text-to-speech conversion: {str(e)}")
+        print(f"Error in video creation: {str(e)}")
         return None
 
-def create_video(audio_path, image_paths, output_path):
-    # Load the audio file
-    audio = AudioFileClip(audio_path)
-    duration = audio.duration
+def prepare_images_for_video(image_paths: List[str], num_plots: int) -> List[str]:
+    if len(image_paths) < num_plots:
+        last_image = image_paths[-1] if image_paths else None
+        image_paths.extend([last_image] * (num_plots - len(image_paths)))
+    return image_paths[:num_plots]
 
-    # Calculate the duration for each image
-    image_duration = duration / len(image_paths)
-
-    # Create image clips
-    image_clips = [ImageClip(img_path).set_duration(image_duration) for img_path in image_paths]
-
-    # Concatenate image clips
-    video = concatenate_videoclips(image_clips, method="compose")
-
-    # Set the audio of the video
-    video = video.set_audio(audio)
-
-    # Write the result to a file
-    video.write_videofile(output_path, fps=24)
-
-    return output_path
+def write_summary_and_plots(folder_path: str, summary_json: Dict[str, Any], plots_json: Dict[str, Any]) -> None:
+    with open(os.path.join(folder_path, "summary & plots.txt"), 'w', encoding='utf-8') as f:
+        f.write(f"Title: {summary_json['title']}\n\n")
+        f.write("Main Themes:\n" + "\n".join(f"- {theme}" for theme in summary_json['main_themes']) + "\n\n")
+        f.write(f"Story Summary:\n{summary_json['summary']}\n\n")
+        f.write("Plot Descriptions:\n" + "\n".join(f"\nPlot {i}:\n{plot['plot_description']}" 
+                for i, plot in enumerate(plots_json['plots'], 1)))
+    print("Saved summary and plots.")
