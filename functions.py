@@ -3,7 +3,7 @@ import requests
 from PIL import Image
 from io import BytesIO
 from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips
-from langchain_openai import AzureOpenAI
+from langchain_openai import AzureChatOpenAI
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 from langchain.tools import BaseTool
@@ -18,15 +18,21 @@ from input_text_en import (
     plot_splitter_system_prompt,
     generate_image_system_prompt,
     AZURE_OPENAI_ENDPOINT,
-    AZURE_OPENAI_KEY
+    AZURE_OPENAI_KEY,
+    story
 )
 
 os.environ["AZURE_OPENAI_API_KEY"] = AZURE_OPENAI_KEY
 os.environ["AZURE_OPENAI_ENDPOINT"] = AZURE_OPENAI_ENDPOINT
-os.environ["OPENAI_API_VERSION"] = "2024-02-15-preview"
 
 # Initialize Azure ChatOpenAI
-llm = AzureOpenAI(deployment_name="gpt-4", temperature=0.3, max_tokens=4000)
+llm = AzureChatOpenAI(
+    azure_endpoint=AZURE_OPENAI_ENDPOINT,
+    azure_deployment="gpt-4o",
+    openai_api_version="2024-06-01",
+    temperature=0.3,
+    max_tokens=4000
+)
 
 # Create LLMChains for text generation tasks
 summarize_chain = LLMChain(

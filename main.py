@@ -3,9 +3,10 @@ import json
 import requests
 from PIL import Image
 from io import BytesIO
+from langchain_core.documents import Document
 from typing import Dict, Any, Optional
 from functions import (
-    summarize_chain, plot_splitter_chain, image_prompt_chain, image_gen_tool,
+    summarize_chain, plot_splitter_chain, image_prompt_chain, image_gen_tool, story,
     text_to_speech, create_video, prepare_images_for_video, write_summary_and_plots
 )
 
@@ -28,7 +29,9 @@ def main(story: str, model_type: str = "FLUX", num_plots: int = 5, num_images: i
         os.makedirs(images_folder, exist_ok=True)
 
         # Process story
-        summary_json = json.loads(summarize_chain.run(story))
+
+        doc = Document(page_content=story)
+        summary_json = json.loads(summarize_chain.invoke({"story": [doc]}))
         plots_json = json.loads(plot_splitter_chain.run(story=story, num_plots=num_plots))
         write_summary_and_plots(visualization_folder, summary_json, plots_json)
 
@@ -78,8 +81,8 @@ def main(story: str, model_type: str = "FLUX", num_plots: int = 5, num_images: i
         return None
 
 if __name__ == "__main__":
-    from input_text_en import story
-    result = main(story, model_type="OpenAI", num_plots=5, num_images=1, output_dir=None, voice_name="en-US-AvaMultilingualNeural")
+
+    result = main(story, model_type="FLUX", num_plots=5, num_images=1, output_dir=None, voice_name="en-US-AvaMultilingualNeural")
     if result:
         if result["video"]:
             print("Hooray! The AIGC task was completed successfully with video creation!")
