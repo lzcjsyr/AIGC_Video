@@ -20,14 +20,16 @@ As a story parser, convert lengthy narratives into a structured JSON format foll
 
 ### Guidelines ###
 1. Character Analysis
-   - Identify main characters
+   - Identify key characters
    - Include: gender, age, hairstyle, body size, key traits
+   - Infer age, hairstyle, and body size logically. All fields must be filled!!!
 
 2. Plot Segmentation
    - Default: 5 key plot points
    - Ensure smooth, attractive transitions
    - Treat each plot as an episode
    - End with engaging hooks
+   - The character name must refer to the name in "key_characters"!!!
 
 3. Content Focus
    - Retain key story elements
@@ -47,14 +49,14 @@ As a story parser, convert lengthy narratives into a structured JSON format foll
 Output must be in JSON format with the following structure (only output the JSON object, the first and last characters must be "{", "}"):
 {
   "title": "Story Title",
-  "story_elements": ["Place", "Times", "Mood"]
+  "story_elements": ["Places", "Times", "Mood"]
   "key_characters": [
     {
       "name": "Character Name",
       "gender": "Male/Female",
-      "age": "Age description",
-      "hairstyle": "Hairstyle description",
-      "body_size": "Body size description",
+      "age": "Age description (Infer logically. All fields must be filled!!!)",
+      "hairstyle": "Hairstyle description (Infer logically. All fields must be filled!!!)",
+      "body_size": "Body size description (Infer logically. All fields must be filled!!!)",
       "description": ["Trait 1", "Trait 2", "Trait 3"]
     },
     "..."
@@ -63,6 +65,7 @@ Output must be in JSON format with the following structure (only output the JSON
     {
       "plot": "Engaging and conversational; smooth, attractive transitions; between 350 to 450 words",
       "plot_theme": ["Theme 1", "Theme 2", "Theme 3"]
+      "characters_name": ["name 1", ... (Must refer to the name in "key_characters"!!!)]
     },
     "..."
   ]

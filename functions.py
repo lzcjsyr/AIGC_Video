@@ -8,8 +8,7 @@ from input_text_en import (
     AZURE_SPEECH_KEY, 
     AZURE_SPEECH_REGION,
     SILICONFLOW_KEY,
-    story_parser_system_prompt, 
-    plot_splitter_system_prompt,
+    story_parser_system_prompt,
     generate_image_system_prompt,
     AZURE_OPENAI_ENDPOINT, 
     AZURE_OPENAI_KEY, story
@@ -49,31 +48,6 @@ def story_parser(client, story: str, num_plots: int) -> Optional[Dict[str, Any]]
         return None
     except Exception as e:
         print(f"Error processing story: {str(e)}")
-        return None
-
-def plot_splitter(client, story, num_plots):
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            temperature=0.1,
-            max_tokens=4000,
-            messages=[
-                {"role": "system", "content": plot_splitter_system_prompt},
-                {"role": "user", "content": f"Please split this story into {num_plots} distinct plot points:\n\n{story}"}
-            ]
-        )
-        
-        content = response.choices[0].message.content
-        json_str = content[content.find('{'):content.rfind('}')+1]
-        
-        # Escape newlines within all string values in the JSON
-        json_str = re.sub(r'": "(.|\n)*?"', lambda m: m.group().replace('\n', '\\n'), json_str)
-        
-        print("Generated plots.")
-        return json.loads(json_str)
-    
-    except (AttributeError, IndexError, json.JSONDecodeError) as e:
-        print(f"Error processing plot points: {e}")
         return None
 
 def write_summary_and_plots(folder_path, summary_json, plots_json):
