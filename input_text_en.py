@@ -14,110 +14,59 @@ if not all([AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_KEY, AZURE_SPEECH_KEY, AZURE_SPE
     raise ValueError("Missing required Azure credentials in .env file.")
 
 ################################################
-summarize_story_system_prompt = """
-### Task ###
-Summarize long novels into shorter versions (2000 to 3000 words), ensuring that the summary retains the key plot points, character development, main themes, and narrative flow. 
-The summarized version should be suitable for an audio format, conveying the essence of the original story.
+story_parser_system_prompt = """
+### Task Introduction ###
+As a story parser, convert lengthy narratives into a structured JSON format following specific guidelines for content retention, analysis, and output formatting.
 
-### Context ###
-The GPT specializes in creating concise novel summaries with a focus on storytelling for audio preparation. 
-Summaries should maintain the emotional depth, character interactions, and primary themes, while omitting unnecessary details and side plots. 
-The goal is to craft a condensed version that allows listeners to experience the core of the story without losing its impact.
+### Guidelines ###
+1. Character Analysis
+   - Identify main characters
+   - Include: gender, age, hairstyle, body size, key traits
 
-### Tone ###
-Engaging, conversational, and suitable for oral narration. 
-The tone should be friendly and easy to follow, helping listeners feel immersed in the storytelling experience. 
-Avoid overly formal or academic language, aiming for clarity and simplicity while respecting the depth of the original work.
+2. Plot Segmentation
+   - Default: 5 key plot points
+   - Ensure smooth, attractive transitions
+   - Treat each plot as an episode
+   - End with engaging hooks
 
-### Format ###
-- Length: 2000 to 3000 words.
-- Preserve dialogue between characters to maintain personality and relationships.
-- Use natural transitions between events.
-- Exclude extraneous details, focusing only on plot and characters that are crucial to the story.
-- Output must be in JSON format with the following structure (only output the JSON object, the first and last characters must be "{", "}"):
-  {
-    "title": "Story Title",
-    "summary": "The summarized story content",
-    "word_count": 0,
-    "main_themes": ["Theme 1", "Theme 2", ...],
-    "key_characters": [
-      {
-        "name": "Character Name",
-        "description": "Brief character description"
-      },
-      ...
-    ]
-  }
-"""
+3. Content Focus
+   - Retain key story elements
+   - Emphasize emotional depth and significant interactions
+   - Respect the original work's complexity
 
-plot_splitter_system_prompt = """
-#####
-Task Type:
-Analyze a story set in ancient China, identify the main characters, split the story into key plot points, and generate corresponding image prompts. 
-Provide the output in JSON format with a list of the main characters and descriptions, followed by plot segmentation with image prompts that include detailed descriptions of the characters appearing in each scene.
+4. Narrative Style
+   - Engaging and conversational
+   - Suitable for oral narration
+   - Avoid overly formal or academic language
 
-#####
-Instructions:
-1. Analyze the story and generate a "characters list" with "gender, age, hairstyle, body size, key personalities" in the first response. 
-2. Break the story into logical plot points (default:5) and provide detailed descriptions of each scene. 
-3. For each plot, include an image generation prompt with these sections: Context of the plot, Image style, Characteristics of the times, Negative list, Character description (must refer to "characters list")
-4. Ensure all images reflect the ancient Chinese setting, with photo realistic quality, fine details, and consistent characters throughout the story.
-5. Generate images in landscape (horizontal) format.
+5. Output Format
+   - Strictly adhere to specified JSON structure
+   - Follow all description requirements within the JSON
 
-#####
-Output Format:
-The output should be a JSON object with the following structure:
+### Output Format ###
+Output must be in JSON format with the following structure (only output the JSON object, the first and last characters must be "{", "}"):
 {
-  "characters": [
+  "title": "Story Title",
+  "story_elements": ["Place", "Times", "Mood"]
+  "key_characters": [
     {
       "name": "Character Name",
       "gender": "Male/Female",
       "age": "Age description",
       "hairstyle": "Hairstyle description",
       "body_size": "Body size description",
-      "key_personalities": ["Trait 1", "Trait 2", ...]
+      "description": ["Trait 1", "Trait 2", "Trait 3"]
     },
-    ...
+    "..."
   ],
-  "plots": [
+  "Segmentation": [
     {
-      "num_plot": "Number of the plot",
-      "plot_title": "Plot Title",
-      "plot_description": "Plot description",
-      "image_info": {
-        "context": "Context of the plot",
-        "image_style": "Image style description",
-        "characteristics_of_times": "Historical details",
-        "negative_list": ["Item 1 to avoid", "Item 2 to avoid", ...],
-        "character_descriptions": [
-          {
-            "name": "Character Name",
-            "gender": "Male/Female",
-            "age": "Age description",
-            "hairstyle": "Hairstyle description",
-            "body_size": "Body size description",
-            "key_personalities": ["Trait 1", "Trait 2", ...]
-            "description": "Character description in this scene"
-          },
-          ...
-        ]
-      }
+      "plot": "Engaging and conversational; smooth, attractive transitions; between 350 to 450 words",
+      "plot_theme": ["Theme 1", "Theme 2", "Theme 3"]
     },
-    ...
+    "..."
   ]
 }
-
-#####
-Positive actions:
-1. Ensure consistent character descriptions across all images, including common descriptions for recurring characters in different plots, under "Character Description."
-2. Maintain photorealism, fine details, and historical accuracy, with handsome men and beautiful women in traditional Chinese clothing.
-3. Explicitly specify the ancient Chinese setting in each image prompt.
-
-#####
-Negative Actions:
-1. No modern elements or technology.
-2. Avoid inconsistencies in character design or emotional tone across scenes.
-3. Do not introduce abstract or exaggerated artistic elements unless requested.
 """
 
 generate_image_system_prompt = """
@@ -130,6 +79,18 @@ Mood: Use dramatic lighting and atmosphere to enhance the scene's emotion.
 
 Avoid: Modern elements, abstract styles, text overlays.
 Output: Provide only the generated prompt, no explanations.
+
+#####
+Positive actions:
+1. Ensure consistent character descriptions across all images, including common descriptions for recurring characters in different plots, under "Character Description."
+2. Maintain photorealism, fine details, and historical accuracy, with handsome men and beautiful women in traditional Chinese clothing.
+3. Explicitly specify the ancient Chinese setting in each image prompt.
+
+#####
+Negative Actions:
+1. No modern elements or technology.
+2. Avoid inconsistencies in character design or emotional tone across scenes.
+3. Do not introduce abstract or exaggerated artistic elements unless requested.
 """
 
 story = """

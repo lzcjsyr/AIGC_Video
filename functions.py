@@ -15,24 +15,39 @@ from input_text_en import (
 )
 
 ################ Story Summarization ################
-def summarize_story(client, story):
+import json
+import re
+
+def summarize_story(client, story, num_plots):
     try:
         response = client.chat.completions.create(
             model="gpt-4o",
             temperature=0.1,
-            max_tokens=4000,
+            max_tokens=4096,
             messages=[
                 {"role": "system", "content": summarize_story_system_prompt},
-                {"role": "user", "content": f"Please summarize this story:\n\n{story}"}
+                {"role": "user", "content": f"Please summarize this story into {num_plots} plots:\n\n{story}"}
             ]
         )
         
         content = response.choices[0].message.content
         json_str = content[content.find('{'):content.rfind('}')+1]
-        json_str = re.sub(r'(?<=summary": ")(.|\n)*?(?=")', lambda m: m.group().replace('\n', '\\n'), json_str)
+        
+        # Parse the JSON response & Concatenate all plots
+        summary_data = json.loads(json_str)
+        full_plot = " ".join([plot["plot"] for plot in summary_data["summary"]])
+        
+        # Create the new structure with concatenated plot
+        output = {
+            "title": summary_data["title"],
+            "key_characters": summary_data["key_characters"],
+            "summary": {
+                "plot": full_plot,
+            }
+        }
         
         print("Generated summary.")
-        return json.loads(json_str)
+        return output
     
     except (AttributeError, IndexError, json.JSONDecodeError) as e:
         print(f"Error processing story: {e}")

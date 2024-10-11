@@ -18,7 +18,7 @@ def main(story, model_type="FLUX", num_plots=5, num_images=1, output_dir=None, v
         if model_type not in ["FLUX", "OpenAI"]:
             raise ValueError("model_type must be either 'FLUX' or 'OpenAI'")
 
-        client = AzureOpenAI(azure_endpoint=AZURE_OPENAI_ENDPOINT, api_key=AZURE_OPENAI_KEY, api_version="2024-06-01")
+        client = AzureOpenAI(azure_endpoint=AZURE_OPENAI_ENDPOINT, api_key=AZURE_OPENAI_KEY, api_version="2024-09-01-preview")
         
         # Create folders
         base_dir = output_dir or os.path.expanduser("~/Desktop")
@@ -85,7 +85,7 @@ def main(story, model_type="FLUX", num_plots=5, num_images=1, output_dir=None, v
     return None
 
 if __name__ == "__main__":
-    result = main(story, model_type="OpenAI", num_plots=5, num_images=1, output_dir=None, voice_name="en-US-AvaMultilingualNeural")
+    result = main(story, model_type="FLUX", num_plots=5, num_images=1, output_dir=None, voice_name="en-US-AvaMultilingualNeural")
     if result:
         if result["video"]:
             print("Hooray! The AIGC task was completed successfully with video creation!")
