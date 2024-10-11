@@ -1,4 +1,5 @@
 import requests, json, re, os
+from typing import Optional, Dict, Any
 from PIL import Image
 from io import BytesIO
 import azure.cognitiveservices.speech as speechsdk
@@ -7,50 +8,47 @@ from input_text_en import (
     AZURE_SPEECH_KEY, 
     AZURE_SPEECH_REGION,
     SILICONFLOW_KEY,
-    summarize_story_system_prompt, 
+    story_parser_system_prompt, 
     plot_splitter_system_prompt,
     generate_image_system_prompt,
     AZURE_OPENAI_ENDPOINT, 
     AZURE_OPENAI_KEY, story
 )
 
-################ Story Summarization ################
-import json
-import re
-
-def summarize_story(client, story, num_plots):
+################ Story Parser ################
+def story_parser(client, story: str, num_plots: int) -> Optional[Dict[str, Any]]:
     try:
+        # Construct the user message with the number of plots
+        user_message = f"Parse this story into {num_plots} plots, ensuring each plot is between 350 to 450 words:\n\n{story}"
+
+        # Make the API call
         response = client.chat.completions.create(
             model="gpt-4o",
-            temperature=0.1,
+            temperature=0.7,
             max_tokens=4096,
-            messages=[
-                {"role": "system", "content": summarize_story_system_prompt},
-                {"role": "user", "content": f"Please summarize this story into {num_plots} plots:\n\n{story}"}
-            ]
+            messages=[{"role": "system", "content": story_parser_system_prompt},
+                      {"role": "user", "content": user_message}]
         )
         
+        # Extract and parse the JSON content
         content = response.choices[0].message.content
         json_str = content[content.find('{'):content.rfind('}')+1]
+        output = json.loads(json_str)
         
-        # Parse the JSON response & Concatenate all plots
-        summary_data = json.loads(json_str)
-        full_plot = " ".join([plot["plot"] for plot in summary_data["summary"]])
-        
-        # Create the new structure with concatenated plot
-        output = {
-            "title": summary_data["title"],
-            "key_characters": summary_data["key_characters"],
-            "summary": {
-                "plot": full_plot,
-            }
-        }
-        
-        print("Generated summary.")
-        return output
+        # Validate the output structure
+        required_keys = ["title", "story_elements", "key_characters", "Segmentation"]
+        if all(key in output for key in required_keys):
+            print("Successfully generated and parsed story summary.")
+            return output
+        else:
+            print("Error: Generated JSON does not match expected structure.")
+            return None
     
-    except (AttributeError, IndexError, json.JSONDecodeError) as e:
-        print(f"Error processing story: {e}")
+    except json.JSONDecodeError:
+        print("Error: Failed to parse JSON output.")
+        return None
+    except Exception as e:
+        print(f"Error processing story: {str(e)}")
         return None
 
 def plot_splitter(client, story, num_plots):
