@@ -1,7 +1,7 @@
 import os
 from openai import AzureOpenAI
 from functions import (
-    story_parser, parsed_saver, generate_images_and_prompts, 
+    story_parser, parsed_saver, generate_and_save_images, 
     prepare_images_for_video, create_story_video,
     AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_KEY, story
 )
@@ -37,8 +37,7 @@ def main(story, model_type="FLUX", num_plots=5, num_images=1, output_dir=None, v
         parsed_saver(parsed_story, visualization_folder)
         
         # Generate images and prompts
-        image_paths, prompt_file = generate_images_and_prompts(
-            client, parsed_story, num_plots, num_images, images_folder, visualization_folder, model_type)
+        image_paths, prompt_file = generate_and_save_images(client, parsed_story, num_plots, num_images, images_folder, model_type)
         
         # Prepare images for video
         image_paths = prepare_images_for_video(image_paths, num_plots)

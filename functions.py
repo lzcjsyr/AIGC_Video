@@ -6,13 +6,9 @@ from docx import Document
 import azure.cognitiveservices.speech as speechsdk
 from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip
 from input_text_en import (
-    AZURE_SPEECH_KEY, 
-    AZURE_SPEECH_REGION,
-    SILICONFLOW_KEY,
-    story_parser_system_prompt,
-    generate_image_system_prompt,
-    AZURE_OPENAI_ENDPOINT, 
-    AZURE_OPENAI_KEY, story
+    AZURE_SPEECH_KEY, AZURE_SPEECH_REGION, SILICONFLOW_KEY,
+    story_parser_system_prompt, generate_image_system_prompt,
+    AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_KEY, story
 )
 
 ################ Story Parser ################
@@ -110,12 +106,10 @@ def generate_image_prompt(client, input, regenerate=False):
 def image_API(client, model_type, prompt):
 
     if model_type == "OpenAI":
-
         response = client.images.generate(model="dall-e-3", prompt=prompt, n=1, quality="hd", style="vivid", size="1792x1024")
         return(response.data[0].url)
     
     if model_type == "FLUX":
-
         url = "https://api.siliconflow.cn/v1/image/generations"
         headers = {"Authorization": f"Bearer {SILICONFLOW_KEY}", "Content-Type": "application/json"}
         payload = {"model": "Pro/black-forest-labs/FLUX.1-schnell", "prompt": prompt, "image_size": "1024x576"}
@@ -166,28 +160,24 @@ def generate_images(client, parsed_story, plot_index, num_images=1, saving_path=
     print(f"Saved {len(image_paths)} images for Plot {plot_index}.")
     return image_paths, image_prompt
 
-def save_image_prompts(prompts, output_dir):
-    doc = Document()
-    doc.add_heading('Image Prompts', 0)
-    for i, prompt in enumerate(prompts, 1):
-        doc.add_heading(f'Plot {i}', level=1)
-        doc.add_paragraph(prompt)
-    prompt_file = os.path.join(output_dir, 'image_prompts.docx')
-    doc.save(prompt_file)
-    return prompt_file
-
-def generate_images_and_prompts(client, parsed_story, num_plots, num_images, images_folder, visualization_folder, model_type):
+def generate_and_save_images(client, parsed_story, num_plots, num_images, saving_path, model_type):
     image_paths = []
     image_prompts = []
     
     if num_images > 0:
         for i in range(num_plots):
-            plot_images, prompt = generate_images(client, parsed_story, i+1, num_images, images_folder, model_type)
+            plot_images, prompt = generate_images(client, parsed_story, i+1, num_images, saving_path, model_type)
             image_paths.extend(plot_images)
             image_prompts.append(prompt)
         
         # Save image prompts to a single docx file
-        prompt_file = save_image_prompts(image_prompts, visualization_folder)
+        doc = Document()
+        doc.add_heading('Image Prompts', 0)
+        for i, prompt in enumerate(image_prompts, 1):
+            doc.add_heading(f'Plot {i}', level=1)
+            doc.add_paragraph(prompt)
+        prompt_file = os.path.join(saving_path, 'image_prompts.docx')
+        doc.save(prompt_file)
         print(f"Image prompts saved to: {prompt_file}")
     else:
         print("Skipping image generation.")
