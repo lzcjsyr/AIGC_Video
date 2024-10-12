@@ -176,6 +176,25 @@ def save_image_prompts(prompts, output_dir):
     doc.save(prompt_file)
     return prompt_file
 
+def generate_images_and_prompts(client, parsed_story, num_plots, num_images, images_folder, visualization_folder, model_type):
+    image_paths = []
+    image_prompts = []
+    
+    if num_images > 0:
+        for i in range(num_plots):
+            plot_images, prompt = generate_images(client, parsed_story, i+1, num_images, images_folder, model_type)
+            image_paths.extend(plot_images)
+            image_prompts.append(prompt)
+        
+        # Save image prompts to a single docx file
+        prompt_file = save_image_prompts(image_prompts, visualization_folder)
+        print(f"Image prompts saved to: {prompt_file}")
+    else:
+        print("Skipping image generation.")
+        prompt_file = None
+    
+    return image_paths, prompt_file
+
 ################ Text to Speech ################
 def text_to_speech(text, output_filename="output.wav", voice_name="en-US-JennyNeural"):
     speech_config = speechsdk.SpeechConfig(subscription=AZURE_SPEECH_KEY, region=AZURE_SPEECH_REGION)
@@ -208,6 +227,37 @@ def create_video(audio_path, image_path, output_path):
         return output_path
     except Exception as e:
         print(f"Error in video creation: {str(e)}")
+        return None
+    
+def create_story_video(parsed_story, image_paths, audio_folder, video_folder, voice_name):
+    from moviepy.editor import concatenate_videoclips, VideoFileClip
+    
+    plot_videos = []
+    for i, plot in enumerate(parsed_story['Segmentation']):
+        audio_path = text_to_speech(plot['plot'], os.path.join(audio_folder, f"plot_{i+1}.wav"), voice_name)
+        if not audio_path:
+            print(f"Audio generation failed for plot {i+1}.")
+            continue
+        
+        plot_image_paths = image_paths[i:i+1]  # Use one image per plot
+        plot_video_path = os.path.join(video_folder, f"plot_{i+1}.mp4")
+        plot_video_path = create_video(audio_path, plot_image_paths[0], plot_video_path)
+        if plot_video_path:
+            plot_videos.append(plot_video_path)
+            print(f"Video created for plot {i+1}: {plot_video_path}")
+        else:
+            print(f"Video creation failed for plot {i+1}.")
+    
+    # Concatenate all plot videos
+    final_video_path = os.path.join(video_folder, "full_story_video.mp4")
+    if plot_videos:
+        clips = [VideoFileClip(video) for video in plot_videos]
+        final_video = concatenate_videoclips(clips)
+        final_video.write_videofile(final_video_path)
+        print(f"Full story video created: {final_video_path}")
+        return final_video_path
+    else:
+        print("Failed to create full story video due to missing plot videos.")
         return None
 
 # Function to ensure we have the correct number of images
