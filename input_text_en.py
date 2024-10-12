@@ -35,6 +35,7 @@ As a story parser, convert lengthy narratives into a structured JSON format foll
    - Retain key story elements
    - Emphasize emotional depth and significant interactions
    - Respect the original work's complexity
+   - Extract places, Times and Mood of the story
 
 4. Narrative Style
    - Engaging and conversational

@@ -1,7 +1,7 @@
 import os
 from openai import AzureOpenAI
 from functions import (
-    plot_splitter, text_to_speech, write_summary_and_plots, 
+    text_to_speech, write_summary_and_plots, 
     generate_and_save_images, create_video, prepare_images_for_video,
     AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_KEY, story
 )

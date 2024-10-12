@@ -2,6 +2,7 @@ import requests, json, re, os
 from typing import Optional, Dict, Any
 from PIL import Image
 from io import BytesIO
+from docx import Document
 import azure.cognitiveservices.speech as speechsdk
 from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips
 from input_text_en import (
@@ -23,7 +24,7 @@ def story_parser(client, story: str, num_plots: int) -> Optional[Dict[str, Any]]
         # Make the API call
         response = client.chat.completions.create(
             model="gpt-4o",
-            temperature=0.7,
+            temperature=0.5,
             max_tokens=4096,
             messages=[{"role": "system", "content": story_parser_system_prompt},
                       {"role": "user", "content": user_message}]
@@ -50,31 +51,61 @@ def story_parser(client, story: str, num_plots: int) -> Optional[Dict[str, Any]]
         print(f"Error processing story: {str(e)}")
         return None
 
-def write_summary_and_plots(folder_path, summary_json, plots_json):
-    with open(os.path.join(folder_path, "summary & plots.txt"), 'w', encoding='utf-8') as f:
-        f.write(f"Title: {summary_json['title']}\n\n")
-        f.write("Main Themes:\n" + "\n".join(f"- {theme}" for theme in summary_json['main_themes']) + "\n\n")
-        f.write(f"Story Summary:\n{summary_json['summary']}\n\n")
-        f.write("Plot Descriptions:\n" + "\n".join(f"\nPlot {i}:\n{plot['plot_description']}" 
-                for i, plot in enumerate(plots_json['plots'], 1)))
-    print("Saved summary and plots.")
+def parsed_saver(parsed_json, saving_path=None):
+    doc = Document()
+    
+    # Set default path to desktop if no path is provided
+    if saving_path is None:
+        saving_path = os.path.join(os.path.expanduser("~"), "Desktop")
+    
+    # Title
+    doc.add_heading(parsed_json['title'], 0)
+    
+    # Story Elements
+    doc.add_heading('Story Elements', level=1)
+    for element in parsed_json['story_elements']:
+        doc.add_paragraph(element, style='List Bullet')
+    
+    # Key Characters
+    doc.add_heading('Key Characters', level=1)
+    for character in parsed_json['key_characters']:
+        doc.add_paragraph(character['name'], style='Heading 3')
+        for key, value in character.items():
+            if key != 'name':
+                if isinstance(value, list):
+                    doc.add_paragraph(f"{key.capitalize()}: {', '.join(value)}")
+                else:
+                    doc.add_paragraph(f"{key.capitalize()}: {value}")
+    
+    # Segmentation
+    doc.add_heading('Plot Segments', level=1)
+    for i, segment in enumerate(parsed_json['Segmentation'], 1):
+        doc.add_heading(f"Segment {i}", level=2)
+        doc.add_paragraph(segment['plot'])
+        doc.add_paragraph(f"Themes: {', '.join(segment['plot_theme'])}")
+        doc.add_paragraph(f"Characters: {', '.join(segment['characters_name'])}")
+    
+    # Save the document
+    doc_path = os.path.join(saving_path, f"{parsed_json['title']}.docx")
+    doc.save(doc_path)
+    print(f"Saved document to {doc_path}")
 
 ################ Image Generation ################
-def generate_image_prompt(client, plot, regenerate=False):
-
+def generate_image_prompt(client, input, regenerate=False):
+    # Define system message for image prompt generation
     system_message = generate_image_system_prompt
     if regenerate:
-        system_message += """Create a safe, non-controversial prompt that captures the essence of the scene."""
-
+        system_message += "\n\nCreate a safe, non-controversial prompt that captures the essence of the scene."
+    
     response = client.chat.completions.create(
         model="gpt-4o",
-        temperature=0.3,
-        max_tokens=300,
+        temperature=0.5,
+        max_tokens=500,
         messages=[{"role": "system", "content": system_message},
-                  {"role": "user", "content": f"Please consider all information and generate a detailed image prompt for DALL-E 3. \n\n{plot}"}]
+                  {"role": "user", "content": f"Generate an image prompt based on:\n{input}"}]
     )
-
-    return response.choices[0].message.content.strip()
+    
+    return response.choices[0].message.content
 
 def image_API(client, model_type, prompt):
 
@@ -91,51 +122,55 @@ def image_API(client, model_type, prompt):
         
         response = requests.request("POST", url, json=payload, headers=headers)
         return(json.loads(response.text)["images"][0]['url'])
-        
-def generate_and_save_images(client, plots_json, plot_index, num_images, images_folder, model_type):
-    # Validate plot index
-    if not 0 < plot_index <= len(plots_json['plots']):
-        print("Plot index is out of range.")
-        return None, None
 
-    plot = plots_json['plots'][plot_index-1]
+def generate_and_save_images(client, parsed_story, plot_index, num_images=1, saving_path=None, model_type="FLUX"):
+    
+    if saving_path is None:
+        saving_path = os.path.join(os.path.expanduser('~'), 'Desktop')
+    if num_images < 1:
+        print("Input of num_images is out of range.")
+        return None
+    
     images = []
-    image_prompt = generate_image_prompt(client, plot=plot)
+    plot = parsed_story["Segmentation"][plot_index - 1]
+    characters = [char for char in parsed_story["key_characters"] if char["name"] in plot["characters_name"]]
+    
+    # Generate image prompt
+    input_for_prompt = f"Plot: {plot['plot']}\nCharacters: {characters}"
+    image_prompt = generate_image_prompt(client, input_for_prompt)
 
-    # Generate the specified number of images
-    for _ in range(num_images):
-        # Allow up to 5 attempts per image
+    # Save image prompt to docx
+    doc_path = os.path.join(saving_path, f"plot_{plot_index}_prompt.docx")
+    doc = Document()
+    doc.add_paragraph(image_prompt)
+    doc.save(doc_path)
+
+    # Generate images
+    for i in range(num_images):
         for attempt in range(5):
             try:
-                # Generate image using the specified API
                 image_url = image_API(client, model_type=model_type, prompt=image_prompt)
-                image_response = requests.get(image_url)
-                image = Image.open(BytesIO(image_response.content))
+                image = Image.open(BytesIO(requests.get(image_url).content))
                 images.append(image)
-                print(f"Generated image {len(images)} for Plot {plot_index} using {model_type}.")
-                break  # Success, move to next image
+                print(f"Generated image {i+1} for Plot {plot_index} using {model_type}.")
+                break
             except Exception as e:
-                # Handle content policy violations by regenerating the prompt
                 if 'content_policy_violation' in str(e) and attempt < 4:
                     print(f"Content policy violation. Regenerating prompt (Attempt {attempt+1})")
-                    image_prompt = generate_image_prompt(client, plot=plot, regenerate=True)
+                    image_prompt = generate_image_prompt(client, input_for_prompt, regenerate=True)
                 else:
                     print(f"Failed to generate image: {e}")
-                    break  # Move to next image on other errors
+                    break
 
     # Save generated images
     image_paths = []
     for j, image in enumerate(images, 1):
-        image_path = os.path.join(images_folder, f"plot_{plot_index}_image_{j}_{model_type}.png")
+        image_path = os.path.join(saving_path, f"plot_{plot_index}_image_{j}_{model_type}.png")
         image.save(image_path)
         image_paths.append(image_path)
 
-    # Record the image prompt used
-    with open(os.path.join(images_folder, "image_prompts.txt"), "a") as f:
-        f.write(f"Plot {plot_index} Prompt:\n{image_prompt}\n\n")
-
-    print(f"Saved {len(image_paths)} images and prompt for Plot {plot_index}.")
-    return image_paths, image_prompt
+    print(f"Saved {len(image_paths)} images for Plot {plot_index}.")
+    return image_paths
 
 ################ Text to Speech ################
 def text_to_speech(text, output_filename="output.wav", voice_name="en-US-JennyNeural"):
@@ -158,36 +193,18 @@ def text_to_speech(text, output_filename="output.wav", voice_name="en-US-JennyNe
 ################ Video Creation ################
 def create_video(audio_path, image_paths, output_path):
     try:
-        # Load the audio file
+        # Load audio and calculate image duration
         audio = AudioFileClip(audio_path)
-        duration = audio.duration
-
-        # Ensure we have at least one image
-        if not image_paths:
-            raise ValueError("No images provided for video creation")
-
-        # Calculate the duration for each image
-        image_duration = duration / len(image_paths)
+        image_duration = audio.duration / len(image_paths)
 
         # Create image clips
-        image_clips = []
-        for img_path in image_paths:
-            try:
-                clip = ImageClip(img_path).set_duration(image_duration)
-                image_clips.append(clip)
-            except Exception as e:
-                print(f"Error processing image {img_path}: {str(e)}")
+        image_clips = [ImageClip(img).set_duration(image_duration) for img in image_paths if img]
 
         if not image_clips:
             raise ValueError("No valid image clips created")
 
-        # Concatenate image clips
-        video = concatenate_videoclips(image_clips, method="compose")
-
-        # Set the audio of the video
-        video = video.set_audio(audio)
-
-        # Write the result to a file
+        # Create and save video
+        video = concatenate_videoclips(image_clips, method="compose").set_audio(audio)
         video.write_videofile(output_path, fps=24)
 
         return output_path
