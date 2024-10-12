@@ -4,7 +4,7 @@ from PIL import Image
 from io import BytesIO
 from docx import Document
 import azure.cognitiveservices.speech as speechsdk
-from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips
+from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip
 from input_text_en import (
     AZURE_SPEECH_KEY, 
     AZURE_SPEECH_REGION,
@@ -123,15 +123,14 @@ def image_API(client, model_type, prompt):
         response = requests.request("POST", url, json=payload, headers=headers)
         return(json.loads(response.text)["images"][0]['url'])
 
-def generate_and_save_images(client, parsed_story, plot_index, num_images=1, saving_path=None, model_type="FLUX"):
-    
+def generate_images(client, parsed_story, plot_index, num_images=1, saving_path=None, model_type="FLUX"):
     if saving_path is None:
         saving_path = os.path.join(os.path.expanduser('~'), 'Desktop')
     if num_images < 1:
         print("Input of num_images is out of range.")
-        return None
+        return None, None
     
-    images = []
+    # Extract plot and characters
     plot = parsed_story["Segmentation"][plot_index - 1]
     characters = [char for char in parsed_story["key_characters"] if char["name"] in plot["characters_name"]]
     
@@ -139,12 +138,7 @@ def generate_and_save_images(client, parsed_story, plot_index, num_images=1, sav
     input_for_prompt = f"Plot: {plot['plot']}\nCharacters: {characters}"
     image_prompt = generate_image_prompt(client, input_for_prompt)
 
-    # Save image prompt to docx
-    doc_path = os.path.join(saving_path, f"plot_{plot_index}_prompt.docx")
-    doc = Document()
-    doc.add_paragraph(image_prompt)
-    doc.save(doc_path)
-
+    images = []
     # Generate images
     for i in range(num_images):
         for attempt in range(5):
@@ -168,9 +162,19 @@ def generate_and_save_images(client, parsed_story, plot_index, num_images=1, sav
         image_path = os.path.join(saving_path, f"plot_{plot_index}_image_{j}_{model_type}.png")
         image.save(image_path)
         image_paths.append(image_path)
-
+    
     print(f"Saved {len(image_paths)} images for Plot {plot_index}.")
-    return image_paths
+    return image_paths, image_prompt
+
+def save_image_prompts(prompts, output_dir):
+    doc = Document()
+    doc.add_heading('Image Prompts', 0)
+    for i, prompt in enumerate(prompts, 1):
+        doc.add_heading(f'Plot {i}', level=1)
+        doc.add_paragraph(prompt)
+    prompt_file = os.path.join(output_dir, 'image_prompts.docx')
+    doc.save(prompt_file)
+    return prompt_file
 
 ################ Text to Speech ################
 def text_to_speech(text, output_filename="output.wav", voice_name="en-US-JennyNeural"):
@@ -191,20 +195,14 @@ def text_to_speech(text, output_filename="output.wav", voice_name="en-US-JennyNe
         return None
     
 ################ Video Creation ################
-def create_video(audio_path, image_paths, output_path):
+def create_video(audio_path, image_path, output_path):
     try:
-        # Load audio and calculate image duration
+        # Load audio and image
         audio = AudioFileClip(audio_path)
-        image_duration = audio.duration / len(image_paths)
-
-        # Create image clips
-        image_clips = [ImageClip(img).set_duration(image_duration) for img in image_paths if img]
-
-        if not image_clips:
-            raise ValueError("No valid image clips created")
+        image = ImageClip(image_path).set_duration(audio.duration)
 
         # Create and save video
-        video = concatenate_videoclips(image_clips, method="compose").set_audio(audio)
+        video = CompositeVideoClip([image]).set_audio(audio)
         video.write_videofile(output_path, fps=24)
 
         return output_path

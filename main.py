@@ -1,8 +1,9 @@
 import os
 from openai import AzureOpenAI
+from docx import Document
 from functions import (
-    text_to_speech, write_summary_and_plots, 
-    generate_and_save_images, create_video, prepare_images_for_video,
+    story_parser, parsed_saver, generate_images, text_to_speech,
+    create_video, prepare_images_for_video, save_image_prompts,
     AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_KEY, story
 )
 
@@ -24,58 +25,71 @@ def main(story, model_type="FLUX", num_plots=5, num_images=1, output_dir=None, v
         base_dir = output_dir or os.path.expanduser("~/Desktop")
         visualization_folder = os.path.join(base_dir, "Story Visualization")
         images_folder = os.path.join(visualization_folder, "Images")
+        audio_folder = os.path.join(visualization_folder, "Audio")
+        video_folder = os.path.join(visualization_folder, "Video")
         os.makedirs(images_folder, exist_ok=True)
+        os.makedirs(audio_folder, exist_ok=True)
+        os.makedirs(video_folder, exist_ok=True)
         
         # Process story
-        summary_json = summarize_story(client, story)
-        if not summary_json:
-            raise ValueError("Failed to generate summary")
+        parsed_story = story_parser(client, story, num_plots)
+        if not parsed_story:
+            raise ValueError("Failed to parse story")
         
-        plots_json = plot_splitter(client, story, num_plots)
-        if not plots_json:
-            raise ValueError("Failed to split plot")
-        
-        write_summary_and_plots(visualization_folder, summary_json, plots_json)
+        parsed_saver(parsed_story, visualization_folder)
         
         # Generate images and prompts
         image_paths = []
+        image_prompts = []
         if num_images > 0:
-            results = [generate_and_save_images(client, plots_json=plots_json, plot_index=i+1, 
-                                                num_images=num_images, images_folder=images_folder, 
-                                                model_type=model_type) for i in range(len(plots_json['plots']))]
-            image_paths = [path for result in results if result and result[0] for path in result[0]]
+            for i in range(num_plots):
+                plot_images, prompt = generate_images(client, parsed_story, i+1, num_images, images_folder, model_type)
+                image_paths.extend(plot_images)
+                image_prompts.append(prompt)
+            
+            # Save image prompts to a single docx file
+            prompt_file = save_image_prompts(image_prompts, visualization_folder)
+            print(f"Image prompts saved to: {prompt_file}")
         else:
             print("Skipping image generation.")
         
         # Prepare images for video
         image_paths = prepare_images_for_video(image_paths, num_plots)
         
-        # Generate audio
-        audio_path = None
-        if voice_name:
-            audio_path = text_to_speech(summary_json['summary'], os.path.join(visualization_folder, "story_summary.wav"), voice_name)
+        # Generate audio and create video for each plot
+        plot_videos = []
+        for i, plot in enumerate(parsed_story['Segmentation']):
+            audio_path = text_to_speech(plot['plot'], os.path.join(audio_folder, f"plot_{i+1}.wav"), voice_name)
             if not audio_path:
-                print("Audio generation failed.")
-        else:
-            print("Skipping audio generation.")
-
-        # Create video
-        video_path = None
-        if audio_path and image_paths:
-            video_path = os.path.join(visualization_folder, "story_video.mp4")
-            video_path = create_video(audio_path, image_paths, video_path)
-            if video_path:
-                print(f"Video created: {video_path}")
+                print(f"Audio generation failed for plot {i+1}.")
+                continue
+            
+            plot_image_paths = image_paths[i:i+1]  # Use one image per plot
+            plot_video_path = os.path.join(video_folder, f"plot_{i+1}.mp4")
+            plot_video_path = create_video(audio_path, plot_image_paths[0], plot_video_path)
+            if plot_video_path:
+                plot_videos.append(plot_video_path)
+                print(f"Video created for plot {i+1}: {plot_video_path}")
             else:
-                print("Video creation failed.")
+                print(f"Video creation failed for plot {i+1}.")
+        
+        # Concatenate all plot videos
+        final_video_path = os.path.join(visualization_folder, "full_story_video.mp4")
+        if plot_videos:
+            from moviepy.editor import concatenate_videoclips, VideoFileClip
+            clips = [VideoFileClip(video) for video in plot_videos]
+            final_video = concatenate_videoclips(clips)
+            final_video.write_videofile(final_video_path)
+            print(f"Full story video created: {final_video_path}")
         else:
-            print("Skipping video creation due to missing audio or images.")
+            print("Failed to create full story video due to missing plot videos.")
 
         return {
-            "summary": summary_json, 
-            "images": image_paths, 
-            "audio": audio_path,
-            "video": video_path
+            "parsed_story": parsed_story,
+            "images": image_paths,
+            "image_prompts": prompt_file,
+            "plot_videos": plot_videos,
+            "final_video": final_video_path if plot_videos else None
         }
     
     except ValueError as ve:
@@ -85,14 +99,14 @@ def main(story, model_type="FLUX", num_plots=5, num_images=1, output_dir=None, v
     return None
 
 if __name__ == "__main__":
-    result = main(story, model_type="FLUX", num_plots=5, num_images=1, output_dir=None, voice_name="en-US-AvaMultilingualNeural")
+    result = main(story, model_type="FLUX", num_plots=5, num_images=1, output_dir=None, voice_name="en-US-JennyNeural")
     if result:
-        if result["video"]:
-            print("Hooray! The AIGC task was completed successfully with video creation!")
-        elif result["audio"]:
-            print("The AIGC task was completed with audio, but video creation failed.")
+        if result["final_video"]:
+            print("Hooray! The AIGC task was completed successfully with full story video creation!")
+        elif result["plot_videos"]:
+            print("The AIGC task was completed with individual plot videos, but full video concatenation failed.")
         elif result["images"]:
-            print("The AIGC task was completed with images, but audio and video generation failed.")
+            print("The AIGC task was completed with images, but video generation failed.")
         else:
             print("The AIGC task was completed, but no media was generated.")
     else:
