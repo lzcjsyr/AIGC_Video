@@ -4,7 +4,7 @@ from PIL import Image
 from io import BytesIO
 from docx import Document
 import azure.cognitiveservices.speech as speechsdk
-from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip
+from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip, concatenate_videoclips, VideoFileClip
 from input_text_en import (
     AZURE_SPEECH_KEY, AZURE_SPEECH_REGION, SILICONFLOW_KEY,
     story_parser_system_prompt, generate_image_system_prompt,
@@ -185,7 +185,7 @@ def generate_and_save_images(client, parsed_story, num_plots, num_images, saving
     
     return image_paths, prompt_file
 
-################ Text to Speech ################
+################ Audio and Video ################
 def text_to_speech(text, output_filename="output.wav", voice_name="en-US-JennyNeural"):
     speech_config = speechsdk.SpeechConfig(subscription=AZURE_SPEECH_KEY, region=AZURE_SPEECH_REGION)
     speech_config.speech_synthesis_voice_name = voice_name
@@ -199,11 +199,50 @@ def text_to_speech(text, output_filename="output.wav", voice_name="en-US-JennyNe
             return output_filename
         else:
             raise Exception(f"Speech synthesis failed: {result.reason}")
+    
     except Exception as e:
         print(f"Error in text-to-speech conversion: {str(e)}")
         return None
+
+def prepare_images_for_video(image_paths, num_plots, num_images):
     
-################ Video Creation ################
+    # Check if the number of images matches the generation requirements
+    expected_image_count = num_plots * num_images
+    if len(image_paths) != expected_image_count:
+        print(f"Error: Expected {expected_image_count} images, but found {len(image_paths)}.")
+        return None
+    
+    selected_images = []
+    
+    for plot in range(1, num_plots + 1):
+        plot_images = [img for img in image_paths if f"plot_{plot}_" in img]
+        
+        if not plot_images:
+            print(f"No images found for plot {plot}.")
+            return None
+        
+        if num_images == 1:
+            # Select the only image for this plot
+            selected_images.append(plot_images[0])
+        else:
+            # Ask user to select an image for this plot
+            print(f"\nAvailable images for plot {plot}:")
+            for i, img in enumerate(plot_images, 1):
+                print(f"{i}. {os.path.basename(img)}")
+            
+            while True:
+                try:
+                    choice = int(input(f"Please select an image for plot {plot} (1-{len(plot_images)}): "))
+                    if 1 <= choice <= len(plot_images):
+                        selected_images.append(plot_images[choice - 1])
+                        break
+                    else:
+                        print("Invalid selection. Please try again.")
+                except ValueError:
+                    print("Invalid input. Please enter a number.")
+    
+    return selected_images
+    
 def create_video(audio_path, image_path, output_path):
     try:
         # Load audio and image
@@ -215,22 +254,22 @@ def create_video(audio_path, image_path, output_path):
         video.write_videofile(output_path, fps=24)
 
         return output_path
+    
     except Exception as e:
         print(f"Error in video creation: {str(e)}")
         return None
     
-def create_story_video(parsed_story, image_paths, audio_folder, video_folder, voice_name):
-    from moviepy.editor import concatenate_videoclips, VideoFileClip
+def create_story_video(parsed_story, image_paths, audio_paths, video_paths, voice_name):
     
     plot_videos = []
     for i, plot in enumerate(parsed_story['Segmentation']):
-        audio_path = text_to_speech(plot['plot'], os.path.join(audio_folder, f"plot_{i+1}.wav"), voice_name)
+        audio_path = text_to_speech(plot['plot'], os.path.join(audio_paths, f"plot_{i+1}.wav"), voice_name)
         if not audio_path:
             print(f"Audio generation failed for plot {i+1}.")
             continue
         
         plot_image_paths = image_paths[i:i+1]  # Use one image per plot
-        plot_video_path = os.path.join(video_folder, f"plot_{i+1}.mp4")
+        plot_video_path = os.path.join(video_paths, f"plot_{i+1}.mp4")
         plot_video_path = create_video(audio_path, plot_image_paths[0], plot_video_path)
         if plot_video_path:
             plot_videos.append(plot_video_path)
@@ -239,7 +278,7 @@ def create_story_video(parsed_story, image_paths, audio_folder, video_folder, vo
             print(f"Video creation failed for plot {i+1}.")
     
     # Concatenate all plot videos
-    final_video_path = os.path.join(video_folder, "full_story_video.mp4")
+    final_video_path = os.path.join(video_paths, "full_story_video.mp4")
     if plot_videos:
         clips = [VideoFileClip(video) for video in plot_videos]
         final_video = concatenate_videoclips(clips)
@@ -249,14 +288,3 @@ def create_story_video(parsed_story, image_paths, audio_folder, video_folder, vo
     else:
         print("Failed to create full story video due to missing plot videos.")
         return None
-
-# Function to ensure we have the correct number of images
-def prepare_images_for_video(image_paths, num_plots):
-    if len(image_paths) < num_plots:
-        # If we have fewer images than plots, repeat the last image
-        last_image = image_paths[-1] if image_paths else None
-        image_paths.extend([last_image] * (num_plots - len(image_paths)))
-    elif len(image_paths) > num_plots:
-        # If we have more images than plots, take only the first image of each plot
-        image_paths = image_paths[:num_plots]
-    return image_paths
