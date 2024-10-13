@@ -40,7 +40,7 @@ def main(story, model_type="FLUX", num_plots=5, num_images=1, output_dir=None, v
         image_paths, prompt_file = generate_and_save_images(client, parsed_story, num_plots, num_images, images_folder, model_type)
         
         # Prepare images for video
-        image_paths = prepare_images_for_video(image_paths, num_plots)
+        image_paths = prepare_images_for_video(images_folder, num_plots, num_images)
         
         # Generate audio and create video for each plot
         final_video_path = create_story_video(parsed_story, image_paths, audio_folder, video_folder, voice_name)
@@ -59,7 +59,7 @@ def main(story, model_type="FLUX", num_plots=5, num_images=1, output_dir=None, v
     return None
 
 if __name__ == "__main__":
-    result = main(story, model_type="FLUX", num_plots=3, num_images=1, output_dir=None, voice_name="en-US-JennyNeural")
+    result = main(story, model_type="FLUX", num_plots=3, num_images=3, output_dir=None, voice_name="en-US-JennyNeural")
     if result:
         if result["final_video"]:
             print("Hooray! The AIGC task was completed successfully with full story video creation!")
