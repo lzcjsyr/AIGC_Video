@@ -204,42 +204,49 @@ def text_to_speech(text, output_filename="output.wav", voice_name="en-US-JennyNe
         print(f"Error in text-to-speech conversion: {str(e)}")
         return None
 
-def prepare_images_for_video(image_paths, num_plots, num_images):
-    
-    # Check if the number of images matches the generation requirements
-    expected_image_count = num_plots * num_images
-    if len(image_paths) != expected_image_count:
-        print(f"Error: Expected {expected_image_count} images, but found {len(image_paths)}.")
+def prepare_images_for_video(images_folder, num_plots, num_images):
+    # Check if the image folder exists
+    if not os.path.exists(images_folder):
+        print("Error: Image folder does not exist.")
         return None
-    
+
     selected_images = []
     
     for plot in range(1, num_plots + 1):
-        plot_images = [img for img in image_paths if f"plot_{plot}_" in img]
+        # Get all images for the current plot
+        plot_images = [img for img in os.listdir(images_folder) if f"plot_{plot}_" in img]
         
-        if not plot_images:
-            print(f"No images found for plot {plot}.")
+        # Check if the number of images matches the generation requirements
+        if len(plot_images) != num_images:
+            print(f"Error: Expected {num_images} images for plot {plot}, but found {len(plot_images)}.")
             return None
         
         if num_images == 1:
-            # Select the only image for this plot
-            selected_images.append(plot_images[0])
+            # If only one image per plot, select it automatically
+            if not plot_images:
+                print(f"Error: No image found for plot {plot}.")
+                return None
+            selected_images.append(os.path.join(images_folder, plot_images[0]))
         else:
             # Ask user to select an image for this plot
             print(f"\nAvailable images for plot {plot}:")
             for i, img in enumerate(plot_images, 1):
-                print(f"{i}. {os.path.basename(img)}")
+                print(f"{i}. {img}")
             
             while True:
                 try:
                     choice = int(input(f"Please select an image for plot {plot} (1-{len(plot_images)}): "))
                     if 1 <= choice <= len(plot_images):
-                        selected_images.append(plot_images[choice - 1])
+                        selected_images.append(os.path.join(images_folder, plot_images[choice - 1]))
                         break
                     else:
                         print("Invalid selection. Please try again.")
                 except ValueError:
                     print("Invalid input. Please enter a number.")
+    
+    if len(selected_images) != num_plots:
+        print(f"Error: Expected {num_plots} selected images, but got {len(selected_images)}.")
+        return None
     
     return selected_images
     
