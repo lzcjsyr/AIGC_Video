@@ -79,10 +79,10 @@ Generate single-scene prompt with these guidelines:
 ##### Images Elements #####
 1. Characters key information (EXTREMELY IMPORTANT): Specify age, gender, body type, hairstyle
 2. Characters features: Vibrant colors, Charming, Celebrity-like, Dynamic pose
-3. Artistic Style: Animation (Hayao Miyazaki)
-4. Image features: photorealism, high-detail, epic, elegant, romantic
+3. Artistic Style: photograph (Makoto Shinkai)
+4. Image features: photograph, high-detail 32k UHD, epic, elegant, romantic
 5. Background Setting: Ancient China
-6. Atmosphere: Romantic lighting and ambiance
+6. Atmosphere: cinematic lighting and ambiance
 
 ##### Don't #####
 1. Negative list: modern element, western culture, technology
