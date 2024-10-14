@@ -1,3 +1,8 @@
+######### To do List #########
+# add subtitles to the video
+# add background music to the video
+
+
 import os
 from openai import AzureOpenAI
 from functions import (
