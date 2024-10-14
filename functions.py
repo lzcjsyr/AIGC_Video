@@ -9,8 +9,8 @@ from gen_ai_api import text_to_text, text_to_image, text_to_audio
 
 ################ Story Parser ################
 def story_parser(server: str, model: str, story: str, num_plots: int) -> Optional[Dict[str, Any]]:
+    
     try:
-        # Construct the user message with the number of plots
         user_message = f"Parse this story into {num_plots} plots, ensuring each plot is between 350 to 450 words:\n\n{story}"
 
         # Call the text_to_text function to parse the content
@@ -24,7 +24,7 @@ def story_parser(server: str, model: str, story: str, num_plots: int) -> Optiona
         if json_start == -1 or json_end == 0:
             raise ValueError("No JSON object found in the response.")
         else:
-            output = json.loads(content[json_start:json_end]  )
+            output = json.loads(content[json_start:json_end])
         
         # Validate the output structure
         required_keys = ["title", "story_elements", "key_characters", "Segmentation"]
