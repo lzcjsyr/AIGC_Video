@@ -67,7 +67,7 @@ def main(story, num_plots=5, num_images=1,image_size="1024x1024",
 
 if __name__ == "__main__":
     result = main(story, num_plots=5, num_images=1, image_size="1024x1024",
-                  llm_server="siliconflow", llm_model="Qwen/Qwen2.5-72B-Instruct-128K", 
+                  llm_server="azure", llm_model="gpt-4o", 
                   image_server="siliconflow", image_model="black-forest-labs/FLUX.1-schnell", 
                   voice_name="en-US-JennyNeural", output_dir=None)
     if result:

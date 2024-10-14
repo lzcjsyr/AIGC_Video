@@ -9,39 +9,32 @@ from gen_ai_api import text_to_text, text_to_image, text_to_audio
 
 ################ Story Parser ################
 def story_parser(server: str, model: str, story: str, num_plots: int) -> Optional[Dict[str, Any]]:
-    
     try:
         user_message = f"Parse this story into {num_plots} plots, ensuring each plot is between 350 to 450 words:\n\n{story}"
-
-        # Call the text_to_text function to parse the content
         content = text_to_text(server=server, model=model, prompt=user_message, system_message=story_parser_system_prompt, max_tokens=4096, temperature=0.7)
         if content is None:
             raise ValueError("Failed to get response from API.")
         
-        # Find the JSON part of the content
         json_start = content.find('{')
         json_end = content.rfind('}') + 1
         if json_start == -1 or json_end == 0:
             raise ValueError("No JSON object found in the response.")
-        else:
-            output = json.loads(content[json_start:json_end])
         
-        # Validate the output structure
+        output = json.loads(content[json_start:json_end])
+        
         required_keys = ["title", "story_elements", "key_characters", "Segmentation"]
-        if all(key in output for key in required_keys):
-            print("Successfully generated and parsed story summary.")
-            return output
-        else:
+        if not all(key in output for key in required_keys):
             missing_keys = [key for key in required_keys if key not in output]
             raise ValueError(f"Generated JSON is missing required keys: {', '.join(missing_keys)}")
+        
+        return output
     
-    except json.JSONDecodeError as e:
-        print(f"Error: Failed to parse JSON output. Error details: {str(e)}")
-        print("Problematic JSON string:")
-        print(output)
+    except json.JSONDecodeError:
+        # Avoid printing 'output' as it may not be defined correctly.
+        print("Error: Failed to parse JSON output.")
         return None
     except Exception as e:
-        print(f"Error processing story: {str(e)}")
+        print(f"Error processing story: {e}")
         return None
 
 def parsed_saver(parsed_json, saving_path=None):
@@ -92,15 +85,14 @@ def generate_image_prompt(server, model, prompt, regenerate=False):
         system_message += "\n\nCreate a safe, non-controversial prompt that captures the essence of the scene."
     
     response = text_to_text(server = server, model = model, prompt = prompt, system_message = system_message, max_tokens=4096, temperature=0.7)
-    return response.choices[0].message.content
+    return response
 
 def generate_images(image_server, image_model, llm_server, llm_model, parsed_story, plot_index, size, num_images=1, saving_path=None):
     
     if saving_path is None:
         saving_path = os.path.join(os.path.expanduser('~'), 'Desktop')
     if num_images < 1:
-        print("Input of num_images is out of range.")
-        return None, None
+        raise ValueError("num_images must be greater than or equal to 1.")
     
     # Extract plot and characters
     plot = parsed_story["Segmentation"][plot_index - 1]
@@ -108,14 +100,14 @@ def generate_images(image_server, image_model, llm_server, llm_model, parsed_sto
     
     # Generate image prompt
     input_for_prompt = f"Plot: {plot['plot']}\nCharacters: {characters}"
-    image_prompt = generate_image_prompt(server = llm_server, model = llm_model, prompt = input_for_prompt, regenerate = False)
+    image_prompt = generate_image_prompt(server=llm_server, model=llm_model, prompt=input_for_prompt, regenerate=False)
 
     images = []
     # Generate images
     for i in range(num_images):
         for attempt in range(5):
             try:
-                image_url = text_to_image(server = image_server, model = image_model, prompt = image_prompt, size = size)
+                image_url = text_to_image(server=image_server, model=image_model, prompt=image_prompt, size=size)
                 image = Image.open(BytesIO(requests.get(image_url).content))
                 images.append(image)
                 print(f"Generated image {i+1} for Plot {plot_index} using {image_model}.")
@@ -123,7 +115,7 @@ def generate_images(image_server, image_model, llm_server, llm_model, parsed_sto
             except Exception as e:
                 if 'content_policy_violation' in str(e) and attempt < 4:
                     print(f"Content policy violation. Regenerating prompt (Attempt {attempt+1})")
-                    image_prompt = generate_image_prompt(server = llm_server, model = llm_model, prompt = input_for_prompt, regenerate = True)
+                    image_prompt = generate_image_prompt(server=llm_server, model=llm_model, prompt=input_for_prompt, regenerate=True)
                 else:
                     print(f"Failed to generate image: {e}")
                     break
@@ -131,7 +123,8 @@ def generate_images(image_server, image_model, llm_server, llm_model, parsed_sto
     # Save generated images
     image_paths = []
     for j, image in enumerate(images, 1):
-        image_path = os.path.join(saving_path, f"plot_{plot_index}_image_{j}_{image_model}.png")
+        safe_model_name = image_model.replace('/', '_')
+        image_path = os.path.join(saving_path, f"plot_{plot_index}_image_{j}_{safe_model_name}.png")
         image.save(image_path)
         image_paths.append(image_path)
     
@@ -145,7 +138,7 @@ def generate_and_save_images(image_server, image_model, llm_server, llm_model, p
     if num_images > 0:
         for i in range(num_plots):
             plot_images, prompt = generate_images(image_server, image_model, llm_server, llm_model, 
-                                                  parsed_story, plot_index = i, size = size, num_images=1, saving_path=None)
+                                                  parsed_story, plot_index=i+1, size=size, num_images=num_images, saving_path=saving_path)
             image_paths.extend(plot_images)
             image_prompts.append(prompt)
         
