@@ -18,9 +18,11 @@ def main(story, num_plots=5, num_images=1,image_size="1024x1024",
         if not 0 <= num_images <= 5:
             raise ValueError("num_images must be between 0 and 5")
         if llm_server not in ["openai", "siliconflow"]:
-            raise ValueError("llm_server must be either 'azure' or 'siliconflow'")
+            raise ValueError("llm_server must be either 'openai' or 'siliconflow'")
         if image_server not in ["openai", "siliconflow"]:
-            raise ValueError("image_server must be either 'azure' or 'siliconflow'")
+            raise ValueError("image_server must be either 'openai' or 'siliconflow'")
+        if tts_server not in ["openai", "azure"]:
+            raise ValueError("image_server must be either 'openai' or 'azure'")
 
         # Create folders
         base_dir = output_dir or os.path.expanduser("~/Desktop")
@@ -67,10 +69,13 @@ def main(story, num_plots=5, num_images=1,image_size="1024x1024",
     return None
 
 if __name__ == "__main__":
-    result = main(story, num_plots=5, num_images=1, image_size="1024x576",
-                  llm_server="openai", llm_model="gpt-4o", 
-                  image_server="siliconflow", image_model="black-forest-labs/FLUX.1-schnell", 
-                  tts_server = "openai", voice="echo", output_dir=None)
+    result = main(story, num_plots=5, 
+                  num_images=1,image_size="1024x576", 
+                  llm_server="openai",llm_model="gpt-4o", 
+                  image_server="siliconflow",image_model="black-forest-labs/FLUX.1-schnell", 
+                  tts_server = "openai",voice="echo", 
+                  output_dir=None)
+    
     if result:
         if result["final_video"]:
             print("Hooray! The AIGC task was completed successfully with full story video creation!")

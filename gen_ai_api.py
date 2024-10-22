@@ -89,7 +89,7 @@ def text_to_audio(server, text, output_filename, voice):
     if server == "openai":
         try:
             client = OpenAI(base_url=AIPROXY_URL, api_key=AIPROXY_API_KEY)
-            response = client.audio.speech.create(model="tts-1-hd", voice=voice, input=text)
+            response = client.audio.speech.create(model="tts-1", voice=voice, input=text)
 
             # Save the audio content to a file
             with open(output_filename, 'wb') as audio_file:

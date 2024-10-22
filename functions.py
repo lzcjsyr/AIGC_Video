@@ -4,7 +4,7 @@ from PIL import Image
 from io import BytesIO
 from docx import Document
 from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip, concatenate_videoclips, VideoFileClip
-from input_text_en import story_parser_system_prompt, generate_image_system_prompt, story
+from input_text_cn import story_parser_system_prompt, generate_image_system_prompt, story
 from gen_ai_api import text_to_text, text_to_image, text_to_audio
 
 ################ Story Parser ################
