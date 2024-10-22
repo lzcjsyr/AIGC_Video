@@ -64,7 +64,7 @@ def text_to_text(server, model, prompt, system_message="", max_tokens=4000, temp
         return response.choices[0].message.content if server == "openai" else response.get("choices", [{}])[0].get('message', {}).get('content')
     return response
 
-def text_to_image(server, model, prompt, size):
+def text_to_image(prompt, size, server="siliconflow", model="black-forest-labs/FLUX.1-schnell"):
     
     # Create OpenAI client
     if server == "openai":

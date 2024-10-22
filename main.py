@@ -7,7 +7,7 @@ from functions import (
 def main(story, num_plots=5, num_images=1,image_size="1024x1024",
          llm_server="siliconflow", llm_model="Qwen/Qwen2.5-72B-Instruct-128K", 
          image_server="siliconflow", image_model="black-forest-labs/FLUX.1-schnell", 
-         voice_name="en-US-JennyNeural", output_dir=None):
+         tts_server = "openai", voice="alloy", output_dir=None):
     
     try:
         # Input validation
@@ -17,9 +17,9 @@ def main(story, num_plots=5, num_images=1,image_size="1024x1024",
             raise ValueError("num_plots must be between 2 and 20")
         if not 0 <= num_images <= 5:
             raise ValueError("num_images must be between 0 and 5")
-        if llm_server not in ["azure", "siliconflow"]:
+        if llm_server not in ["openai", "siliconflow"]:
             raise ValueError("llm_server must be either 'azure' or 'siliconflow'")
-        if image_server not in ["azure", "siliconflow"]:
+        if image_server not in ["openai", "siliconflow"]:
             raise ValueError("image_server must be either 'azure' or 'siliconflow'")
 
         # Create folders
@@ -50,7 +50,8 @@ def main(story, num_plots=5, num_images=1,image_size="1024x1024",
             raise ValueError("Failed to prepare images for video")
         
         # Generate audio and create video for each plot
-        final_video_path = create_story_video(parsed_story, selected_images, audio_folder, video_folder, voice_name)
+        final_video_path = create_story_video(parsed_story, image_paths = selected_images, audio_paths = audio_folder, video_paths = video_folder, 
+                                              server=tts_server, voice=voice)
 
         return {
             "parsed_story": parsed_story,
@@ -66,10 +67,10 @@ def main(story, num_plots=5, num_images=1,image_size="1024x1024",
     return None
 
 if __name__ == "__main__":
-    result = main(story, num_plots=5, num_images=1, image_size="1024x1024",
-                  llm_server="azure", llm_model="gpt-4o", 
+    result = main(story, num_plots=5, num_images=1, image_size="1024x576",
+                  llm_server="openai", llm_model="gpt-4o", 
                   image_server="siliconflow", image_model="black-forest-labs/FLUX.1-schnell", 
-                  voice_name="en-US-JennyNeural", output_dir=None)
+                  tts_server = "openai", voice="echo", output_dir=None)
     if result:
         if result["final_video"]:
             print("Hooray! The AIGC task was completed successfully with full story video creation!")

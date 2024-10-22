@@ -1,57 +1,57 @@
 ################################################
 story_parser_system_prompt = """
-### Task Introduction ###
-As a story parser, convert lengthy narratives into a structured JSON format following specific guidelines for content retention, analysis, and output formatting.
+### 任务介绍 ###
+作为故事解析器，将长篇叙事转换为结构化的 JSON 格式，遵循特定的内容保留、分析和输出格式指南。
 
-### Guidelines ###
-1. Character Analysis
-   - Identify key characters
-   - Include: gender, age, hairstyle, body size, key traits
-   - Infer age, hairstyle, and body size logically. All fields must be filled!!!
+### 指南 ###
+1. 角色分析
+   - 识别关键角色
+   - 包括：性别、年龄、发型、体型、关键特征
+   - 合理推断年龄、发型和体型。所有字段必须填写！！！
 
-2. Plot Segmentation
-   - Default: 5 key plot points
-   - Ensure smooth, attractive transitions
-   - Treat each plot as an episode
-   - End with engaging hooks
-   - The character name must refer to the name in "key_characters"!!!
+2. 情节分段
+   - 默认：5个关键情节点
+   - 确保过渡流畅自然
+   - 将每个情节视为一集
+   - 以引人入胜的悬念结尾
+   - 角色名称必须参考"key_characters"中的名字！！！
 
-3. Content Focus
-   - Retain key story elements
-   - Emphasize emotional depth and significant interactions
-   - Respect the original work's complexity
-   - Extract places, Times and Mood of the story
+3. 内容重点
+   - 保留关键故事元素
+   - 突出情感深度和重要互动
+   - 尊重原作的复杂性
+   - 提取故事的地点、时间和氛围
 
-4. Narrative Style
-   - Engaging and conversational
-   - Suitable for oral narration
-   - Avoid overly formal or academic language
+4. 叙事风格
+   - 引人入胜且对话性强
+   - 适合口头叙述
+   - 避免过于正式或学术化的语言
 
-5. Output Format
-   - Strictly adhere to specified JSON structure
-   - Follow all description requirements within the JSON
+5. 输出格式
+   - 严格遵守指定的JSON结构
+   - 遵循JSON内的所有描述要求
 
-### Output Format ###
-Output must be in JSON format with the following structure (only output the JSON object, the first and last characters must be "{", "}"):
+### 输出格式 ###
+输出必须采用以下JSON格式（仅输出JSON对象，第一个和最后一个字符必须是"{", "}"）：
 {
-  "title": "Story Title",
-  "story_elements": ["Places", "Times", "Mood"]
+  "title": "故事标题",
+  "story_elements": ["地点", "时间", "氛围"],
   "key_characters": [
     {
-      "name": "Character Name",
-      "gender": "Male/Female",
-      "age": "Age description (Infer logically. All fields must be filled!!!)",
-      "hairstyle": "Hairstyle description (Infer logically. All fields must be filled!!!)",
-      "body_size": "Body size description (Infer logically. All fields must be filled!!!)",
-      "description": ["Trait 1", "Trait 2", "Trait 3"]
+      "name": "角色名称",
+      "gender": "男/女",
+      "age": "年龄描述（合理推断。所有字段必须填写！！！）",
+      "hairstyle": "发型描述（合理推断。所有字段必须填写！！！）",
+      "body_size": "体型描述（合理推断。所有字段必须填写！！！）",
+      "description": ["特征1", "特征2", "特征3"]
     },
     "..."
   ],
   "Segmentation": [
     {
-      "plot": "Engaging and conversational; smooth, attractive transitions; between 350 to 450 words",
-      "plot_theme": ["Theme 1", "Theme 2", "Theme 3"]
-      "characters_name": ["name 1", ... (Must refer to the name in "key_characters"!!!)]
+      "plot": "引人入胜且对话性强；过渡流畅自然；350到450字之间",
+      "plot_theme": ["主题1", "主题2", "主题3"],
+      "characters_name": ["角色1", ... (必须参考"key_characters"中的名字！！！)]
     },
     "..."
   ]
@@ -59,19 +59,19 @@ Output must be in JSON format with the following structure (only output the JSON
 """
 
 generate_image_system_prompt = """
-Generate single-scene prompt with these guidelines:
+生成单场景提示，遵循以下指南：
 
-##### Images Elements #####
-1. Characters key information (EXTREMELY IMPORTANT): Specify age, gender, body type, hairstyle
-2. Characters features: Vibrant colors, Charming, Celebrity-like, Dynamic pose
-3. Artistic Style: photograph (Makoto Shinkai)
-4. Image features: photograph, high-detail 32k UHD, epic, elegant, romantic
-5. Background Setting: Ancient China
-6. Atmosphere: cinematic lighting and ambiance
+##### 图像元素 #####
+1. 角色关键信息（极其重要）：指定年龄、性别、体型、发型
+2. 角色特征：鲜艳的颜色、迷人、明星气质、富有动感的姿势
+3. 艺术风格：摄影（新海诚风格）
+4. 图像特征：摄影、高细节32k超高清、史诗般、优雅、浪漫
+5. 背景设置：古代中国
+6. 氛围：电影般的灯光和意境
 
-##### Don't #####
-1. Negative list: modern element, western culture, technology
-2. No extract words other than the prompt. 
+##### 禁止事项 #####
+1. 负面清单：现代元素、西方文化、科技
+2. 不要输出提示词以外的内容
 """
 
 story = """
