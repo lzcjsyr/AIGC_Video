@@ -4,7 +4,7 @@ from PIL import Image
 from io import BytesIO
 from docx import Document
 from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip, concatenate_videoclips, VideoFileClip
-from input_text_cn import story_parser_system_prompt, generate_image_system_prompt, story
+from input_text_en import story_parser_system_prompt, generate_image_system_prompt, story
 from gen_ai_api import text_to_text, text_to_image, text_to_audio
 
 ################ Story Parser ################
@@ -220,21 +220,9 @@ def create_video(audio_path, image_path, output_path):
         print(f"Error in video creation: {str(e)}")
         return None
     
-def create_story_video(parsed_story, image_paths, audio_paths, video_paths, server="openai", voice="alloy"):
-    """
-    Create a video from story segments with synchronized audio and images.
-    
-    Args:
-        parsed_story (dict): Dictionary containing story segmentation
-        image_paths (list): List of paths to images for each story segment
-        audio_paths (str): Directory path for storing generated audio files
-        video_paths (str): Directory path for storing generated video files
-        voice (str): Voice ID/name for text-to-speech
-        server (str): TTS server to use ('openai' or 'azure')
-    
-    Returns:
-        str: Path to the final concatenated video, or None if creation fails
-    """
+def create_story_media(parsed_story, audio_paths, image_paths, video_paths, generate_video=False, server="openai", voice="alloy"):
+
+    audio_files = []
     plot_videos = []
     
     # Process each plot segment
@@ -251,22 +239,36 @@ def create_story_video(parsed_story, image_paths, audio_paths, video_paths, serv
             print(f"Audio generation failed for plot {i+1}")
             continue
             
-        # Create video for current plot segment
-        plot_image_paths = image_paths[i:i+1]  # One image per plot
-        plot_video_path = os.path.join(video_paths, f"plot_{i+1}.mp4")
-        plot_video_path = create_video(audio_file, plot_image_paths[0], plot_video_path)
+        audio_files.append(audio_file)
         
-        if plot_video_path:
-            plot_videos.append(plot_video_path)
-            print(f"Video created for plot {i+1}: {plot_video_path}")
-        else:
-            print(f"Video creation failed for plot {i+1}")
+        # If video generation is requested, create video for current plot segment
+        if generate_video:
+            plot_image_paths = image_paths[i:i+1]  # One image per plot
+            plot_video_path = os.path.join(video_paths, f"plot_{i+1}.mp4")
+            plot_video_path = create_video(audio_file, plot_image_paths[0], plot_video_path)
+            
+            if plot_video_path:
+                plot_videos.append(plot_video_path)
+                print(f"Video created for plot {i+1}: {plot_video_path}")
+            else:
+                print(f"Video creation failed for plot {i+1}")
     
-    # Concatenate all plot videos into final video
+    # If no audio files were generated, return None
+    if not audio_files:
+        print("Failed to generate any audio files")
+        return None
+        
+    # If video generation was not requested, return the list of audio files
+    if not generate_video:
+        print(f"Generated {len(audio_files)} audio files")
+        return audio_files
+    
+    # If video generation was requested but no videos were created, return None
     if not plot_videos:
         print("Failed to create full story video due to missing plot videos")
         return None
         
+    # Concatenate all plot videos into final video
     final_video_path = os.path.join(video_paths, "full_story_video.mp4")
     clips = [VideoFileClip(video) for video in plot_videos]
     final_video = concatenate_videoclips(clips)

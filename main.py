@@ -1,13 +1,15 @@
 import os
 from functions import (
     story_parser, parsed_saver, generate_and_save_images, 
-    prepare_images_for_video, create_story_video, story
+    prepare_images_for_video, create_story_media, story
 )
 
-def main(story, num_plots=5, num_images=1,image_size="1024x1024",
+def main(story, num_plots=5, 
+         num_images=1,image_size="1024x1024",
          llm_server="siliconflow", llm_model="Qwen/Qwen2.5-72B-Instruct-128K", 
          image_server="siliconflow", image_model="black-forest-labs/FLUX.1-schnell", 
-         tts_server = "openai", voice="alloy", output_dir=None):
+         tts_server = "openai", voice="alloy", 
+         generate_video = False, output_dir=None):
     
     try:
         # Input validation
@@ -47,19 +49,21 @@ def main(story, num_plots=5, num_images=1,image_size="1024x1024",
         )
         
         # Prepare images for video
-        selected_images = prepare_images_for_video(images_folder, num_plots, num_images)
-        if not selected_images:
-            raise ValueError("Failed to prepare images for video")
+        selected_images = []
+        if generate_video == True:
+            selected_images = prepare_images_for_video(images_folder, num_plots, num_images)
+            if not selected_images:
+                raise ValueError("Failed to prepare images for video")
         
         # Generate audio and create video for each plot
-        final_video_path = create_story_video(parsed_story, image_paths = selected_images, audio_paths = audio_folder, video_paths = video_folder, 
-                                              server=tts_server, voice=voice)
+        media_path = create_story_media(parsed_story, audio_paths = audio_folder, image_paths = selected_images, video_paths = video_folder, 
+                                              generate_video=generate_video, server=tts_server, voice=voice)
 
         return {
             "parsed_story": parsed_story,
             "images": image_paths,
             "image_prompts": prompt_file,
-            "final_video": final_video_path
+            "final_video": media_path
         }
     
     except ValueError as ve:
@@ -69,12 +73,13 @@ def main(story, num_plots=5, num_images=1,image_size="1024x1024",
     return None
 
 if __name__ == "__main__":
+    
     result = main(story, num_plots=5, 
                   num_images=1,image_size="1024x576", 
                   llm_server="openai",llm_model="gpt-4o", 
                   image_server="siliconflow",image_model="black-forest-labs/FLUX.1-schnell", 
                   tts_server = "openai",voice="echo", 
-                  output_dir=None)
+                  generate_video = False, output_dir=None)
     
     if result:
         if result["final_video"]:
