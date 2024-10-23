@@ -1,10 +1,10 @@
 import os
 from functions import (
-    story_parser, parsed_saver, generate_and_save_images, 
-    prepare_images_for_video, create_story_media, story
+    content_parser, parsed_saver, generate_and_save_images, 
+    prepare_images_for_video, create_media, content
 )
 
-def main(story, num_plots=5, 
+def main(content, num_plots=5, 
          num_images=1,image_size="1024x1024",
          llm_server="siliconflow", llm_model="Qwen/Qwen2.5-72B-Instruct-128K", 
          image_server="siliconflow", image_model="black-forest-labs/FLUX.1-schnell", 
@@ -13,8 +13,8 @@ def main(story, num_plots=5,
     
     try:
         # Input validation
-        if not isinstance(story, str) or len(story) < 1000:
-            raise ValueError("Story must be a string with at least 1000 characters")
+        if not isinstance(content, str) or len(content) < 1000:
+            raise ValueError("Content must be a string with at least 1000 characters")
         if not 1 < num_plots <= 20:
             raise ValueError("num_plots must be between 2 and 20")
         if not 0 <= num_images <= 5:
@@ -28,7 +28,7 @@ def main(story, num_plots=5,
 
         # Create folders
         base_dir = output_dir or os.path.expanduser("~/Desktop")
-        visualization_folder = os.path.join(base_dir, "Story Visualization")
+        visualization_folder = os.path.join(base_dir, "Content Visualization")
         images_folder = os.path.join(visualization_folder, "Images")
         audio_folder = os.path.join(visualization_folder, "Audio")
         video_folder = os.path.join(visualization_folder, "Video")
@@ -36,16 +36,16 @@ def main(story, num_plots=5,
         os.makedirs(audio_folder, exist_ok=True)
         os.makedirs(video_folder, exist_ok=True)
         
-        # Process story
-        parsed_story = story_parser(llm_server, llm_model, story, num_plots)
-        if not parsed_story:
-            raise ValueError("Failed to parse story")
-        parsed_saver(parsed_story, visualization_folder)
+        # Process content
+        parsed_content = content_parser(llm_server, llm_model, content, num_plots)
+        if not parsed_content:
+            raise ValueError("Failed to parse content")
+        parsed_saver(parsed_content, visualization_folder)
         
         # Generate images and prompts
         image_paths, prompt_file = generate_and_save_images(
             image_server, image_model, llm_server, llm_model,
-            parsed_story, num_plots, num_images, image_size, images_folder
+            parsed_content, num_plots, num_images, image_size, images_folder
         )
         
         # Prepare images for video
@@ -56,11 +56,11 @@ def main(story, num_plots=5,
                 raise ValueError("Failed to prepare images for video")
         
         # Generate audio and create video for each plot
-        media_path = create_story_media(parsed_story, audio_paths = audio_folder, image_paths = selected_images, video_paths = video_folder, 
+        media_path = create_media(parsed_content, audio_paths = audio_folder, image_paths = selected_images, video_paths = video_folder, 
                                               generate_video=generate_video, server=tts_server, voice=voice)
 
         return {
-            "parsed_story": parsed_story,
+            "parsed_content": parsed_content,
             "images": image_paths,
             "image_prompts": prompt_file,
             "final_video": media_path
@@ -75,7 +75,7 @@ def main(story, num_plots=5,
 # Run the main function
 if __name__ == "__main__":
     
-    result = main(story, num_plots=5, 
+    result = main(content, num_plots=5, 
                   num_images=1,
                   image_size="1024x576", 
                   llm_server="openai",
@@ -89,7 +89,7 @@ if __name__ == "__main__":
     
     if result:
         if result["final_video"]:
-            print("Hooray! The AIGC task was completed successfully with full story video creation!")
+            print("Hooray! The AIGC task was completed successfully with full content video creation!")
         elif result["images"]:
             print("The AIGC task was completed with images, but video generation failed.")
         else:

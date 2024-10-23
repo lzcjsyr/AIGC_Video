@@ -6,7 +6,6 @@ import azure.cognitiveservices.speech as speechsdk
 
 # Azure credentials and endpoints
 load_dotenv()
-AZURE_OPENAI_ENDPOINT = os.getenv('AZURE_OPENAI_ENDPOINT')
 AZURE_SPEECH_KEY = os.getenv('AZURE_SPEECH_KEY')
 AZURE_SPEECH_REGION = os.getenv('AZURE_SPEECH_REGION')
 SILICONFLOW_KEY = os.getenv('SILICONFLOW_KEY')
@@ -14,7 +13,7 @@ AIPROXY_API_KEY = os.getenv('AIPROXY_API_KEY')
 AIPROXY_URL = os.getenv('AIPROXY_URL')
 
 # Validate environment variables
-if not all([AZURE_OPENAI_ENDPOINT, AZURE_SPEECH_KEY, AZURE_SPEECH_REGION, SILICONFLOW_KEY, AIPROXY_API_KEY, AIPROXY_URL]):
+if not all([AZURE_SPEECH_KEY, AZURE_SPEECH_REGION, SILICONFLOW_KEY, AIPROXY_API_KEY, AIPROXY_URL]):
     raise ValueError("Missing required Azure credentials in .env file.")
 
 def make_api_request(api_url, method, headers, payload=None):

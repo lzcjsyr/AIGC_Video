@@ -74,7 +74,7 @@ Generate single-scene prompt with these guidelines:
 2. No extract words other than the prompt. 
 """
 
-story = """
+content = """
 THE HERD BOY AND THE WEAVING MAIDEN
 THE Herd Boy was the child of poor people. When he was twelve years old, he took service with a farmer to herd his cow. After a few years the cow had grown large and fat, and her hair shone like yellow gold. She must have been a cow of the gods.
 One day while he had her out at pasture in the mountains, she suddenly began to speak to the Herd Boy in a human voice, as follows: “This is the Seventh Day. Now the White Jade Ruler has nine daughters, who bathe this day in the Sea of Heaven. The seventh daughter is beautiful and wise beyond all measure. She spins the cloud-silk for the King and Queen of Heaven, and presides over the weaving which maidens do on earth. It is for this reason she is called the Weaving Maiden. And if you go and take away her clothes while she bathes, you may become her husband and gain immortality.”

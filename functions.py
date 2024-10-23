@@ -4,37 +4,37 @@ from PIL import Image
 from io import BytesIO
 from docx import Document
 from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip, concatenate_videoclips, VideoFileClip
-from story_prompt_en import parser_system_prompt, generate_image_system_prompt, story
+from story_prompt_en import parser_system_prompt, generate_image_system_prompt, content
 from gen_ai_api import text_to_text, text_to_image, text_to_audio
 
-################ Story Parser ################
-def story_parser(server: str, model: str, story: str, num_plots: int) -> Optional[Dict[str, Any]]:
+################ Content Parser ################
+def content_parser(server: str, model: str, content: str, num_plots: int) -> Optional[Dict[str, Any]]:
     try:
-        user_message = f"Parse this story into {num_plots} plots, ensuring each plot is between 350 to 450 words:\n\n{story}"
-        content = text_to_text(server=server, model=model, prompt=user_message, system_message=parser_system_prompt, max_tokens=4096, temperature=0.7)
-        if content is None:
+        user_message = f"Parse this content into {num_plots} plots, ensuring each plot is between 350 to 450 words:\n\n{content}"
+        output = text_to_text(server=server, model=model, prompt=user_message, system_message=parser_system_prompt, max_tokens=4096, temperature=0.7)
+        if output is None:
             raise ValueError("Failed to get response from API.")
         
-        json_start = content.find('{')
-        json_end = content.rfind('}') + 1
+        json_start = output.find('{')
+        json_end = output.rfind('}') + 1
         if json_start == -1 or json_end == 0:
             raise ValueError("No JSON object found in the response.")
         
-        output = json.loads(content[json_start:json_end])
+        parsed_content = json.loads(output[json_start:json_end])
         
         required_keys = ["title", "story_elements", "key_characters", "Segmentation"]
-        if not all(key in output for key in required_keys):
-            missing_keys = [key for key in required_keys if key not in output]
+        if not all(key in parsed_content for key in required_keys):
+            missing_keys = [key for key in required_keys if key not in parsed_content]
             raise ValueError(f"Generated JSON is missing required keys: {', '.join(missing_keys)}")
         
-        return output
+        return parsed_content
     
     except json.JSONDecodeError:
         # Avoid printing 'output' as it may not be defined correctly.
         print("Error: Failed to parse JSON output.")
         return None
     except Exception as e:
-        print(f"Error processing story: {e}")
+        print(f"Error processing content: {e}")
         return None
 
 def parsed_saver(parsed_json, saving_path=None):
@@ -47,8 +47,8 @@ def parsed_saver(parsed_json, saving_path=None):
     # Title
     doc.add_heading(parsed_json['title'], 0)
     
-    # Story Elements
-    doc.add_heading('Story Elements', level=1)
+    # Content Elements
+    doc.add_heading('Content Elements', level=1)
     for element in parsed_json['story_elements']:
         doc.add_paragraph(element, style='List Bullet')
     
@@ -87,7 +87,7 @@ def generate_image_prompt(server, model, prompt, regenerate=False):
     response = text_to_text(server = server, model = model, prompt = prompt, system_message = system_message, max_tokens=4096, temperature=0.7)
     return response
 
-def generate_images(image_server, image_model, llm_server, llm_model, parsed_story, plot_index, size, num_images=1, saving_path=None):
+def generate_images(image_server, image_model, llm_server, llm_model, parsed_content, plot_index, size, num_images=1, saving_path=None):
     
     if saving_path is None:
         saving_path = os.path.join(os.path.expanduser('~'), 'Desktop')
@@ -95,8 +95,8 @@ def generate_images(image_server, image_model, llm_server, llm_model, parsed_sto
         raise ValueError("num_images must be greater than or equal to 1.")
     
     # Extract plot and characters
-    plot = parsed_story["Segmentation"][plot_index - 1]
-    characters = [char for char in parsed_story["key_characters"] if char["name"] in plot["characters_name"]]
+    plot = parsed_content["Segmentation"][plot_index - 1]
+    characters = [char for char in parsed_content["key_characters"] if char["name"] in plot["characters_name"]]
     
     # Generate image prompt
     input_for_prompt = f"Plot: {plot['plot']}\nCharacters: {characters}"
@@ -131,14 +131,14 @@ def generate_images(image_server, image_model, llm_server, llm_model, parsed_sto
     print(f"Saved {len(image_paths)} images for Plot {plot_index}.")
     return image_paths, image_prompt
 
-def generate_and_save_images(image_server, image_model, llm_server, llm_model, parsed_story, num_plots, num_images, size, saving_path):
+def generate_and_save_images(image_server, image_model, llm_server, llm_model, parsed_content, num_plots, num_images, size, saving_path):
     image_paths = []
     image_prompts = []
     
     if num_images > 0:
         for i in range(num_plots):
             plot_images, prompt = generate_images(image_server, image_model, llm_server, llm_model, 
-                                                  parsed_story, plot_index=i+1, size=size, num_images=num_images, saving_path=saving_path)
+                                                  parsed_content, plot_index=i+1, size=size, num_images=num_images, saving_path=saving_path)
             image_paths.extend(plot_images)
             image_prompts.append(prompt)
         
@@ -221,13 +221,13 @@ def create_video(audio_path, image_path, output_path):
         print(f"Error in video creation: {str(e)}")
         return None
     
-def create_story_media(parsed_story, audio_paths, image_paths, video_paths, generate_video=False, server="openai", voice="alloy"):
+def create_media(parsed_content, audio_paths, image_paths, video_paths, generate_video=False, server="openai", voice="alloy"):
 
     audio_files = []
     plot_videos = []
     
     # Process each plot segment
-    for i, plot in enumerate(parsed_story['Segmentation']):
+    for i, plot in enumerate(parsed_content['Segmentation']):
         # Generate audio for current plot
         audio_file = text_to_audio(
             server=server,
@@ -266,14 +266,14 @@ def create_story_media(parsed_story, audio_paths, image_paths, video_paths, gene
     
     # If video generation was requested but no videos were created, return None
     if not plot_videos:
-        print("Failed to create full story video due to missing plot videos")
+        print("Failed to create full video due to missing plot videos")
         return None
         
     # Concatenate all plot videos into final video
-    final_video_path = os.path.join(video_paths, "full_story_video.mp4")
+    final_video_path = os.path.join(video_paths, "full_video.mp4")
     clips = [VideoFileClip(video) for video in plot_videos]
     final_video = concatenate_videoclips(clips)
     final_video.write_videofile(final_video_path)
-    print(f"Full story video created: {final_video_path}")
+    print(f"Full video created: {final_video_path}")
     
     return final_video_path
