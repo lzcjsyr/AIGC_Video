@@ -5,76 +5,88 @@ from io import BytesIO
 from docx import Document
 from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip, concatenate_videoclips, VideoFileClip
 from story_prompt_en import parser_system_prompt, generate_image_system_prompt, content
-from gen_ai_api import text_to_text, text_to_image, text_to_audio
+from genai_api import text_to_text, text_to_image, text_to_audio
 
 ################ Content Parser ################
 def content_parser(server: str, model: str, content: str, num_plots: int) -> Optional[Dict[str, Any]]:
     try:
-        user_message = f"Parse this content into {num_plots} plots, ensuring each plot is between 350 to 450 words:\n\n{content}"
+        user_message = f"Parse this content into {num_plots} plots. The content is as following:\n\n{content}"
         output = text_to_text(server=server, model=model, prompt=user_message, system_message=parser_system_prompt, max_tokens=4096, temperature=0.7)
         if output is None:
-            raise ValueError("Failed to get response from API.")
+            raise ValueError("未能从 API 获取响应。")
         
         json_start = output.find('{')
         json_end = output.rfind('}') + 1
         if json_start == -1 or json_end == 0:
-            raise ValueError("No JSON object found in the response.")
+            raise ValueError("未在'output'中找到 JSON 对象。")
         
         parsed_content = json.loads(output[json_start:json_end])
         
-        required_keys = ["title", "story_elements", "key_characters", "Segmentation"]
+        required_keys = ["title", "themes", "segmentations"]
         if not all(key in parsed_content for key in required_keys):
             missing_keys = [key for key in required_keys if key not in parsed_content]
-            raise ValueError(f"Generated JSON is missing required keys: {', '.join(missing_keys)}")
+            raise ValueError(f"生成的 JSON 缺少必需的 Key: {', '.join(missing_keys)}")
         
         return parsed_content
     
     except json.JSONDecodeError:
         # Avoid printing 'output' as it may not be defined correctly.
-        print("Error: Failed to parse JSON output.")
+        print("错误：解析 JSON 输出失败。")
         return None
     except Exception as e:
-        print(f"Error processing content: {e}")
+        print(f"内容处理错误: {e}")
         return None
 
-def parsed_saver(parsed_json, saving_path=None):
+def parsed_saver(parsed_json: Dict[str, Any], saving_path: str = None) -> None:
+
     doc = Document()
     
     # Set default path to desktop if no path is provided
     if saving_path is None:
         saving_path = os.path.join(os.path.expanduser("~"), "Desktop")
     
-    # Title
-    doc.add_heading(parsed_json['title'], 0)
-    
-    # Content Elements
-    doc.add_heading('Content Elements', level=1)
-    for element in parsed_json['story_elements']:
-        doc.add_paragraph(element, style='List Bullet')
-    
-    # Key Characters
-    doc.add_heading('Key Characters', level=1)
-    for character in parsed_json['key_characters']:
-        doc.add_paragraph(character['name'], style='Heading 3')
-        for key, value in character.items():
-            if key != 'name':
-                if isinstance(value, list):
-                    doc.add_paragraph(f"{key.capitalize()}: {', '.join(value)}")
+    def process_value(value: Any, level: int = 1) -> None:
+        """
+        Recursively processes JSON values and adds them to the document.
+        
+        Args:
+            value: The value to process (can be dict, list, or primitive type)
+            level: Current heading level (for nested structures)
+        """
+        if isinstance(value, dict):
+            for key, val in value.items():
+                # Add key as heading if it's a nested structure
+                if isinstance(val, (dict, list)):
+                    doc.add_heading(str(key).capitalize(), level=min(level, 9))
+                    process_value(val, level + 1)
                 else:
-                    doc.add_paragraph(f"{key.capitalize()}: {value}")
+                    # Add key-value pair as paragraph
+                    doc.add_paragraph(f"{str(key).capitalize()}: {str(val)}")
+        
+        elif isinstance(value, list):
+            for item in value:
+                if isinstance(item, (dict, list)):
+                    process_value(item, level + 1)
+                else:
+                    doc.add_paragraph(str(item), style='List Bullet')
+        
+        else:
+            doc.add_paragraph(str(value))
+
+    # Get title from JSON or use default
+    title = parsed_json.get('title', 'Untitled Document')
+    doc.add_heading(title, 0)
     
-    # Segmentation
-    doc.add_heading('Plot Segments', level=1)
-    for i, segment in enumerate(parsed_json['Segmentation'], 1):
-        doc.add_heading(f"Segment {i}", level=2)
-        doc.add_paragraph(segment['plot'])
-        doc.add_paragraph(f"Themes: {', '.join(segment['plot_theme'])}")
-        doc.add_paragraph(f"Characters: {', '.join(segment['characters_name'])}")
+    # Process all top-level keys
+    for key, value in parsed_json.items():
+        if key != 'title':  # Skip title as it's already added
+            doc.add_heading(str(key).capitalize(), level=1)
+            process_value(value)
     
     # Save the document
-    doc_path = os.path.join(saving_path, f"{parsed_json['title']}.docx")
+    doc_path = os.path.join(saving_path, f"{title}.docx")
     doc.save(doc_path)
-    print(f"Saved document to {doc_path}")
+    print(f"文件保存到：{doc_path}")
 
 ################ Image Generation ################
 def generate_image_prompt(server, model, prompt, regenerate=False):
@@ -92,14 +104,14 @@ def generate_images(image_server, image_model, llm_server, llm_model, parsed_con
     if saving_path is None:
         saving_path = os.path.join(os.path.expanduser('~'), 'Desktop')
     if num_images < 1:
-        raise ValueError("num_images must be greater than or equal to 1.")
+        raise ValueError("'num_images' 必须大于等于 1.")
     
-    # Extract plot and characters
-    plot = parsed_content["Segmentation"][plot_index - 1]
+    # Extract input for image prompt
+    plot = parsed_content["segmentations"][plot_index - 1]
     characters = [char for char in parsed_content["key_characters"] if char["name"] in plot["characters_name"]]
-    
-    # Generate image prompt
     input_for_prompt = f"Plot: {plot['plot']}\nCharacters: {characters}"
+
+
     image_prompt = generate_image_prompt(server=llm_server, model=llm_model, prompt=input_for_prompt, regenerate=False)
 
     images = []
@@ -110,14 +122,14 @@ def generate_images(image_server, image_model, llm_server, llm_model, parsed_con
                 image_url = text_to_image(server=image_server, model=image_model, prompt=image_prompt, size=size)
                 image = Image.open(BytesIO(requests.get(image_url).content))
                 images.append(image)
-                print(f"Generated image {i+1} for Plot {plot_index} using {image_model}.")
+                print(f"用模型 {image_model} 为第 {plot_index} 幕生成第 {i+1} 张图片 .")
                 break
             except Exception as e:
                 if 'content_policy_violation' in str(e) and attempt < 4:
-                    print(f"Content policy violation. Regenerating prompt (Attempt {attempt+1})")
+                    print(f"违反监管政策。 重新生成提示词 (Attempt {attempt+1})")
                     image_prompt = generate_image_prompt(server=llm_server, model=llm_model, prompt=input_for_prompt, regenerate=True)
                 else:
-                    print(f"Failed to generate image: {e}")
+                    print(f"生成图片失败: {e}")
                     break
 
     # Save generated images
@@ -128,7 +140,7 @@ def generate_images(image_server, image_model, llm_server, llm_model, parsed_con
         image.save(image_path)
         image_paths.append(image_path)
     
-    print(f"Saved {len(image_paths)} images for Plot {plot_index}.")
+    print(f"为第 {plot_index} 幕保存第 {len(image_paths)} 张图片.")
     return image_paths, image_prompt
 
 def generate_and_save_images(image_server, image_model, llm_server, llm_model, parsed_content, num_plots, num_images, size, saving_path):
@@ -150,9 +162,9 @@ def generate_and_save_images(image_server, image_model, llm_server, llm_model, p
             doc.add_paragraph(prompt)
         prompt_file = os.path.join(saving_path, 'image_prompts.docx')
         doc.save(prompt_file)
-        print(f"Image prompts saved to: {prompt_file}")
+        print(f"把提示词保存到: {prompt_file}")
     else:
-        print("Skipping image generation.")
+        print("跳过图片生成环节。")
         prompt_file = None
     
     return image_paths, prompt_file
@@ -164,7 +176,7 @@ def prepare_images_for_video(images_folder, num_plots, num_images):
     if not os.path.exists(images_folder):
         raise FileNotFoundError(f"Image folder does not exist: {images_folder}")
     if num_plots <= 0 or num_images <= 0:
-        raise ValueError("num_plots and num_images must be positive")
+        raise ValueError("num_plots 和 num_images 必须大于 0。")
 
     selected_images = []
     for plot in range(1, num_plots + 1):
@@ -179,7 +191,7 @@ def prepare_images_for_video(images_folder, num_plots, num_images):
         if num_images == 1:
             # If only one image per plot, select it automatically
             if not plot_images:
-                print(f"Error: No image found for plot {plot}.")
+                print(f"错误: 第 {plot} 幕没有对应的图片。")
                 return None
             selected_images.append(os.path.join(images_folder, plot_images[0]))
         else:
@@ -195,9 +207,9 @@ def prepare_images_for_video(images_folder, num_plots, num_images):
                         selected_images.append(os.path.join(images_folder, plot_images[choice - 1]))
                         break
                     else:
-                        print("Invalid selection. Please try again.")
+                        print("选择无效，请重新输入。")
                 except ValueError:
-                    print("Invalid input. Please enter a number.")
+                    print("选择无效，请重新输入。")
     
     if len(selected_images) != num_plots:
         print(f"Error: Expected {num_plots} selected images, but got {len(selected_images)}.")
@@ -218,7 +230,7 @@ def create_video(audio_path, image_path, output_path):
         return output_path
     
     except Exception as e:
-        print(f"Error in video creation: {str(e)}")
+        print(f"生成视频错误: {str(e)}")
         return None
     
 def create_media(parsed_content, audio_paths, image_paths, video_paths, generate_video=False, server="openai", voice="alloy"):
@@ -227,7 +239,7 @@ def create_media(parsed_content, audio_paths, image_paths, video_paths, generate
     plot_videos = []
     
     # Process each plot segment
-    for i, plot in enumerate(parsed_content['Segmentation']):
+    for i, plot in enumerate(parsed_content['segmentations']):
         # Generate audio for current plot
         audio_file = text_to_audio(
             server=server,
@@ -235,9 +247,10 @@ def create_media(parsed_content, audio_paths, image_paths, video_paths, generate
             output_filename=os.path.join(audio_paths, f"plot_{i+1}.wav"),
             voice=voice
         )
+        print(f"已生成第 {i+1} 幕的音频。")
         
         if not audio_file:
-            print(f"Audio generation failed for plot {i+1}")
+            print(f"第 {i+1} 幕的音频生成错误。")
             continue
             
         audio_files.append(audio_file)
@@ -250,23 +263,23 @@ def create_media(parsed_content, audio_paths, image_paths, video_paths, generate
             
             if plot_video_path:
                 plot_videos.append(plot_video_path)
-                print(f"Video created for plot {i+1}: {plot_video_path}")
+                print(f"第 {i+1} 幕的视频已生成: {plot_video_path}")
             else:
-                print(f"Video creation failed for plot {i+1}")
+                print(f"第 {i+1} 幕的视频生成错误。")
     
     # If no audio files were generated, return None
     if not audio_files:
-        print("Failed to generate any audio files")
+        print("无法生成音频文件，无法继续。")
         return None
         
     # If video generation was not requested, return the list of audio files
     if not generate_video:
-        print(f"Generated {len(audio_files)} audio files")
+        print(f"生成 {len(audio_files)} 个音频文件。")
         return audio_files
     
     # If video generation was requested but no videos were created, return None
     if not plot_videos:
-        print("Failed to create full video due to missing plot videos")
+        print("由于某些原因，无法生成视频，无法继续。")
         return None
         
     # Concatenate all plot videos into final video
@@ -274,6 +287,6 @@ def create_media(parsed_content, audio_paths, image_paths, video_paths, generate
     clips = [VideoFileClip(video) for video in plot_videos]
     final_video = concatenate_videoclips(clips)
     final_video.write_videofile(final_video_path)
-    print(f"Full video created: {final_video_path}")
+    print(f"完成的视频已生成: {final_video_path}")
     
     return final_video_path

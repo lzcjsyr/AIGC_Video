@@ -35,6 +35,7 @@ As a story parser, convert lengthy narratives into a structured JSON format foll
 Output must be in JSON format with the following structure (only output the JSON object, the first and last characters must be "{", "}"):
 {
   "title": "Story Title",
+  "themes": ["theme1", "theme2", "theme3"],
   "story_elements": ["Places", "Times", "Mood"]
   "key_characters": [
     {
@@ -47,7 +48,7 @@ Output must be in JSON format with the following structure (only output the JSON
     },
     "..."
   ],
-  "Segmentation": [
+  "segmentations": [
     {
       "plot": "Engaging and conversational; smooth, attractive transitions; between 350 to 450 words",
       "plot_theme": ["Theme 1", "Theme 2", "Theme 3"]

@@ -14,17 +14,17 @@ def main(content, num_plots=5,
     try:
         # Input validation
         if not isinstance(content, str) or len(content) < 1000:
-            raise ValueError("Content must be a string with at least 1000 characters")
+            raise ValueError("content必须是至少 1000 个字符的字符串")
         if not 1 < num_plots <= 20:
-            raise ValueError("num_plots must be between 2 and 20")
-        if not 0 <= num_images <= 5:
-            raise ValueError("num_images must be between 0 and 5")
-        if llm_server not in ["openai", "siliconflow"]:
-            raise ValueError("llm_server must be either 'openai' or 'siliconflow'")
+            raise ValueError("num_plots必须在 2 到 20 之间")
+        if not 0 <= num_images <= 10:
+            raise ValueError("num_images必须在 0 到 10 之间")
+        if llm_server not in ["openai", "siliconflow"]:  
+            raise ValueError("llm_server必须是'openai'或'siliconflow'")
         if image_server not in ["openai", "siliconflow"]:
-            raise ValueError("image_server must be either 'openai' or 'siliconflow'")
+            raise ValueError("image_server必须是'openai'或'siliconflow'")
         if tts_server not in ["openai", "azure"]:
-            raise ValueError("image_server must be either 'openai' or 'azure'")
+            raise ValueError("image_server必须是'openai'或'azure'")
 
         # Create folders
         base_dir = output_dir or os.path.expanduser("~/Desktop")
@@ -39,7 +39,7 @@ def main(content, num_plots=5,
         # Process content
         parsed_content = content_parser(llm_server, llm_model, content, num_plots)
         if not parsed_content:
-            raise ValueError("Failed to parse content")
+            raise ValueError("无法解析内容。")
         parsed_saver(parsed_content, visualization_folder)
         
         # Generate images and prompts
@@ -53,7 +53,7 @@ def main(content, num_plots=5,
         if generate_video == True:
             selected_images = prepare_images_for_video(images_folder, num_plots, num_images)
             if not selected_images:
-                raise ValueError("Failed to prepare images for video")
+                raise ValueError("无法获取视频所需的图片。")
         
         # Generate audio and create video for each plot
         media_path = create_media(parsed_content, audio_paths = audio_folder, image_paths = selected_images, video_paths = video_folder, 
@@ -67,9 +67,9 @@ def main(content, num_plots=5,
         }
     
     except ValueError as ve:
-        print(f"Input error: {str(ve)}")
+        print(f"输入错误: {str(ve)}")
     except Exception as e:
-        print(f"An error occurred: {str(e)}")
+        print(f"发生错误: {str(e)}")
     return None
 
 # Run the main function
@@ -89,7 +89,7 @@ if __name__ == "__main__":
     
     if result:
         if result["final_video"]:
-            print("好耶!人工智能生成内容(AIGC)任务已成功完成,包括完整的视频内容创建!")
+            print("好耶!AIGC任务已成功完成,包括完整的内容创建!")
         elif result["images"]:
             print("AIGC任务已完成图片生成,但视频生成失败。")
         else:

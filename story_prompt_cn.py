@@ -35,7 +35,8 @@ parser_system_prompt = """
 输出必须采用以下JSON格式（仅输出JSON对象，第一个和最后一个字符必须是"{", "}"）：
 {
   "title": "故事标题",
-  "elements": ["地点", "时间", "氛围"],
+  "themes": ["主题1", "主题2", "主题3"],
+  "story_elements": ["地点", "时间", "氛围"],
   "key_characters": [
     {
       "name": "角色名称",
@@ -47,7 +48,7 @@ parser_system_prompt = """
     },
     "..."
   ],
-  "Segmentation": [
+  "segmentations": [
     {
       "plot": "引人入胜且对话性强；过渡流畅自然；350到450字之间",
       "plot_theme": ["主题1", "主题2", "主题3"],
