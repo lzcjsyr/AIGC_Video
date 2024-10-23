@@ -72,14 +72,20 @@ def main(story, num_plots=5,
         print(f"An error occurred: {str(e)}")
     return None
 
+# Run the main function
 if __name__ == "__main__":
     
     result = main(story, num_plots=5, 
-                  num_images=1,image_size="1024x576", 
-                  llm_server="openai",llm_model="gpt-4o", 
-                  image_server="siliconflow",image_model="black-forest-labs/FLUX.1-schnell", 
-                  tts_server = "openai",voice="echo", 
-                  generate_video = False, output_dir=None)
+                  num_images=1,
+                  image_size="1024x576", 
+                  llm_server="openai",
+                  llm_model="gpt-4o",
+                  image_server="siliconflow",
+                  image_model="black-forest-labs/FLUX.1-schnell", 
+                  tts_server="openai",
+                  voice="echo", 
+                  generate_video=False,
+                  output_dir=None)
     
     if result:
         if result["final_video"]:

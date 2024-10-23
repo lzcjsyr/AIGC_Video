@@ -159,13 +159,14 @@ def generate_and_save_images(image_server, image_model, llm_server, llm_model, p
 
 ################ Audio and Video ################
 def prepare_images_for_video(images_folder, num_plots, num_images):
-    # Check if the image folder exists
+    
+    # Check input
     if not os.path.exists(images_folder):
-        print("Error: Image folder does not exist.")
-        return None
+        raise FileNotFoundError(f"Image folder does not exist: {images_folder}")
+    if num_plots <= 0 or num_images <= 0:
+        raise ValueError("num_plots and num_images must be positive")
 
     selected_images = []
-    
     for plot in range(1, num_plots + 1):
         # Get all images for the current plot
         plot_images = [img for img in os.listdir(images_folder) if f"plot_{plot}_" in img]
