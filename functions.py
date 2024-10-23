@@ -4,14 +4,14 @@ from PIL import Image
 from io import BytesIO
 from docx import Document
 from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip, concatenate_videoclips, VideoFileClip
-from input_text_en import story_parser_system_prompt, generate_image_system_prompt, story
+from story_prompt_en import parser_system_prompt, generate_image_system_prompt, story
 from gen_ai_api import text_to_text, text_to_image, text_to_audio
 
 ################ Story Parser ################
 def story_parser(server: str, model: str, story: str, num_plots: int) -> Optional[Dict[str, Any]]:
     try:
         user_message = f"Parse this story into {num_plots} plots, ensuring each plot is between 350 to 450 words:\n\n{story}"
-        content = text_to_text(server=server, model=model, prompt=user_message, system_message=story_parser_system_prompt, max_tokens=4096, temperature=0.7)
+        content = text_to_text(server=server, model=model, prompt=user_message, system_message=parser_system_prompt, max_tokens=4096, temperature=0.7)
         if content is None:
             raise ValueError("Failed to get response from API.")
         

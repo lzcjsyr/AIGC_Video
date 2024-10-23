@@ -1,5 +1,5 @@
 ################################################
-story_parser_system_prompt = """
+parser_system_prompt = """
 ### Task Introduction ###
 As a story parser, convert lengthy narratives into a structured JSON format following specific guidelines for content retention, analysis, and output formatting.
 
