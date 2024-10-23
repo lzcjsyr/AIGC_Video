@@ -89,10 +89,10 @@ if __name__ == "__main__":
     
     if result:
         if result["final_video"]:
-            print("Hooray! The AIGC task was completed successfully with full content video creation!")
+            print("好耶!人工智能生成内容(AIGC)任务已成功完成,包括完整的视频内容创建!")
         elif result["images"]:
-            print("The AIGC task was completed with images, but video generation failed.")
+            print("AIGC任务已完成图片生成,但视频生成失败。")
         else:
-            print("The AIGC task was completed, but no media was generated.")
+            print("AIGC任务已完成,但未生成任何媒体内容。")
     else:
-        print("The task could not be completed due to an error.")
+        print("由于出现错误,无法完成任务。")
