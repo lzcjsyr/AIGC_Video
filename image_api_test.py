@@ -1,8 +1,7 @@
 from genai_api import text_to_image
-import os
 from datetime import datetime
-import requests
 from pathlib import Path
+import os, requests
 
 def generate_and_save_images(prompt, num_images=1, size="1024x1024", server="siliconflow", model="black-forest-labs/FLUX.1-schnell"):
     """
