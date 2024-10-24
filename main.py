@@ -69,8 +69,7 @@ def main(content, num_plots=5,
                 image_paths=None,
                 video_paths=None,
                 generate_video=False,
-                server=tts_server,
-                voice=voice
+                server=tts_server, voice=voice
             )
             result["audio_paths"] = audio_paths
         else:

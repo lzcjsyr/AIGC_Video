@@ -14,7 +14,7 @@ parser_system_prompt = """
         {
             "plot": "段落大意",
             "items": "如人物、地点、物品、动物等",
-            "concepts": ["抽象概念1", "抽象概念1", "抽象概念1"]
+            "concepts": "多个抽象概念"
         }
         ...
     ]

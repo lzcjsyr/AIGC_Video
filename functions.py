@@ -1,9 +1,10 @@
-import requests, json, os, re
-from typing import Optional, Dict, Any
-from PIL import Image
-from io import BytesIO
-from docx import Document
 from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip, concatenate_videoclips, VideoFileClip
+from typing import Optional, Dict, Any
+from docx.shared import Pt
+from docx import Document
+from io import BytesIO
+from PIL import Image
+import requests, json, os, re
 from knowledge_prompt_cn import parser_system_prompt, generate_image_system_prompt, content
 from genai_api import text_to_text, text_to_image, text_to_audio
 
@@ -47,21 +48,29 @@ def parsed_saver(parsed_json: Dict[str, Any], saving_path: str = None) -> None:
     
     def process_value(value: Any, level: int = 1) -> None:
         """
-        Recursively processes JSON values and adds them to the document.
+        Recursively process JSON values with highlighted keys and sized text.
         
         Args:
-            value: The value to process (can be dict, list, or primitive type)
-            level: Current heading level (for nested structures)
+            value: JSON value (dict, list, or primitive)
+            level: Nesting level for sizing (outer = larger)
         """
+        base_size = 12  # Base font size in points
+        
         if isinstance(value, dict):
             for key, val in value.items():
-                # Add key as heading if it's a nested structure
                 if isinstance(val, (dict, list)):
-                    doc.add_heading(str(key).capitalize(), level=min(level, 9))
+                    # Add sized and highlighted heading
+                    heading = doc.add_heading('', level=min(level, 9))
+                    run = heading.add_run(str(key).capitalize())
+                    font = run.font
+                    font.size = Pt(base_size + (10 - level))  # Decrease size with depth
                     process_value(val, level + 1)
                 else:
-                    # Add key-value pair as paragraph
-                    doc.add_paragraph(f"{str(key).capitalize()}: {str(val)}")
+                    # Add key-value pair with highlighted key
+                    para = doc.add_paragraph('')
+                    key_run = para.add_run(f"{str(key).capitalize()}: ")
+                    key_run.font.size = Pt(base_size + (10 - level))
+                    para.add_run(str(val))
         
         elif isinstance(value, list):
             for item in value:
@@ -73,14 +82,16 @@ def parsed_saver(parsed_json: Dict[str, Any], saving_path: str = None) -> None:
         else:
             doc.add_paragraph(str(value))
 
-    # Get title from JSON or use default
+    # Get and add title
     title = parsed_json.get('title', 'Untitled Document')
     doc.add_heading(title, 0)
     
-    # Process all top-level keys
+    # Process all top-level keys except title
     for key, value in parsed_json.items():
-        if key != 'title':  # Skip title as it's already added
-            doc.add_heading(str(key).capitalize(), level=1)
+        if key != 'title':
+            heading = doc.add_heading('', level=1)
+            run = heading.add_run(str(key).capitalize())
+            run.font.size = Pt(20)  # Largest size for top-level keys
             process_value(value)
     
     # Save the document
