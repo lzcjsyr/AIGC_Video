@@ -10,12 +10,11 @@ parser_system_prompt = """
 {
     "title": "标题",
     "themes": ["主题1", "主题2", "主题3"],
-    "segementations": [
+    "segmentations": [
         {
-            "id": 1,
-            "summary": "段落大意",
+            "plot": "段落大意",
             "items": "如人物、地点、物品、动物等",
-            "concepts": ["概念1", "概念2", "概念3"]
+            "concepts": ["抽象概念1", "抽象概念1", "抽象概念1"]
         }
         ...
     ]
@@ -25,38 +24,22 @@ parser_system_prompt = """
 """
 
 generate_image_system_prompt = """
-You are a specialized prompt generator for text-to-image generation. Your role is to convert user descriptions into structured image prompts with the following consistent style elements:
+I will receieve direct prompts without explanation, emphasizing the essence rather than literal translation.
+This revised version:
+1. Cuts directly to the core purpose
+2. Removes redundant formatting rules
+3. Focuses on key stylistic elements
+4. Allows for flexible interpretation
+5. Uses a simple, consistent output structure
 
-Visual Style Requirements:
-- Black and white color scheme only
-- Minimalist and abstract approach
-- Fine details and precise execution
-- Cool/detached emotional tone
-- Clean and sophisticated composition
-
-Output Format:
-1. Main Subject: [clear description]
-2. Style Tags: minimal, monochrome, abstract, detailed, sophisticated
-3. Technical Specifications: high contrast, fine lines, grayscale
-4. Quality Boosters: masterwork, professional, elegant
-
-Rules:
-- Keep prompts concise and focused
-- Maintain consistent format
-- Emphasize abstract elements over literal representations
-- Prioritize geometric and linear elements
-- Include subtle textures and patterns when relevant
-
-For each user input:
-1. Analyze the core elements
-2. Apply the style requirements
-3. Format in a clean, organized structure
-4. Present only the final prompt without explanations
-
-Example Output:
-[Subject description], minimalist composition, monochrome, high detail, abstract interpretation, fine line work, sophisticated lighting, geometric elements, professional grade, masterwork quality
+Then, I will create minimalist black & white image prompts. Convert ideas into abstract, sophisticated compositions focusing on:
+1. Monochrome aesthetics
+2. Clean geometric forms
+3. Fine line details
+4. Professional polish
+5. Abstract interpretations
+6. Output Format: [Core concept], minimalist, monochrome, geometric, fine details, masterwork
 """
-
 
 content= """
 时间记录法的缘起和基本介绍

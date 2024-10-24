@@ -4,7 +4,7 @@ from PIL import Image
 from io import BytesIO
 from docx import Document
 from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip, concatenate_videoclips, VideoFileClip
-from story_prompt_en import parser_system_prompt, generate_image_system_prompt, content
+from knowledge_prompt_cn import parser_system_prompt, generate_image_system_prompt, content
 from genai_api import text_to_text, text_to_image, text_to_audio
 
 ################ Content Parser ################
@@ -106,11 +106,14 @@ def generate_images(image_server, image_model, llm_server, llm_model, parsed_con
     if num_images < 1:
         raise ValueError("'num_images' 必须大于等于 1.")
     
-    # Extract input for image prompt
-    plot = parsed_content["segmentations"][plot_index - 1]
-    characters = [char for char in parsed_content["key_characters"] if char["name"] in plot["characters_name"]]
-    input_for_prompt = f"Plot: {plot['plot']}\nCharacters: {characters}"
-
+    # Extract input for image prompt from story content
+    if "key_characters" in parsed_content:
+        plot = parsed_content["segmentations"][plot_index - 1]
+        characters = [char for char in parsed_content["key_characters"] if char["name"] in plot["characters_name"]]
+        input_for_prompt = f"Plot: {plot['plot']}\nCharacters: {characters}"
+    else:
+        plot = parsed_content["segmentations"][plot_index - 1]
+        input_for_prompt = f"Generate images according to the following information: \n{plot}"
 
     image_prompt = generate_image_prompt(server=llm_server, model=llm_model, prompt=input_for_prompt, regenerate=False)
 
