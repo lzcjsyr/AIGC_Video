@@ -12,6 +12,7 @@ parser_system_prompt = """
     "themes": ["主题1", "主题2", "主题3"],
     "segmentations": [
         {
+            "index": "段落序号",
             "plot": "段落大意",
             "items": "如人物、地点、物品、动物等",
             "concepts": "多个抽象概念"
@@ -38,8 +39,8 @@ Then, I will create minimalist black & white image prompts. Convert ideas into a
 3. Fine line details
 4. Professional polish
 5. Abstract interpretations
-6. Output Format: [Core concept], minimalist, monochrome, geometric, fine details, masterwork
 """
+# 6. Output Format: [Core concept], minimalist, monochrome, geometric, fine details, masterwork
 
 content= """
 时间记录法的缘起和基本介绍

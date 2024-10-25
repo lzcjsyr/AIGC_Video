@@ -1,9 +1,11 @@
 from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip, concatenate_videoclips, VideoFileClip
 from typing import Optional, Dict, Any
+from docx.oxml.ns import qn
 from docx.shared import Pt
 from docx import Document
 from io import BytesIO
 from PIL import Image
+
 import requests, json, os, re
 from knowledge_prompt_cn import parser_system_prompt, generate_image_system_prompt, content
 from genai_api import text_to_text, text_to_image, text_to_audio
@@ -42,6 +44,14 @@ def parsed_saver(parsed_json: Dict[str, Any], saving_path: str = None) -> None:
 
     doc = Document()
     
+    # 设置默认字体为宋体
+    style = doc.styles['Normal']
+    style.font.name = '宋体'
+    style._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+    
+    # 设置1.5倍行距
+    style.paragraph_format.line_spacing = 1.5
+    
     # Set default path to desktop if no path is provided
     if saving_path is None:
         saving_path = os.path.join(os.path.expanduser("~"), "Desktop")
@@ -54,44 +64,66 @@ def parsed_saver(parsed_json: Dict[str, Any], saving_path: str = None) -> None:
             value: JSON value (dict, list, or primitive)
             level: Nesting level for sizing (outer = larger)
         """
-        base_size = 12  # Base font size in points
-        
         if isinstance(value, dict):
             for key, val in value.items():
                 if isinstance(val, (dict, list)):
-                    # Add sized and highlighted heading
+                    # Add heading with bold text
                     heading = doc.add_heading('', level=min(level, 9))
                     run = heading.add_run(str(key).capitalize())
                     font = run.font
-                    font.size = Pt(base_size + (10 - level))  # Decrease size with depth
+                    font.name = '宋体'
+                    run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+                    
+                    # 只有一级标题保持大字体，其他标题只需要加粗
+                    if level == 1:
+                        font.size = Pt(20)
+                    run.bold = True
+                    
                     process_value(val, level + 1)
                 else:
-                    # Add key-value pair with highlighted key
+                    # Add key-value pair with bold key
                     para = doc.add_paragraph('')
                     key_run = para.add_run(f"{str(key).capitalize()}: ")
-                    key_run.font.size = Pt(base_size + (10 - level))
-                    para.add_run(str(val))
+                    key_run.font.name = '宋体'
+                    key_run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+                    key_run.bold = True  # 加粗而不改变字体大小
+                    
+                    value_run = para.add_run(str(val))
+                    value_run.font.name = '宋体'
+                    value_run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
         
         elif isinstance(value, list):
             for item in value:
                 if isinstance(item, (dict, list)):
                     process_value(item, level + 1)
                 else:
-                    doc.add_paragraph(str(item), style='List Bullet')
+                    para = doc.add_paragraph('')
+                    run = para.add_run(str(item))
+                    run.font.name = '宋体'
+                    run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
         
         else:
-            doc.add_paragraph(str(value))
+            para = doc.add_paragraph('')
+            run = para.add_run(str(value))
+            run.font.name = '宋体'
+            run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
 
     # Get and add title
     title = parsed_json.get('title', 'Untitled Document')
-    doc.add_heading(title, 0)
+    title_heading = doc.add_heading(title, 0)
+    for run in title_heading.runs:
+        run.font.name = '宋体'
+        run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
     
     # Process all top-level keys except title
     for key, value in parsed_json.items():
         if key != 'title':
             heading = doc.add_heading('', level=1)
             run = heading.add_run(str(key).capitalize())
-            run.font.size = Pt(20)  # Largest size for top-level keys
+            run.font.name = '宋体'
+            run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+            run.font.size = Pt(20)  # 保持一级标题的大字体
+            run.bold = True
             process_value(value)
     
     # Save the document

@@ -13,8 +13,8 @@ def main(content, num_plots=5,
     
     try:
         # Input validation
-        if not isinstance(content, str) or len(content) < 1000:
-            raise ValueError("content必须是至少 1000 个字符的字符串")
+        if not isinstance(content, str) or len(content) < 200:
+            raise ValueError("content必须是至少 200 个字符的字符串")
         if not 1 < num_plots <= 20:
             raise ValueError("num_plots必须在 2 到 20 之间")
         if not 0 <= num_images <= 10:
@@ -111,10 +111,10 @@ if __name__ == "__main__":
                  num_images=1,
                  image_size="1024x576", 
                  llm_server="openai",
-                 llm_model="gpt-4",
+                 llm_model="gpt-4o",
                  image_server="siliconflow",
                  image_model="black-forest-labs/FLUX.1-schnell", 
-                 tts_server="openai",
+                 tts_server=None,
                  voice="alloy", 
                  generate_video=False)
     

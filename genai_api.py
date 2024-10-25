@@ -1,4 +1,5 @@
 import os, requests
+import anthropic
 from openai import OpenAI
 from dotenv import load_dotenv
 from requests.exceptions import RequestException
@@ -26,14 +27,14 @@ def make_api_request(api_url, method, headers, payload=None):
         print(f"API request failed: {e}")
         return {}
 
-def text_to_text(server, model, prompt, system_message="", max_tokens=4000, temperature=0.7, output_format="text"):
+def text_to_text(server, model, prompt, system_message="", max_tokens=4000, temperature=0.5, output_format="text"):
     
     messages = [
         {"role": "system", "content": system_message},
         {"role": "user", "content": prompt}
     ]
     
-    # Create OpenAI client
+    # OpenAI Server
     if server == "openai":
         client = OpenAI(api_key=AIPROXY_API_KEY, base_url=AIPROXY_URL)
         response = client.chat.completions.create(
@@ -42,8 +43,11 @@ def text_to_text(server, model, prompt, system_message="", max_tokens=4000, temp
             temperature=temperature,
             max_tokens=max_tokens
         )
-    
-    # Create SiliconFlow client
+        
+        if output_format == "text":
+            return response.choices[0].message.content
+        
+    # SiliconFlow Server
     elif server == "siliconflow":
         headers = {"Authorization": f"Bearer {SILICONFLOW_KEY}", "Content-Type": "application/json"}
         payload = {
@@ -55,12 +59,13 @@ def text_to_text(server, model, prompt, system_message="", max_tokens=4000, temp
             "response_format": {"type": "json_object"}
         }
         response = requests.post("https://api.siliconflow.cn/v1/chat/completions", headers=headers, json=payload).json()
-    else:
-        raise ValueError("Invalid server. Use 'openai' or 'siliconflow'.")
+        
+        if output_format == "text":
+            response.get("choices", [{}])[0].get('message', {}).get('content')
     
-    # Return the response content
-    if output_format == "text":
-        return response.choices[0].message.content if server == "openai" else response.get("choices", [{}])[0].get('message', {}).get('content')
+    else:
+        raise ValueError("Invalid server. Use 'openai', 'claude' or 'siliconflow'.")
+    
     return response
 
 def text_to_image(prompt, size, server="siliconflow", model="black-forest-labs/FLUX.1-schnell"):
