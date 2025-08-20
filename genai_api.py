@@ -5,11 +5,26 @@
 
 import os
 import random
+import asyncio
+import json
+import uuid
+import websockets
+import io
+import struct
+from dataclasses import dataclass
+from enum import IntEnum
 from openai import OpenAI
 
 from config import config
 from utils import logger, APIError, retry_on_failure
 
+
+# ================================================================================
+# 🤖 LLM 文本生成 API
+# ================================================================================
+# 支持多个服务商：OpenRouter、SiliconFlow、aihubmix代理
+# 统一使用OpenAI兼容接口调用
+# ================================================================================
 
 @retry_on_failure(max_retries=2, delay=2.0)
 def text_to_text(server, model, prompt, system_message="", max_tokens=4000, temperature=0.5, output_format="text"):
@@ -70,10 +85,9 @@ def text_to_text(server, model, prompt, system_message="", max_tokens=4000, temp
             "seed": random.randint(1, 1000000000)
         }
         
-        # 如果是aihubmix代理，添加developer角色消息
+        # 如果是aihubmix代理
         if server == "openai" and "aihubmix" in base_url.lower():
             messages = [
-                {"role": "developer", "content": "Always reply in Chinese"},
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": prompt}
             ]
@@ -89,12 +103,12 @@ def text_to_text(server, model, prompt, system_message="", max_tokens=4000, temp
         logger.error(f"文本生成失败: {str(e)}")
         raise APIError(f"文本生成失败: {str(e)}")
 
-# 注意：旧版本的图像生成和TTS函数已移除
-# 现在支持的服务：
-# - 图像生成：使用 text_to_image_doubao() 函数
-# - 语音合成：使用 text_to_audio_doubao() 或 text_to_audio_bytedance() 函数
-
-################ Doubao (ByteDance) API Functions ################
+# ================================================================================
+# 🎨 图像生成 API - 豆包 Seedream 3.0
+# ================================================================================
+# 使用火山引擎方舟服务，支持高质量图像生成
+# 模型：doubao-seedream-3-0-t2i-250415
+# ================================================================================
 @retry_on_failure(max_retries=2, delay=2.0)
 def text_to_image_doubao(prompt, size="1024x1024", model="doubao-seedream-3-0-t2i-250415"):
     """
@@ -108,8 +122,8 @@ def text_to_image_doubao(prompt, size="1024x1024", model="doubao-seedream-3-0-t2
     Returns:
         str: 图像URL，失败时返回None
     """
-    if not config.ARK_API_KEY:
-        raise APIError("ARK_API_KEY未配置，无法使用豆包图像生成服务")
+    if not config.SEEDREAM_API_KEY:
+        raise APIError("SEEDREAM_API_KEY未配置，无法使用豆包图像生成服务")
     
     logger.info(f"使用豆包Seedream 3.0生成图像，尺寸: {size}，提示词长度: {len(prompt)}字符")
     
@@ -120,7 +134,7 @@ def text_to_image_doubao(prompt, size="1024x1024", model="doubao-seedream-3-0-t2
         # 初始化客户端
         client = Ark(
             base_url=config.ARK_BASE_URL,
-            api_key=config.ARK_API_KEY,
+            api_key=config.SEEDREAM_API_KEY,
         )
         
         # 调用图像生成API
@@ -146,144 +160,234 @@ def text_to_image_doubao(prompt, size="1024x1024", model="doubao-seedream-3-0-t2
         logger.error(f"豆包图像生成失败: {str(e)}")
         raise APIError(f"豆包图像生成失败: {str(e)}")
 
-@retry_on_failure(max_retries=2, delay=1.0)
-def text_to_audio_doubao(text, output_filename, voice="zh_female_qingxin"):
-    """
-    使用豆包TTS合成语音
-    
-    Args:
-        text: 要合成的文本
-        output_filename: 输出文件路径
-        voice: 语音音色
-    
-    Returns:
-        bool: 成功返回True，失败返回False
-    """
-    if not config.ARK_API_KEY:
-        raise APIError("ARK_API_KEY未配置，无法使用豆包语音合成服务")
-    
-    logger.info(f"使用豆包TTS合成语音，音色: {voice}，文本长度: {len(text)}字符")
-    
-    try:
-        # 火山引擎方舟SDK调用
-        from volcenginesdkarkruntime import Ark
-        
-        # 初始化客户端
-        client = Ark(
-            base_url=config.ARK_BASE_URL,
-            api_key=config.ARK_API_KEY,
-        )
-        
-        # 调用语音合成API
-        response = client.audio.speech.create(
-            model="doubao-tts",
-            input=text,
-            voice=voice
-        )
-        
-        if response and response.content:
-            # 保存音频文件
-            with open(output_filename, 'wb') as f:
-                f.write(response.content)
-            logger.info(f"豆包TTS合成成功，音频已保存: {output_filename}")
-            return True
-        
-        raise APIError("豆包TTS API返回空响应")
-        
-    except ImportError:
-        logger.error("未安装volcenginesdkarkruntime，请运行: pip install volcengine-python-sdk[ark]")
-        raise APIError("缺少依赖包volcenginesdkarkruntime")
-    except Exception as e:
-        logger.error(f"豆包语音合成失败: {str(e)}")
-        raise APIError(f"豆包语音合成失败: {str(e)}")
 
-################ ByteDance TTS BigModel API Functions ################
+# ================================================================================
+# 🔊 语音合成 API - 字节语音大模型 (WebSocket)
+# ================================================================================
+# 使用字节跳动语音合成大模型WebSocket协议
+# 支持高质量语音合成和多种音色
+# ================================================================================
+
+# WebSocket 协议相关定义
+class MsgType(IntEnum):
+    Invalid = 0
+    FullClientRequest = 0b1
+    AudioOnlyClient = 0b10
+    FullServerResponse = 0b1001
+    AudioOnlyServer = 0b1011
+    FrontEndResultServer = 0b1100
+    Error = 0b1111
+
+class MsgTypeFlagBits(IntEnum):
+    NoSeq = 0
+    PositiveSeq = 0b1
+    LastNoSeq = 0b10
+    NegativeSeq = 0b11
+    WithEvent = 0b100
+
+class VersionBits(IntEnum):
+    Version1 = 1
+
+class HeaderSizeBits(IntEnum):
+    HeaderSize4 = 1
+
+class SerializationBits(IntEnum):
+    Raw = 0
+    JSON = 0b1
+
+class CompressionBits(IntEnum):
+    None_ = 0
+
+@dataclass
+class Message:
+    version: VersionBits = VersionBits.Version1
+    header_size: HeaderSizeBits = HeaderSizeBits.HeaderSize4
+    type: MsgType = MsgType.Invalid
+    flag: MsgTypeFlagBits = MsgTypeFlagBits.NoSeq
+    serialization: SerializationBits = SerializationBits.JSON
+    compression: CompressionBits = CompressionBits.None_
+    sequence: int = 0
+    payload: bytes = b""
+    
+    def marshal(self) -> bytes:
+        buffer = io.BytesIO()
+        header = [
+            (self.version << 4) | self.header_size,
+            (self.type << 4) | self.flag,
+            (self.serialization << 4) | self.compression,
+            0  # padding
+        ]
+        buffer.write(bytes(header))
+        
+        if self.flag in [MsgTypeFlagBits.PositiveSeq, MsgTypeFlagBits.NegativeSeq]:
+            buffer.write(struct.pack(">i", self.sequence))
+        
+        size = len(self.payload)
+        buffer.write(struct.pack(">I", size))
+        buffer.write(self.payload)
+        return buffer.getvalue()
+    
+    @classmethod
+    def from_bytes(cls, data: bytes) -> "Message":
+        if len(data) < 3:
+            raise ValueError(f"Data too short: expected at least 3 bytes, got {len(data)}")
+        
+        type_and_flag = data[1]
+        msg_type = MsgType(type_and_flag >> 4)
+        flag = MsgTypeFlagBits(type_and_flag & 0b00001111)
+        
+        msg = cls(type=msg_type, flag=flag)
+        
+        # 简化的解析逻辑
+        buffer = io.BytesIO(data)
+        buffer.read(4)  # skip header
+        
+        if flag in [MsgTypeFlagBits.PositiveSeq, MsgTypeFlagBits.NegativeSeq]:
+            seq_bytes = buffer.read(4)
+            if seq_bytes:
+                msg.sequence = struct.unpack(">i", seq_bytes)[0]
+        
+        size_bytes = buffer.read(4)
+        if size_bytes:
+            size = struct.unpack(">I", size_bytes)[0]
+            if size > 0:
+                msg.payload = buffer.read(size)
+        
+        return msg
+
+async def _send_full_request(websocket, payload: bytes):
+    """发送完整请求"""
+    msg = Message(type=MsgType.FullClientRequest, flag=MsgTypeFlagBits.NoSeq)
+    msg.payload = payload
+    await websocket.send(msg.marshal())
+
+async def _receive_message(websocket) -> Message:
+    """接收消息"""
+    data = await websocket.recv()
+    if isinstance(data, bytes):
+        return Message.from_bytes(data)
+    else:
+        raise ValueError(f"Unexpected message type: {type(data)}")
+
+def _get_cluster(voice: str) -> str:
+    """根据音色确定集群"""
+    if voice.startswith("S_"):
+        return "volcano_icl"
+    return "volcano_tts"
+
 @retry_on_failure(max_retries=2, delay=1.0)
-def text_to_audio_bytedance(text, output_filename, voice="zh_male_yuanboxiaoshu_moon_bigtts"):
+def text_to_audio_bytedance(text, output_filename, voice="zh_male_yuanboxiaoshu_moon_bigtts", encoding="wav"):
     """
-    使用字节语音合成大模型合成语音
+    使用字节语音合成大模型WebSocket协议合成语音
     
     Args:
         text: 要合成的文本
         output_filename: 输出文件路径
         voice: 语音音色
+        encoding: 音频编码格式 (wav/mp3)
     
     Returns:
         bool: 成功返回True，失败返回False
     """
-    if not all([config.BYTEDANCE_TTS_APPID, config.BYTEDANCE_TTS_ACCESS_TOKEN, config.BYTEDANCE_TTS_SECRET_KEY]):
-        raise APIError("字节语音合成大模型配置不完整，请检查BYTEDANCE_TTS相关配置")
+    # 从环境变量读取配置
+    if not config.BYTEDANCE_TTS_APPID or not config.BYTEDANCE_TTS_ACCESS_TOKEN:
+        raise APIError("字节语音合成大模型配置不完整，请检查BYTEDANCE_TTS_APPID和BYTEDANCE_TTS_ACCESS_TOKEN")
     
-    logger.info(f"使用字节语音合成大模型，音色: {voice}，文本长度: {len(text)}字符")
+    APPID = config.BYTEDANCE_TTS_APPID
+    ACCESS_TOKEN = config.BYTEDANCE_TTS_ACCESS_TOKEN
+    
+    logger.info(f"使用字节语音合成大模型WebSocket，音色: {voice}，文本长度: {len(text)}字符")
     
     try:
-        import requests
-        import json
-        import base64
+        # 运行异步函数
+        return asyncio.run(_async_text_to_audio(text, output_filename, voice, encoding, APPID, ACCESS_TOKEN))
+    except Exception as e:
+        logger.error(f"字节语音合成失败: {str(e)}")
+        raise APIError(f"字节语音合成失败: {str(e)}")
+
+async def _async_text_to_audio(text, output_filename, voice, encoding, appid, access_token):
+    """异步语音合成实现"""
+    endpoint = "wss://openspeech.bytedance.com/api/v1/tts/ws_binary"
+    cluster = _get_cluster(voice)
+    
+    # WebSocket连接头
+    headers = {
+        "Authorization": f"Bearer;{access_token}",
+    }
+    
+    logger.info(f"连接到 {endpoint}")
+    
+    try:
+        websocket = await websockets.connect(
+            endpoint, 
+            additional_headers=headers, 
+            max_size=10 * 1024 * 1024
+        )
         
-        # 字节语音合成大模型API端点
-        url = "https://openspeech.bytedance.com/api/v1/tts"
+        # websockets client exposes response headers via `response_headers`
+        logid = getattr(websocket, "response_headers", {}).get('x-tt-logid', 'unknown')
+        logger.info(f"WebSocket连接成功，Logid: {logid}")
         
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer;{config.BYTEDANCE_TTS_ACCESS_TOKEN}"
-        }
-        
-        # 生成唯一的reqid
-        import uuid
-        reqid = str(uuid.uuid4())
-        
-        payload = {
+        # 准备请求数据
+        request_data = {
             "app": {
-                "appid": config.BYTEDANCE_TTS_APPID,
-                "token": config.BYTEDANCE_TTS_ACCESS_TOKEN,
-                "cluster": "volcano_tts"
+                "appid": appid,
+                "token": access_token,
+                "cluster": cluster,
             },
             "user": {
-                "uid": "aigc_video_user"
+                "uid": str(uuid.uuid4()),
             },
             "audio": {
                 "voice_type": voice,
-                "encoding": "mp3",
-                "speed_ratio": 1.0
+                "encoding": encoding,
             },
             "request": {
-                "reqid": reqid,
+                "reqid": str(uuid.uuid4()),
                 "text": text,
-                "operation": "query"
-            }
+                "operation": "submit",
+                "with_timestamp": "1",
+                "extra_param": json.dumps({
+                    "disable_markdown_filter": False,
+                }),
+            },
         }
         
-        response = requests.post(url, headers=headers, json=payload, timeout=60)
-        response.raise_for_status()
+        # 发送请求
+        await _send_full_request(websocket, json.dumps(request_data).encode())
         
-        result = response.json()
-        
-        if result.get("code") == 3000:
-            # 成功获取音频数据 (根据实际响应格式调整)
-            audio_data = result.get("data")
-            if audio_data:
-                # 解码base64音频数据
-                audio_bytes = base64.b64decode(audio_data)
-                
-                # 保存音频文件
-                with open(output_filename, 'wb') as f:
-                    f.write(audio_bytes)
-                    
-                # 获取音频时长信息
-                duration = result.get("addition", {}).get("duration", "未知")
-                logger.info(f"字节语音合成成功，音频已保存: {output_filename}，时长: {duration}ms")
-                return True
-            else:
-                raise APIError("字节语音合成返回的音频数据为空")
-        else:
-            error_msg = result.get("message", "未知错误")
-            error_code = result.get("code", "未知")
-            raise APIError(f"字节语音合成API错误 (code: {error_code}): {error_msg}")
+        # 接收音频数据
+        audio_data = bytearray()
+        while True:
+            msg = await _receive_message(websocket)
             
-    except ImportError:
-        logger.error("缺少requests依赖包，请运行: pip install requests")
-        raise APIError("缺少依赖包requests")
+            if msg.type == MsgType.FrontEndResultServer:
+                continue
+            elif msg.type == MsgType.AudioOnlyServer:
+                audio_data.extend(msg.payload)
+                if msg.sequence < 0:  # 最后一个消息
+                    break
+            elif msg.type == MsgType.Error:
+                error_msg = msg.payload.decode('utf-8', 'ignore')
+                raise APIError(f"TTS转换失败: {error_msg}")
+            else:
+                logger.warning(f"收到未预期的消息类型: {msg.type}")
+        
+        # 检查是否收到音频数据
+        if not audio_data:
+            raise APIError("未收到音频数据")
+        
+        # 保存音频文件
+        with open(output_filename, "wb") as f:
+            f.write(audio_data)
+        
+        logger.info(f"语音合成成功，音频大小: {len(audio_data)} bytes，已保存: {output_filename}")
+        return True
+        
     except Exception as e:
-        logger.error(f"字节语音合成大模型失败: {str(e)}")
-        raise APIError(f"字节语音合成大模型失败: {str(e)}")
+        logger.error(f"WebSocket语音合成失败: {str(e)}")
+        raise
+    finally:
+        if 'websocket' in locals():
+            await websocket.close()
+            logger.info("WebSocket连接已关闭")

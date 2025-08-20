@@ -25,14 +25,14 @@
 - 使用大语言模型将10万字级别的原文智能压缩为500-1000字的精炼口播稿
 - 自动分成指定段数，保持内容连贯性和完整性
 - 输出结构化JSON格式，便于后续处理
-- **文件保存**：口播稿JSON数据保存到 `output/text/script.json`
+- **文件保存**：口播稿JSON数据保存到 `output/{title}_{时间}/text/script.json`
 
 ### 3. 关键词提取（第二次LLM处理）
 
 - 对每个段落进行深度分析
 - 提取核心关键词和视觉元素
 - 为图像生成做准备
-- **文件保存**：关键词和图像提示词数据保存到 `output/text/keywords.json`
+- **文件保存**：关键词和图像提示词数据保存到 `output/{title}_{时间}/text/keywords.json`
 
 ### 4. AI图像生成
 
@@ -40,20 +40,20 @@
 - 调用豆包Seedream 3.0模型（`doubao-seedream-3-0-t2i-250415`）生成高质量图像
 - 使用火山引擎方舟SDK进行API调用
 - 每段对应一张图片
-- **文件保存**：生成的图片保存到 `output/images/segment_X.png`（X为段落序号）
+- **文件保存**：生成的图片保存到 `output/{title}_{时间}/images/segment_X.png`（X为段落序号）
 
 ### 5. 语音合成
 
 - 使用豆包TTS将口播稿转换为自然语音
 - 为每个段落生成对应的音频文件
-- **文件保存**：语音文件保存到 `output/voice/segment_X.wav`（X为段落序号）
+- **文件保存**：语音文件保存到 `output/{title}_{时间}/voice/segment_X.wav`（X为段落序号）
 
 ### 6. 视频合成
 
 - 将对应的音频和图像进行匹配
 - 合成完整的短视频内容
-- **文件保存**：最终视频保存到 `output/final_video.mp4`
-- **处理摘要**：生成处理摘要信息保存到 `output/text/summary.txt`
+- **文件保存**：最终视频保存到 `output/{title}_{时间}/final_video.mp4`
+- **处理摘要**：生成处理摘要信息保存到 `output/{title}_{时间}/text/summary.txt`
 
 ## 输入参数说明
 
@@ -82,24 +82,39 @@ def main(
 
 ```
 output/
-├── images/              # 生成的图片文件夹
-│   ├── segment_1.png   # 第1段对应图片
-│   ├── segment_2.png   # 第2段对应图片
-│   └── ...             # 共10张图片
-├── voice/              # 生成的语音文件夹
-│   ├── segment_1.wav   # 第1段口播音频
-│   ├── segment_2.wav   # 第2段口播音频
-│   └── ...             # 共10个音频文件
-├── text/               # 生成的文本信息文件夹
-│   ├── script.json     # 缩写后的口播稿JSON文件
-│   ├── keywords.json   # 关键词提取结果JSON文件
-│   └── summary.txt     # 处理摘要信息
-└── final_video.mp4     # 最终合成的视频文件
+└── {title}_{月日_时分}/     # 按文档标题和时间命名的项目文件夹
+    ├── images/              # 生成的图片文件夹
+    │   ├── segment_1.png   # 第1段对应图片
+    │   ├── segment_2.png   # 第2段对应图片
+    │   └── ...             # 共10张图片
+    ├── voice/              # 生成的语音文件夹
+    │   ├── segment_1.wav   # 第1段口播音频
+    │   ├── segment_2.wav   # 第2段口播音频
+    │   └── ...             # 共10个音频文件
+    ├── text/               # 生成的文本信息文件夹
+    │   ├── script.json     # 缩写后的口播稿JSON文件
+    │   ├── keywords.json   # 关键词提取结果JSON文件
+    │   └── summary.txt     # 处理摘要信息
+    └── final_video.mp4     # 最终合成的视频文件
 ```
+
+**文件夹命名规则：**
+
+- 每次运行都会在 `output` 目录下创建一个新的项目文件夹
+- 文件夹名格式：`{title}_{月日_时分}`
+- `title` 来自LLM第一次处理时生成的文档标题
+- 时间格式为：月日_时分（如：0820_1430 表示 8月20日14:30）
+- 特殊字符会被替换为下划线（空格、斜杠等）
+
+**示例：**
+
+- 文档标题："三体科幻小说" → 文件夹名："三体科幻小说_0820_1430"
+- 文档标题："My Novel/Part 1" → 文件夹名："My_Novel_Part_1_0820_1430"
 
 ### 2. 口播稿JSON结构（text/script.json）
 
 **LLM输出格式（核心内容）：**
+
 ```json
 {
     "title": "文档标题",
@@ -118,6 +133,7 @@ output/
 ```
 
 **最终保存格式（系统处理后）：**
+
 ```json
 {
     "title": "文档标题",
@@ -145,11 +161,13 @@ output/
 **字段说明：**
 
 **LLM输出字段**（必须）：
+
 - `title`: 字符串，从原文档提取或生成的标题
 - `segments`: 数组，包含所有段落的口播内容
   - `content`: 字符串，该段的口播文本内容
 
 **系统补充字段**（程序自动添加）：
+
 - `total_length`: 整数，所有段落内容的总字数
 - `target_segments`: 整数，用户指定的目标分段数
 - `actual_segments`: 整数，实际生成的段落数
@@ -159,6 +177,7 @@ output/
 - `segments[].estimated_duration`: 浮点数，预估播放时长（秒）
 
 **播放时长计算规则：**
+
 - 语速标准：一分钟300字（中文普通话正常语速）
 - 计算公式：`estimated_duration = length / 300 * 60`
 - 示例：42字的内容 = 42 ÷ 300 × 60 = 8.4秒
@@ -166,6 +185,7 @@ output/
 ### 3. 关键词JSON结构（text/keywords.json）
 
 **LLM输出格式（核心内容）：**
+
 ```json
 {
     "segments": [
@@ -186,6 +206,7 @@ output/
 ```
 
 **保存格式（直接保存LLM输出）：**
+
 ```json
 {
     "segments": [
@@ -206,16 +227,19 @@ output/
 ```
 
 **字段说明：**
+
 - `segments`: 数组，每段的关键词信息
   - `keywords`: 字符串数组，画面内容关键词（物体、场景、人物等具象元素）
   - `atmosphere`: 字符串数组，氛围感关键词（情感、氛围、感觉等抽象元素）
 
 **图片生成流程：**
+
 1. LLM提取关键词 → 直接保存到keywords.json
 2. 生成图片时：结合预设模板 + 用户风格设置 + 关键词 → 调用Seedream 3.0
 3. 模板词组合规则：`[预设模板] + [用户风格] + [keywords] + [atmosphere] + [质量后缀]`
 
 **关键词分类说明：**
+
 - **keywords**：画面中可见的具体内容（如：古代建筑、红墙黄瓦、人物、动作等）
 - **atmosphere**：画面的情感和氛围表达（如：庄严肃穆、温馨浪漫、紧张刺激等）
 
@@ -297,8 +321,9 @@ output/
     - `google/gemini-2.5-pro` - 最新Gemini模型，支持大容量文档处理
     - `anthropic/claude-sonnet-4` - Claude最新版本，擅长文学作品理解
     - `anthropic/claude-3.7-sonnet:thinking` - 支持思维链推理的Claude模型
-- OpenAI（备选）
-  - 建议直接选择"gpt-4o"
+- aihubmix代理（备选）
+  - 仅支持"gpt-5"模型
+  - 通过aihubmix代理访问OpenAI API
 - SiliconFlow（备选）
   - Base URL: `https://api.siliconflow.cn/v1/`
   - 兼容OpenAI SDK接口
@@ -430,7 +455,7 @@ result = main(
 
    - 支持EPUB和PDF格式文件（可处理10万字级别的长篇文档）
    - 自动提取文档内容，从长篇内容中智能压缩核心要点
-   - 目标字数范围：500-1000字
+   - 目标字数范围：500-2000字
    - 分段数量范围：5-20段
    - PDF文件建议为文本格式（非扫描件）
 2. 服务限制

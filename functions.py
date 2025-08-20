@@ -3,7 +3,7 @@
 包含文档读取、智能处理、图像生成、语音合成、视频制作等功能
 """
 
-from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip, concatenate_videoclips, VideoFileClip
+from moviepy import ImageClip, AudioFileClip, CompositeVideoClip, concatenate_videoclips, VideoFileClip, TextClip, ColorClip
 from typing import Optional, Dict, Any, List, Tuple
 from io import BytesIO
 from PIL import Image
@@ -17,8 +17,8 @@ from ebooklib import epub
 import PyPDF2
 import pdfplumber
 
-from knowledge_prompt_cn import summarize_system_prompt, keywords_extraction_prompt
-from genai_api import text_to_text, text_to_image_doubao, text_to_audio_doubao, text_to_audio_bytedance
+from prompts import summarize_system_prompt, keywords_extraction_prompt, IMAGE_STYLE_PRESETS
+from genai_api import text_to_text, text_to_image_doubao, text_to_audio_bytedance
 from config import config
 from utils import (
     logger, FileProcessingError, APIError, VideoProcessingError,
@@ -261,12 +261,27 @@ def extract_keywords(server: str, model: str, script_data: Dict[str, Any]) -> Di
 
 ################ Image Generation ################
 def generate_images_for_segments(server: str, model: str, keywords_data: Dict[str, Any], 
-                                image_style: str, image_size: str, output_dir: str) -> List[str]:
+                                image_style_preset: str, image_size: str, output_dir: str) -> List[str]:
     """
     为每个段落生成图像
+    
+    Args:
+        server: 图像生成服务商
+        model: 图像生成模型
+        keywords_data: 关键词数据
+        image_style_preset: 图像风格预设名称
+        image_size: 图像尺寸
+        output_dir: 输出目录
+    
+    Returns:
+        List[str]: 生成图像的文件路径列表
     """
     try:
         image_paths = []
+        
+        # 获取图像风格字符串
+        image_style = get_image_style(image_style_preset)
+        logger.info(f"使用图像风格: {image_style_preset} -> {image_style}")
         
         for i, segment_keywords in enumerate(keywords_data["segments"], 1):
             keywords = segment_keywords.get("keywords", [])
@@ -319,34 +334,31 @@ def synthesize_voice_for_segments(server: str, voice: str, script_data: Dict[str
     try:
         audio_paths = []
         
+        # 从script_data中获取title，用于文件命名
+        title = script_data.get('title', 'untitled')
+        # 清理title中的特殊字符，确保文件名安全
+        safe_title = title.replace(' ', '_').replace('/', '_').replace('\\', '_').replace(':', '_').replace('?', '_').replace('*', '_').replace('"', '_').replace('<', '_').replace('>', '_').replace('|', '_')
+        
         for segment in script_data["segments"]:
             segment_index = segment["index"]
             content = segment["content"]
             
             print(f"正在生成第{segment_index}段语音...")
             
-            # 生成语音文件路径
-            audio_path = os.path.join(output_dir, f"segment_{segment_index}.wav")
+            # 生成语音文件路径：{title}_{序号}.wav
+            audio_filename = f"{safe_title}_{segment_index}.wav"
+            audio_path = os.path.join(output_dir, audio_filename)
             
             # 调用语音合成API - 根据语音音色智能选择接口
-            if tts_server == "doubao":
-                # 判断使用哪种豆包TTS接口
-                if voice.endswith("_bigtts"):
-                    # 使用字节语音合成大模型接口
-                    success = text_to_audio_bytedance(
-                        text=content,
-                        output_filename=audio_path,
-                        voice=voice
-                    )
-                else:
-                    # 使用方舟豆包TTS接口
-                    success = text_to_audio_doubao(
-                        text=content,
-                        output_filename=audio_path,
-                        voice=voice
-                    )
+            if server == "bytedance":
+                # 使用字节语音合成大模型接口
+                success = text_to_audio_bytedance(
+                    text=content,
+                    output_filename=audio_path,
+                    voice=voice
+                )
             else:
-                raise ValueError(f"不支持的TTS服务商: {tts_server}")
+                raise ValueError(f"不支持的TTS服务商: {server}")
             
             if success:
                 audio_paths.append(audio_path)
@@ -360,15 +372,27 @@ def synthesize_voice_for_segments(server: str, voice: str, script_data: Dict[str
         raise ValueError(f"语音合成错误: {e}")
 
 ################ Video Composition ################
-def compose_final_video(image_paths: List[str], audio_paths: List[str], output_path: str) -> str:
+def compose_final_video(image_paths: List[str], audio_paths: List[str], output_path: str, 
+                       script_data: Dict[str, Any] = None, enable_subtitles: bool = False) -> str:
     """
     合成最终视频
+    
+    Args:
+        image_paths: 图像文件路径列表
+        audio_paths: 音频文件路径列表
+        output_path: 输出视频路径
+        script_data: 脚本数据，用于生成字幕
+        enable_subtitles: 是否启用字幕
+    
+    Returns:
+        str: 输出视频路径
     """
     try:
         if len(image_paths) != len(audio_paths):
             raise ValueError("图像文件数量与音频文件数量不匹配")
         
         video_clips = []
+        audio_clips = []
         
         # 为每个段落创建视频片段
         for i, (image_path, audio_path) in enumerate(zip(image_paths, audio_paths)):
@@ -378,19 +402,35 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
             audio_clip = AudioFileClip(audio_path)
             duration = audio_clip.duration
             
-            # 创建图像剪辑，设置持续时间为音频长度
-            image_clip = ImageClip(image_path).set_duration(duration)
+            # 创建图像剪辑，设置持续时间为音频长度 (MoviePy 2.x 使用 with_duration)
+            image_clip = ImageClip(image_path).with_duration(duration)
             
-            # 组合图像和音频
-            video_clip = image_clip.set_audio(audio_clip)
+            # 组合图像和音频 (MoviePy 2.x 使用 with_audio)
+            video_clip = image_clip.with_audio(audio_clip)
             video_clips.append(video_clip)
-            
-            # 释放音频剪辑资源
-            audio_clip.close()
+            audio_clips.append(audio_clip)
         
         # 连接所有视频片段
         print("正在合成最终视频...")
-        final_video = concatenate_videoclips(video_clips)
+        # 使用 compose 方式合并，避免音频轨丢失或不同尺寸导致的问题
+        final_video = concatenate_videoclips(video_clips, method="compose")
+        
+        # 添加字幕（如果启用）
+        if enable_subtitles and script_data:
+            print("正在添加字幕...")
+            try:
+                # 传入最终视频尺寸，便于字幕计算边距/背景
+                subtitle_config = config.SUBTITLE_CONFIG.copy()
+                subtitle_config["video_size"] = final_video.size
+                subtitle_clips = create_subtitle_clips(script_data, subtitle_config)
+                if subtitle_clips:
+                    # 将字幕与视频合成
+                    final_video = CompositeVideoClip([final_video] + subtitle_clips)
+                    print(f"已添加 {len(subtitle_clips)} 个字幕剪辑")
+                else:
+                    print("未生成任何字幕剪辑")
+            except Exception as e:
+                logger.warning(f"添加字幕失败: {str(e)}，继续生成无字幕视频")
         
         # 输出最终视频
         final_video.write_videofile(
@@ -403,6 +443,8 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
         # 释放资源
         for clip in video_clips:
             clip.close()
+        for aclip in audio_clips:
+            aclip.close()
         final_video.close()
         
         print(f"最终视频已保存: {output_path}")
@@ -410,3 +452,239 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
     
     except Exception as e:
         raise ValueError(f"视频合成错误: {e}")
+
+################ Style Helper Functions ################
+def get_image_style(style_name: str = "cinematic") -> str:
+    """
+    获取图像风格字符串
+    
+    Args:
+        style_name: 风格名称，如果不存在则返回第一个风格
+    
+    Returns:
+        str: 图像风格描述字符串
+    """
+    return IMAGE_STYLE_PRESETS.get(style_name, list(IMAGE_STYLE_PRESETS.values())[0])
+
+def split_text_for_subtitle(text: str, max_chars_per_line: int = 20, max_lines: int = 2) -> List[str]:
+    """
+    将长文本分割为适合字幕显示的短句
+    
+    Args:
+        text: 原始文本
+        max_chars_per_line: 每行最大字符数
+        max_lines: 最大行数
+    
+    Returns:
+        List[str]: 分割后的字幕文本列表
+    """
+    if len(text) <= max_chars_per_line * max_lines:
+        return [text]
+    
+    # 按句号、问号、感叹号分割
+    sentences = []
+    current = ""
+    for char in text:
+        current += char
+        if char in "。！？":
+            sentences.append(current.strip())
+            current = ""
+    
+    if current.strip():
+        sentences.append(current.strip())
+    
+    # 组合句子，确保不超过行数和字符数限制
+    result = []
+    current_subtitle = ""
+    
+    for sentence in sentences:
+        if not current_subtitle:
+            current_subtitle = sentence
+        elif len(current_subtitle + sentence) <= max_chars_per_line * max_lines:
+            current_subtitle += sentence
+        else:
+            result.append(current_subtitle)
+            current_subtitle = sentence
+    
+    if current_subtitle:
+        result.append(current_subtitle)
+    
+    return result
+
+def create_subtitle_clips(script_data: Dict[str, Any], subtitle_config: Dict[str, Any] = None) -> List[TextClip]:
+    """
+    创建字幕剪辑列表
+    
+    Args:
+        script_data: 脚本数据，包含segments信息
+        subtitle_config: 字幕配置，如果为None则使用默认配置
+    
+    Returns:
+        List[TextClip]: 字幕剪辑列表
+    """
+    if subtitle_config is None:
+        from config import config
+        subtitle_config = config.SUBTITLE_CONFIG.copy()
+    
+    subtitle_clips = []
+    current_time = 0
+    
+    logger.info("开始创建字幕剪辑...")
+    
+    # 解析可用字体（优先使用系统中的中文字体文件路径，避免中文缺字）
+    def _resolve_font_path(preferred: Optional[str]) -> Optional[str]:
+        # 若直接传入的是可用路径，则直接使用
+        if preferred and os.path.exists(preferred):
+            return preferred
+        # 常见 macOS 中文字体文件路径候选
+        candidate_paths = [
+            "/System/Library/Fonts/PingFang.ttc",
+            "/System/Library/Fonts/Hiragino Sans GB.ttc",
+            "/System/Library/Fonts/Supplemental/Songti.ttc",
+            "/System/Library/Fonts/STHeiti Light.ttc",
+            "/System/Library/Fonts/Supplemental/SimHei.ttf",
+            "/System/Library/Fonts/Supplemental/SimSun.ttf",
+            "/Library/Fonts/Arial Unicode.ttf",
+            "/Library/Fonts/Arial Unicode MS.ttf",
+        ]
+        for path in candidate_paths:
+            if os.path.exists(path):
+                return path
+        return preferred  # 退回到传入名称（由 PIL 自行解析）
+
+    resolved_font = _resolve_font_path(subtitle_config.get("font_family"))
+    if not resolved_font:
+        logger.warning("未能解析到可用中文字体，可能导致字幕无法显示中文字符。建议在 config.SUBTITLE_CONFIG.font_family 指定字体文件路径。")
+
+    # 读取视频尺寸（用于计算底部边距和背景条）
+    video_size = subtitle_config.get("video_size", (1280, 720))
+    video_width, video_height = video_size
+
+    for i, segment in enumerate(script_data["segments"], 1):
+        content = segment["content"]
+        duration = segment["estimated_duration"]
+        
+        logger.debug(f"处理第{i}段字幕，时长: {duration}秒")
+        
+        # 分割长文本为适合显示的字幕
+        subtitle_texts = split_text_for_subtitle(
+            content,
+            subtitle_config["max_chars_per_line"],
+            subtitle_config["max_lines"]
+        )
+        
+        # 计算每个字幕的显示时长
+        subtitle_duration = duration / len(subtitle_texts) if len(subtitle_texts) > 0 else duration
+        subtitle_start_time = current_time
+        
+        for subtitle_text in subtitle_texts:
+            try:
+                # 设置位置
+                position = subtitle_config["position"]
+                margin_bottom = int(subtitle_config.get("margin_bottom", 0))
+                anchor_x = position[0] if isinstance(position, tuple) else "center"
+                
+                # 创建字幕剪辑（可能包含阴影效果）
+                if subtitle_config.get("shadow_enabled", False):
+                    # 创建阴影效果：先创建阴影文本，再创建主文本
+                    shadow_offset = subtitle_config.get("shadow_offset", (2, 2))
+                    shadow_color = subtitle_config.get("shadow_color", "black")
+                    
+                    # 创建阴影文本剪辑
+                    shadow_clip = TextClip(
+                        text=subtitle_text,
+                        font_size=subtitle_config["font_size"],
+                        color=shadow_color,
+                        font=resolved_font or subtitle_config["font_family"]
+                    )
+                    
+                    # 创建主文本剪辑
+                    main_clip = TextClip(
+                        text=subtitle_text,
+                        font_size=subtitle_config["font_size"],
+                        color=subtitle_config["color"],
+                        font=resolved_font or subtitle_config["font_family"],
+                        stroke_color=subtitle_config["stroke_color"],
+                        stroke_width=subtitle_config["stroke_width"]
+                    )
+                    
+                    # 计算阴影位置（简化处理，使用相同的主要位置但稍微偏移）
+                    # 对于阴影效果，我们使用相同的基础位置，让MoviePy的stroke效果来处理阴影
+                    shadow_pos = position
+                    
+                    # 设置时间和位置
+                    # 计算文本的实际 y 坐标（当定位到 bottom 时，使用边距避免出界）
+                    if isinstance(position, tuple) and len(position) == 2 and position[1] == "bottom":
+                        y_text = max(0, video_height - margin_bottom - main_clip.h)
+                        main_pos = (anchor_x, y_text)
+                        shadow_pos = (anchor_x, y_text)
+                    else:
+                        main_pos = position
+                        shadow_pos = position
+                    shadow_clip = shadow_clip.with_position(shadow_pos).with_start(subtitle_start_time).with_duration(subtitle_duration)
+                    main_clip = main_clip.with_position(main_pos).with_start(subtitle_start_time).with_duration(subtitle_duration)
+                    
+                    clips_to_add = []
+                    # 背景条
+                    bg_color = subtitle_config.get("background_color")
+                    bg_opacity = float(subtitle_config.get("background_opacity", 0))
+                    if bg_color:
+                        bg_height = int(subtitle_config["font_size"] * subtitle_config.get("max_lines", 2) + subtitle_config.get("line_spacing", 10) + 20)
+                        bg_clip = ColorClip(size=(video_width, bg_height), color=bg_color)
+                        if hasattr(bg_clip, "with_opacity"):
+                            bg_clip = bg_clip.with_opacity(bg_opacity)
+                        y_bg = max(0, video_height - margin_bottom - bg_height)
+                        bg_clip = bg_clip.with_position(("center", y_bg)).with_start(subtitle_start_time).with_duration(subtitle_duration)
+                        clips_to_add.append(bg_clip)
+                    clips_to_add.extend([shadow_clip, main_clip])
+                    subtitle_clips.extend(clips_to_add)
+                    
+                    logger.debug(f"创建阴影字幕: '{subtitle_text[:20]}...' 时间: {subtitle_start_time:.1f}-{subtitle_start_time+subtitle_duration:.1f}s")
+                
+                else:
+                    # 创建普通字幕文本剪辑（无阴影）
+                    txt_clip = TextClip(
+                        text=subtitle_text,
+                        font_size=subtitle_config["font_size"],
+                        color=subtitle_config["color"],
+                        font=resolved_font or subtitle_config["font_family"],
+                        stroke_color=subtitle_config["stroke_color"],
+                        stroke_width=subtitle_config["stroke_width"]
+                    )
+                    
+                    # 计算文本的实际 y 坐标（当定位到 bottom 时，使用边距避免出界）
+                    if isinstance(position, tuple) and len(position) == 2 and position[1] == "bottom":
+                        y_text = max(0, video_height - margin_bottom - txt_clip.h)
+                        txt_pos = (anchor_x, y_text)
+                    else:
+                        txt_pos = position
+                    txt_clip = txt_clip.with_position(txt_pos).with_start(subtitle_start_time).with_duration(subtitle_duration)
+
+                    clips_to_add = []
+                    # 背景条
+                    bg_color = subtitle_config.get("background_color")
+                    bg_opacity = float(subtitle_config.get("background_opacity", 0))
+                    if bg_color:
+                        bg_height = int(subtitle_config["font_size"] * subtitle_config.get("max_lines", 2) + subtitle_config.get("line_spacing", 10) + 20)
+                        bg_clip = ColorClip(size=(video_width, bg_height), color=bg_color)
+                        if hasattr(bg_clip, "with_opacity"):
+                            bg_clip = bg_clip.with_opacity(bg_opacity)
+                        y_bg = max(0, video_height - margin_bottom - bg_height)
+                        bg_clip = bg_clip.with_position(("center", y_bg)).with_start(subtitle_start_time).with_duration(subtitle_duration)
+                        clips_to_add.append(bg_clip)
+                    clips_to_add.append(txt_clip)
+                    subtitle_clips.extend(clips_to_add)
+                    
+                    logger.debug(f"创建字幕: '{subtitle_text[:20]}...' 时间: {subtitle_start_time:.1f}-{subtitle_start_time+subtitle_duration:.1f}s")
+                
+                subtitle_start_time += subtitle_duration
+                
+            except Exception as e:
+                logger.warning(f"创建字幕失败: {str(e)}，跳过此字幕")
+                continue
+        
+        current_time += duration
+    
+    logger.info(f"字幕创建完成，共创建 {len(subtitle_clips)} 个字幕剪辑")
+    return subtitle_clips
+

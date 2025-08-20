@@ -27,7 +27,7 @@ def check_api_keys():
     required_keys = config.get_required_keys_for_config(
         llm_server="openrouter",
         image_server="doubao", 
-        tts_server="doubao"
+        tts_server="bytedance"
     )
     
     print("🎯 当前默认配置所需的API密钥：")
@@ -58,17 +58,25 @@ def check_api_keys():
             print("   - 将密钥填入 .env 文件的 OPENROUTER_API_KEY=")
             print()
         
-        if "ARK_API_KEY" in required_keys and not config.ARK_API_KEY:
+        if "SEEDREAM_API_KEY" in required_keys and not config.SEEDREAM_API_KEY:
             print("2. 获取火山引擎方舟API密钥：")
             print("   - 访问 https://console.volcengine.com/ark")
             print("   - 实名认证并开通服务")
             print("   - 在API密钥管理创建密钥")
-            print("   - 将密钥填入 .env 文件的 ARK_API_KEY=")
+            print("   - 将密钥填入 .env 文件的 SEEDREAM_API_KEY=")
             print("   - 确保已开通 Seedream 3.0 和 TTS 服务")
             print()
         
+        if "BYTEDANCE_TTS_APPID" in required_keys and not config.BYTEDANCE_TTS_APPID:
+            print("3. 获取字节语音合成大模型配置：")
+            print("   - 访问 https://console.volcengine.com/")
+            print("   - 开通语音合成服务")
+            print("   - 获取APPID和ACCESS_TOKEN")
+            print("   - 将配置填入 .env 文件的 BYTEDANCE_TTS_APPID= 和 BYTEDANCE_TTS_ACCESS_TOKEN=")
+            print()
+        
         if "AIHUBMIX_API_KEY" in required_keys and not config.AIHUBMIX_API_KEY:
-            print("3. 获取aihubmix代理API密钥：")
+            print("4. 获取aihubmix代理API密钥：")
             print("   - 访问 https://aihubmix.com/")
             print("   - 注册账号并充值")
             print("   - 获取API密钥")
@@ -76,7 +84,7 @@ def check_api_keys():
             print("   - base_url已经在配置文件中固定为 https://aihubmix.com/v1")
             print()
         
-        print("4. 保存 .env 文件后重新运行此脚本验证")
+        print("5. 保存 .env 文件后重新运行此脚本验证")
     
     return all_required_available
 
@@ -85,19 +93,19 @@ def check_alternative_configs():
     print("\n🔄 检查其他可用的配置方案...")
     print("=" * 50)
     
-    # 方案1: SiliconFlow + ARK
+    # 方案1: SiliconFlow + Bytedance
     siliconflow_keys = config.get_required_keys_for_config(
         llm_server="siliconflow",
         image_server="doubao",
-        tts_server="doubao"
+        tts_server="bytedance"
     )
     siliconflow_available = all(getattr(config, key, None) for key in siliconflow_keys)
     
-    # 方案2: OpenAI代理 + ARK
+    # 方案2: OpenAI代理 + Bytedance
     openai_keys = config.get_required_keys_for_config(
         llm_server="openai", 
         image_server="doubao",
-        tts_server="doubao"
+        tts_server="bytedance"
     )
     openai_available = all(getattr(config, key, None) for key in openai_keys)
     
