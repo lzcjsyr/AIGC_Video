@@ -1,4 +1,5 @@
 import os
+import shutil
 import json
 import datetime
 import glob
@@ -58,11 +59,18 @@ def main(
     voice="zh_male_yuanboxiaoshu_moon_bigtts",      # 语音音色
     output_dir="output",  # 输出目录，默认为当前目录下的output文件夹
     image_style_preset="cinematic",  # 图像风格预设，可选：cinematic, documentary, artistic等
-    enable_subtitles=True  # 是否启用字幕，默认启用
+    enable_subtitles=True,  # 是否启用字幕，默认启用
+    bgm_filename: str = None,  # 背景音乐文件名（位于项目 output 子目录内的 music 文件夹）
+    run_mode="auto"  # 运行模式：auto 全自动；step 分步确认
 ):
     
     try:
         start_time = datetime.datetime.now()
+        
+        # 锚定到项目根目录（本文件所在目录），避免依赖终端CWD
+        project_root = os.path.dirname(__file__)
+        if not os.path.isabs(output_dir):
+            output_dir = os.path.join(project_root, output_dir)
         
         # 自动识别服务商
         llm_server = auto_detect_server_from_model(llm_model, "llm")
@@ -70,8 +78,8 @@ def main(
         tts_server = auto_detect_server_from_model(voice, "voice")
         
         # Input validation
-        if not 500 <= target_length <= 1000:
-            raise ValueError("target_length必须在500-1000之间")
+        if not 500 <= target_length <= 2000:
+            raise ValueError("target_length必须在500-2000之间")
         if not 5 <= num_segments <= 20:
             raise ValueError("num_segments必须在5-20之间")
         if llm_server not in ["openrouter", "openai", "siliconflow"]:
@@ -87,11 +95,23 @@ def main(
 
         # 1. 文档读取
         if input_file is None:
-            # 自动从input文件夹读取文件
-            input_files = glob.glob("input/*.epub") + glob.glob("input/*.pdf")
-            if not input_files:
-                raise ValueError("input文件夹中未找到EPUB或PDF文件")
-            input_file = input_files[0]
+            # 使用交互式文件选择器
+            from utils import interactive_file_selector, prompt_choice
+            input_file = interactive_file_selector(input_dir=os.path.join(project_root, "input"))
+            if input_file is None:
+                print("\n程序已取消")
+                return {
+                    "success": False,
+                    "message": "用户取消了文件选择",
+                    "execution_time": 0,
+                    "error": "用户取消"
+                }
+            # 选择运行模式
+            mode = prompt_choice("请选择处理方式", ["全自动（一次性全部生成）", "分步处理（每步确认并可修改产物）"], default_index=1)
+            run_mode = "auto" if mode.startswith("全自动") else "step"
+        # 如果提供的是相对路径，则相对于项目根目录解析
+        if not os.path.isabs(input_file):
+            input_file = os.path.join(project_root, input_file)
         
         print(f"正在读取文档: {input_file}")
         document_content, original_length = read_document(input_file)
@@ -114,6 +134,7 @@ def main(
         os.makedirs(f"{project_output_dir}/images", exist_ok=True)
         os.makedirs(f"{project_output_dir}/voice", exist_ok=True)
         os.makedirs(f"{project_output_dir}/text", exist_ok=True)
+        os.makedirs(f"{project_output_dir}/music", exist_ok=True)
         
         print(f"项目输出目录: {project_output_dir}")
         
@@ -122,6 +143,14 @@ def main(
         with open(script_path, 'w', encoding='utf-8') as f:
             json.dump(script_data, f, ensure_ascii=False, indent=2)
         print(f"口播稿已保存到: {script_path}")
+        
+        # 分步确认：允许用户修改 script.json 后再继续
+        if run_mode == "step":
+            from utils import prompt_yes_no, load_json_file
+            if not prompt_yes_no("是否继续到关键词提取步骤？(可先在 output/text/script.json 修改后再继续)"):
+                return {"success": True, "message": "已生成脚本，用户终止于此", "final_stage": "script"}
+            # 重新从磁盘加载最新脚本，确保捕获用户调整
+            script_data = load_json_file(script_path)
         
         # 3. 关键词提取（第二次LLM处理）
         print("正在提取关键词...")
@@ -135,6 +164,12 @@ def main(
             json.dump(keywords_data, f, ensure_ascii=False, indent=2)
         print(f"关键词已保存到: {keywords_path}")
         
+        if run_mode == "step":
+            from utils import prompt_yes_no, load_json_file
+            if not prompt_yes_no("是否继续到图像生成步骤？(可先在 output/text/keywords.json 修改后再继续)"):
+                return {"success": True, "message": "已生成关键词，用户终止于此", "final_stage": "keywords"}
+            keywords_data = load_json_file(keywords_path)
+        
         # 4. AI图像生成
         print("正在生成图像...")
         image_paths = generate_images_for_segments(
@@ -142,42 +177,87 @@ def main(
             image_style_preset, image_size, f"{project_output_dir}/images"
         )
         
+        if run_mode == "step":
+            from utils import prompt_yes_no
+            print("图像已生成至:")
+            for p in image_paths:
+                print(" -", p)
+            if not prompt_yes_no("是否继续到语音合成步骤？(可先在 output/images 中替换图片，保持文件名不变)"):
+                return {"success": True, "message": "已生成图像，用户终止于此", "final_stage": "images", "images": image_paths}
+            # 再次从磁盘读取，确保捕获用户替换后的文件路径（文件名不变）
+            image_paths = [os.path.join(project_output_dir, "images", os.path.basename(p)) for p in image_paths]
+        
         # 5. 语音合成
         print("正在合成语音...")
         audio_paths = synthesize_voice_for_segments(
             tts_server, voice, script_data, f"{project_output_dir}/voice"
         )
         
-        # 6. 视频合成
+        if run_mode == "step":
+            from utils import prompt_yes_no
+            print("音频已生成至:")
+            for p in audio_paths:
+                print(" -", p)
+            if not prompt_yes_no("是否继续到视频合成步骤？(可先在 output/voice 中替换音频，保持文件名不变)"):
+                return {"success": True, "message": "已生成音频，用户终止于此", "final_stage": "audio", "audio": audio_paths}
+            # 重新基于磁盘文件确认路径
+            audio_paths = [os.path.join(project_output_dir, "voice", os.path.basename(p)) for p in audio_paths]
+        
+        # 6. 视频合成前校验资源
+        from utils import validate_media_assets, prompt_yes_no
+        validation = validate_media_assets(
+            script_data=script_data,
+            images_dir=os.path.join(project_output_dir, "images"),
+            voice_dir=os.path.join(project_output_dir, "voice"),
+        )
+        if not validation['ok']:
+            print("\n⚠️  视频合成前校验未通过：")
+            for item in validation['issues']:
+                print(" -", item)
+            print("请到 output 相应目录修正资源（文件数量与命名必须匹配段落数量），修正后再继续。")
+            if run_mode == "step":
+                if not prompt_yes_no("是否已完成调整并继续进行视频合成？"):
+                    return {"success": False, "message": "视频资源校验未通过，用户终止于此", "final_stage": "validation_failed"}
+                # 再次校验
+                validation = validate_media_assets(
+                    script_data=script_data,
+                    images_dir=os.path.join(project_output_dir, "images"),
+                    voice_dir=os.path.join(project_output_dir, "voice"),
+                )
+                if not validation['ok']:
+                    return {"success": False, "message": "视频资源校验仍未通过", "issues": validation['issues']}
+            else:
+                return {"success": False, "message": "视频资源校验未通过", "issues": validation['issues']}
+
         print("正在合成最终视频...")
+        # 解析背景音乐绝对路径
+        bgm_audio_path = None
+        if bgm_filename:
+            candidate = os.path.join(project_output_dir, "music", bgm_filename)
+            if not os.path.exists(candidate):
+                # 若项目输出目录不存在该文件，则尝试从全局库复制
+                global_candidate = os.path.join(project_root, "music", bgm_filename)
+                if os.path.exists(global_candidate):
+                    try:
+                        shutil.copy2(global_candidate, candidate)
+                        print(f"已从全局音乐库复制 BGM 到本项目: {candidate}")
+                    except Exception as _e:
+                        print(f"⚠️  复制背景音乐失败: {_e}")
+            if os.path.exists(candidate):
+                bgm_audio_path = candidate
+            else:
+                print(f"⚠️  未找到指定的背景音乐文件: {candidate}，将继续生成无背景音乐的视频")
+
         final_video_path = compose_final_video(
             image_paths, audio_paths, f"{project_output_dir}/final_video.mp4",
-            script_data=script_data, enable_subtitles=enable_subtitles
+            script_data=script_data, enable_subtitles=enable_subtitles,
+            bgm_audio_path=bgm_audio_path, bgm_volume=0.15
         )
         
-        # 生成处理摘要
+        # 计算处理统计信息
         end_time = datetime.datetime.now()
         execution_time = (end_time - start_time).total_seconds()
-        
         compression_ratio = (1 - script_data['total_length'] / original_length) * 100
-        
-        summary_text = f"""=== 文档处理摘要 ===
-处理时间: {start_time.strftime('%Y-%m-%d %H:%M:%S')}
-原始文档: {os.path.basename(input_file)}
-原始字数: {original_length:,}字
-目标字数: {target_length}字
-实际字数: {script_data['total_length']}字
-压缩比例: {compression_ratio:.1f}%
-分段数量: {num_segments}段
-图像风格: {image_style_preset}
-字幕功能: {'启用' if enable_subtitles else '禁用'}
-总处理时间: {execution_time:.1f}秒
-"""
-        
-        summary_path = f"{project_output_dir}/text/summary.txt"
-        with open(summary_path, 'w', encoding='utf-8') as f:
-            f.write(summary_text)
-        print(f"处理摘要已保存到: {summary_path}")
         
         # 输出完成信息
         print("\n" + "="*60)
@@ -208,9 +288,6 @@ def main(
                 "avg_per_segment": sum(len(seg.get('keywords', [])) + len(seg.get('atmosphere', [])) 
                                      for seg in keywords_data['segments']) / len(keywords_data['segments'])
             },
-            "text_files": {
-                "summary": summary_path
-            },
             "images": image_paths,
             "audio_files": audio_paths,
             "final_video": final_video_path,
@@ -228,6 +305,9 @@ def main(
         return result
     
     except Exception as e:
+        print(f"\n❌ 程序执行失败: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return {
             "success": False,
             "message": f"处理失败: {str(e)}",
@@ -235,7 +315,7 @@ def main(
             "error": str(e)
         }
 
-# Run the main function
+# Interactive CLI Entry Point
 if __name__ == "__main__":
     print("🚀 智能视频制作系统启动")
     
@@ -275,16 +355,35 @@ if __name__ == "__main__":
     
     # 图像风格预设
     # image_style_preset: cinematic | documentary | artistic | minimalist | vintage
+    
+    # 背景音乐
+    # bgm_filename: 背景音乐文件名（将音频放在项目根目录的 music/ 下）；
+    #               传入 None / 留空 / 错误文件名 则不使用 BGM。
     # ========================================================================
     
-    # 运行主程序
-    main(
-        target_length=800,
-        num_segments=10,
-        image_size="1280x720",
-        llm_model="moonshotai/Kimi-K2-Instruct",
-        image_model="doubao-seedream-3-0-t2i-250415",
-        voice="zh_male_yuanboxiaoshu_moon_bigtts",
-        image_style_preset="cinematic",
-        enable_subtitles=True
-    )
+    try:
+        # 运行主程序 - input_file设为None以启用交互式选择
+        result = main(
+            input_file=None,  # 启用交互式文件选择
+            target_length=1000,
+            num_segments=10,
+            image_size="1280x720",
+            llm_model="google/gemini-2.5-pro",
+            image_model="doubao-seedream-3-0-t2i-250415",
+            voice="zh_male_yuanboxiaoshu_moon_bigtts",
+            image_style_preset="vintage",
+            enable_subtitles=True,
+            bgm_filename="Ramin Djawadi - Light of the Seven.mp3"  
+        )
+        
+        if result["success"]:
+            print("\n🎉 视频制作完成！")
+        else:
+            print(f"\n❌ 处理失败: {result.get('message', '未知错误')}")
+            
+    except KeyboardInterrupt:
+        print("\n\n👋 程序被用户中断")
+    except Exception as e:
+        print(f"\n❌ 程序运行异常: {str(e)}")
+        import traceback
+        traceback.print_exc()

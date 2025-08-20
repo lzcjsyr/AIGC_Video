@@ -3,7 +3,11 @@
 包含文档读取、智能处理、图像生成、语音合成、视频制作等功能
 """
 
-from moviepy import ImageClip, AudioFileClip, CompositeVideoClip, concatenate_videoclips, VideoFileClip, TextClip, ColorClip
+from moviepy import ImageClip, AudioFileClip, CompositeVideoClip, concatenate_videoclips, VideoFileClip, TextClip, ColorClip, CompositeAudioClip
+try:
+    from moviepy.audio.AudioClip import concatenate_audioclips  # type: ignore
+except Exception:
+    concatenate_audioclips = None  # fallback later
 from typing import Optional, Dict, Any, List, Tuple
 from io import BytesIO
 from PIL import Image
@@ -24,8 +28,9 @@ from utils import (
     logger, FileProcessingError, APIError, VideoProcessingError,
     log_function_call, ensure_directory_exists, clean_text, 
     validate_file_format, safe_json_loads, save_json_file,
-    calculate_duration, ProgressTracker
+    calculate_duration, ProgressTracker, interactive_file_selector
 )
+from utils import parse_json_robust
 
 ################ Document Reading ################
 @log_function_call
@@ -155,13 +160,8 @@ def intelligent_summarize(server: str, model: str, content: str, target_length: 
         if output is None:
             raise ValueError("未能从 API 获取响应。")
         
-        # 提取JSON内容
-        json_start = output.find('{')
-        json_end = output.rfind('}') + 1
-        if json_start == -1 or json_end == 0:
-            raise ValueError("未在输出中找到 JSON 对象。")
-        
-        parsed_content = json.loads(output[json_start:json_end])
+        # 鲁棒解析（先常规，失败则修复）
+        parsed_content = parse_json_robust(output)
         
         # 验证必需字段
         required_keys = ["title", "segments"]
@@ -178,6 +178,11 @@ def intelligent_summarize(server: str, model: str, content: str, target_length: 
             "target_segments": num_segments,
             "actual_segments": len(parsed_content["segments"]),
             "created_time": datetime.datetime.now().isoformat(),
+            "model_info": {
+                "llm_server": server,
+                "llm_model": model,
+                "generation_type": "script_generation"
+            },
             "segments": []
         }
         
@@ -216,12 +221,6 @@ def extract_keywords(server: str, model: str, script_data: Dict[str, Any]) -> Di
         user_message = f"""请为以下每个段落提取关键词和氛围词，用于图像生成：
 
 {chr(10).join(segments_text)}
-
-要求：
-1. keywords: 具体的画面内容关键词（物体、场景、人物等）
-2. atmosphere: 氛围感关键词（情感、氛围、感觉等）
-3. 每类3-5个关键词
-4. 适合用于图像生成的描述性词汇
 """
         
         output = text_to_text(
@@ -236,13 +235,8 @@ def extract_keywords(server: str, model: str, script_data: Dict[str, Any]) -> Di
         if output is None:
             raise ValueError("未能从 API 获取响应。")
         
-        # 提取JSON内容
-        json_start = output.find('{')
-        json_end = output.rfind('}') + 1
-        if json_start == -1 or json_end == 0:
-            raise ValueError("未在输出中找到 JSON 对象。")
-        
-        keywords_data = json.loads(output[json_start:json_end])
+        # 鲁棒解析（先常规，失败则修复）
+        keywords_data = parse_json_robust(output)
         
         # 验证格式
         if "segments" not in keywords_data:
@@ -251,6 +245,14 @@ def extract_keywords(server: str, model: str, script_data: Dict[str, Any]) -> Di
         # 确保段落数量匹配
         if len(keywords_data["segments"]) != len(script_data["segments"]):
             raise ValueError("关键词段落数量与口播稿不匹配")
+        
+        # 添加模型信息
+        keywords_data["model_info"] = {
+            "llm_server": server,
+            "llm_model": model,
+            "generation_type": "keywords_extraction"
+        }
+        keywords_data["created_time"] = datetime.datetime.now().isoformat()
         
         return keywords_data
     
@@ -373,7 +375,8 @@ def synthesize_voice_for_segments(server: str, voice: str, script_data: Dict[str
 
 ################ Video Composition ################
 def compose_final_video(image_paths: List[str], audio_paths: List[str], output_path: str, 
-                       script_data: Dict[str, Any] = None, enable_subtitles: bool = False) -> str:
+                       script_data: Dict[str, Any] = None, enable_subtitles: bool = False,
+                       bgm_audio_path: Optional[str] = None, bgm_volume: float = 0.15) -> str:
     """
     合成最终视频
     
@@ -422,6 +425,8 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
                 # 传入最终视频尺寸，便于字幕计算边距/背景
                 subtitle_config = config.SUBTITLE_CONFIG.copy()
                 subtitle_config["video_size"] = final_video.size
+                # 传入每段音频真实时长用于精准对齐
+                subtitle_config["segment_durations"] = [ac.duration for ac in audio_clips]
                 subtitle_clips = create_subtitle_clips(script_data, subtitle_config)
                 if subtitle_clips:
                     # 将字幕与视频合成
@@ -432,6 +437,44 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
             except Exception as e:
                 logger.warning(f"添加字幕失败: {str(e)}，继续生成无字幕视频")
         
+        # 可选：叠加背景音乐（与口播混音）
+        bgm_clip = None
+        try:
+            if bgm_audio_path and os.path.exists(bgm_audio_path):
+                bgm_clip = AudioFileClip(bgm_audio_path)
+                # 调整音量（尽量使用with_volume，若不可用则保持原音量）
+                try:
+                    if hasattr(bgm_clip, "with_volume"):
+                        bgm_clip = bgm_clip.with_volume(bgm_volume)
+                except Exception:
+                    pass
+                # 循环或裁剪至视频总时长
+                try:
+                    target_duration = final_video.duration
+                    if concatenate_audioclips is None:
+                        raise RuntimeError("缺少循环拼接能力(concatenate_audioclips)，无法循环BGM")
+                    if bgm_clip.duration <= 0:
+                        raise RuntimeError("BGM 音频无有效时长")
+                    segments = []
+                    remaining = target_duration
+                    while remaining > 0:
+                        seg_dur = min(bgm_clip.duration, remaining)
+                        segments.append(bgm_clip.subclip(0, seg_dur))
+                        remaining -= seg_dur
+                    bgm_clip = concatenate_audioclips(segments)
+                except Exception as loop_err:
+                    logger.warning(f"背景音乐循环失败: {loop_err}，将不添加BGM继续生成")
+                    bgm_clip = None
+                # 合成复合音频
+                if bgm_clip is not None:
+                    if final_video.audio is not None:
+                        mixed_audio = CompositeAudioClip([final_video.audio, bgm_clip])
+                    else:
+                        mixed_audio = CompositeAudioClip([bgm_clip])
+                    final_video = final_video.with_audio(mixed_audio)
+        except Exception as e:
+            logger.warning(f"背景音乐处理失败: {str(e)}，将继续生成无背景音乐的视频")
+
         # 输出最终视频
         final_video.write_videofile(
             output_path,
@@ -446,6 +489,11 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
         for aclip in audio_clips:
             aclip.close()
         final_video.close()
+        if bgm_clip is not None:
+            try:
+                bgm_clip.close()
+            except Exception:
+                pass
         
         print(f"最终视频已保存: {output_path}")
         return output_path
@@ -560,9 +608,16 @@ def create_subtitle_clips(script_data: Dict[str, Any], subtitle_config: Dict[str
     video_size = subtitle_config.get("video_size", (1280, 720))
     video_width, video_height = video_size
 
+    segment_durations = subtitle_config.get("segment_durations", [])
+
     for i, segment in enumerate(script_data["segments"], 1):
         content = segment["content"]
-        duration = segment["estimated_duration"]
+        # 优先使用真实音频时长，其次回退到估算时长
+        duration = None
+        if isinstance(segment_durations, list) and len(segment_durations) >= i:
+            duration = float(segment_durations[i-1])
+        if duration is None:
+            duration = float(segment.get("estimated_duration", 0))
         
         logger.debug(f"处理第{i}段字幕，时长: {duration}秒")
         
@@ -573,11 +628,24 @@ def create_subtitle_clips(script_data: Dict[str, Any], subtitle_config: Dict[str
             subtitle_config["max_lines"]
         )
         
-        # 计算每个字幕的显示时长
-        subtitle_duration = duration / len(subtitle_texts) if len(subtitle_texts) > 0 else duration
+        # 计算每行字幕的显示时长：按行字符数占比分配，确保总和==段时长
         subtitle_start_time = current_time
+        line_durations: List[float] = []
+        if len(subtitle_texts) > 0:
+            lengths = [max(1, len(t)) for t in subtitle_texts]
+            total_len = sum(lengths)
+            acc = 0.0
+            for idx, L in enumerate(lengths):
+                if idx < len(lengths) - 1:
+                    d = duration * (L / total_len)
+                    line_durations.append(d)
+                    acc += d
+                else:
+                    line_durations.append(max(0.0, duration - acc))
+        else:
+            line_durations = [duration]
         
-        for subtitle_text in subtitle_texts:
+        for subtitle_text, subtitle_duration in zip(subtitle_texts, line_durations):
             try:
                 # 设置位置
                 position = subtitle_config["position"]

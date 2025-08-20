@@ -111,16 +111,16 @@ class Config:
     # 字幕配置
     SUBTITLE_CONFIG = {
         "enabled": True,                        # 是否启用字幕
-        "font_size": 24,                       # 字体大小
+        "font_size": 32,                       # 字体大小
         "font_family": None,                   # 字体（None使用系统默认字体）
         "color": "white",                      # 字体颜色
         "stroke_color": "black",               # 描边颜色
         "stroke_width": 3,                     # 描边宽度
         "position": ("center", "bottom"),      # 字幕位置
         "margin_bottom": 50,                   # 底部边距
-        "max_chars_per_line": 20,              # 每行最大字符数
+        "max_chars_per_line": 16,              # 每行最大字符数
         "max_lines": 2,                        # 最大行数
-        "line_spacing": 10,                    # 行间距
+        "line_spacing": 15,                    # 行间距
         "background_color": None,              # 背景色（None为透明）
         "background_opacity": 0.8,             # 背景透明度
         "shadow_enabled": False,               # 是否启用阴影效果（暂时禁用以解决位置问题）
