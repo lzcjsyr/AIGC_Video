@@ -270,8 +270,10 @@ def prompt_yes_no(message: str, default: bool = True) -> bool:
     """
     try:
         suffix = "[Y/n]" if default else "[y/N]"
+        # 统一在提示前输出一个空行，避免在调用点散落打印
+        print()
         while True:
-            choice = input(f"\n{message} {suffix}: ").strip().lower()
+            choice = input(f"{message} {suffix}: ").strip().lower()
             if choice == '' and default is not None:
                 return default
             if choice in ['y', 'yes', '是']:
@@ -283,19 +285,21 @@ def prompt_yes_no(message: str, default: bool = True) -> bool:
         print("\n操作已取消")
         return False
 
-def prompt_choice(message: str, options: List[str], default_index: int = 0) -> str:
+def prompt_choice(message: str, options: List[str], default_index: int = 0) -> Optional[str]:
     """通用选项选择器，返回所选项文本。
     支持输入序号或精确匹配选项文本（不区分大小写）。
     """
     try:
         while True:
-            print(f"\n{message}")
+            print(f"\n{message}（输入 q 返回上一级）")
             for i, opt in enumerate(options, 1):
                 prefix = "*" if (i - 1) == default_index else " "
                 print(f" {prefix} {i}. {opt}")
             raw = input(f"请输入序号 (默认 {default_index+1}): ").strip()
             if raw == "":
                 return options[default_index]
+            if raw.lower() == 'q':
+                return None
             if raw.isdigit():
                 idx = int(raw) - 1
                 if 0 <= idx < len(options):
@@ -516,10 +520,10 @@ def get_user_file_selection(files: List[Dict[str, Any]]) -> Optional[str]:
     while True:
         try:
             print("="*60)
-            choice = input(f"请选择要处理的文件 (1-{len(files)}) 或输入 'q' 退出: ").strip()
+            choice = input(f"请选择要处理的文件 (1-{len(files)}) 或输入 'q' 返回上一级: ").strip()
             
             if choice.lower() == 'q':
-                print("👋 程序已取消")
+                print("👋 返回上一级")
                 return None
             
             file_index = int(choice) - 1
@@ -562,6 +566,291 @@ def interactive_file_selector(input_dir: str = "input") -> Optional[str]:
     # 获取用户选择
     return get_user_file_selection(files)
 
+# =============================
+# 项目管理与进度检测（output/）
+# =============================
+
+def scan_output_projects(output_dir: str = "output") -> List[Dict[str, Any]]:
+    """
+    扫描 output 目录下的项目文件夹（约定：文件夹内包含 images/ voice/ text/ 等子目录）。
+
+    Returns:
+        List[Dict]: 每个项目的 { path, name, modified_time } 信息
+    """
+    # 将相对路径锚定到项目目录（本文件所在目录）
+    if not os.path.isabs(output_dir):
+        output_dir = os.path.join(os.path.dirname(__file__), output_dir)
+
+    projects: List[Dict[str, Any]] = []
+    if not os.path.exists(output_dir):
+        return projects
+
+    try:
+        for entry in os.listdir(output_dir):
+            p = os.path.join(output_dir, entry)
+            if not os.path.isdir(p):
+                continue
+            # 粗略判断：包含 text/ 目录即认为是项目
+            text_dir = os.path.join(p, "text")
+            if os.path.isdir(text_dir):
+                stat = os.stat(p)
+                projects.append({
+                    "path": p,
+                    "name": entry,
+                    "modified_time": datetime.datetime.fromtimestamp(stat.st_mtime)
+                })
+    except Exception as e:
+        logger.warning(f"扫描输出目录失败: {e}")
+        return []
+
+    # 最新修改在前
+    projects.sort(key=lambda x: x["modified_time"], reverse=True)
+    return projects
+
+def display_project_menu(projects: List[Dict[str, Any]]) -> None:
+    print("\n" + "="*60)
+    print("📂 发现以下现有项目:")
+    print("="*60)
+    if not projects:
+        print("❌ 在 output 目录中未找到现有项目")
+        return
+    for i, info in enumerate(projects, 1):
+        modified_date = info['modified_time'].strftime('%Y-%m-%d %H:%M')
+        print(f"{i:2}. {info['name']}")
+        print(f"     修改时间: {modified_date}")
+        print()
+
+def get_user_project_selection(projects: List[Dict[str, Any]]) -> Optional[str]:
+    if not projects:
+        return None
+    while True:
+        try:
+            print("="*60)
+            choice = input(f"请选择要打开的项目 (1-{len(projects)}) 或输入 'q' 返回上一级: ").strip()
+            if choice.lower() == 'q':
+                return None
+            idx = int(choice) - 1
+            if 0 <= idx < len(projects):
+                selected = projects[idx]
+                print(f"\n✅ 您选择了项目: {selected['name']}")
+                return selected['path']
+            else:
+                print(f"❌ 无效选择，请输入 1-{len(projects)} 之间的数字")
+        except ValueError:
+            print("❌ 请输入有效的数字")
+        except KeyboardInterrupt:
+            print("\n操作已取消")
+            return None
+
+def interactive_project_selector(output_dir: str = "output") -> Optional[str]:
+    """
+    交互式项目选择器（从 output/ 选择已有项目文件夹）
+    """
+    print("\n📂 打开现有项目")
+    print("正在扫描 output 目录...")
+    projects = scan_output_projects(output_dir)
+    display_project_menu(projects)
+    return get_user_project_selection(projects)
+
+def _read_json_if_exists(path: str) -> Optional[Dict[str, Any]]:
+    try:
+        if os.path.exists(path):
+            with open(path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        logger.warning(f"读取JSON失败 {path}: {e}")
+    return None
+
+def detect_project_progress(project_dir: str) -> Dict[str, Any]:
+    """
+    检测项目当前进度阶段。
+
+    Returns:
+        一个进度字典，其中：
+        - current_step: 内部步骤编号（2..6），对应 5 步展示的 1..5（= current_step-1）
+        - current_step_display: 对用户展示的步骤编号（1..5）
+        其余布尔标记用于判定各阶段产物是否就绪。
+    """
+    text_dir = os.path.join(project_dir, "text")
+    images_dir = os.path.join(project_dir, "images")
+    voice_dir = os.path.join(project_dir, "voice")
+    final_video_path = os.path.join(project_dir, "final_video.mp4")
+
+    script = _read_json_if_exists(os.path.join(text_dir, "script.json"))
+    has_script = script is not None and isinstance(script, dict) and 'segments' in script
+
+    keywords = _read_json_if_exists(os.path.join(text_dir, "keywords.json"))
+    has_keywords = has_script and keywords is not None and 'segments' in keywords and \
+        len(keywords.get('segments', [])) == len(script.get('segments', []))
+
+    images_ok = False
+    audio_ok = False
+    if has_script:
+        try:
+            v = validate_media_assets(script_data=script, images_dir=images_dir, voice_dir=voice_dir)
+            # 只看图片或音频是否分别就绪
+            # 图片就绪: 没有图片数量/连续性问题
+            # 音频就绪: 没有音频数量/连续性问题
+            # 简化：先通过两次局部检查
+            # 图片检查
+            num_segments = len(script.get('segments', []))
+            image_files = [f for f in os.listdir(images_dir) if os.path.isfile(os.path.join(images_dir, f))] if os.path.isdir(images_dir) else []
+            import re as _re
+            image_indices = []
+            for f in image_files:
+                m = _re.match(r'^segment_(\d+)\.png$', f)
+                if m:
+                    image_indices.append(int(m.group(1)))
+            images_ok = (len(image_indices) == num_segments) and (set(image_indices) == set(range(1, num_segments+1)))
+            # 音频检查
+            title = script.get('title', 'untitled')
+            safe_title = make_safe_title(title)
+            audio_files = [f for f in os.listdir(voice_dir) if os.path.isfile(os.path.join(voice_dir, f))] if os.path.isdir(voice_dir) else []
+            audio_indices = []
+            for f in audio_files:
+                m = _re.match(rf'^{_re.escape(safe_title)}_(\d+)\.(wav|mp3)$', f)
+                if m:
+                    audio_indices.append(int(m.group(1)))
+            audio_ok = (len(audio_indices) == num_segments) and (set(audio_indices) == set(range(1, num_segments+1)))
+        except Exception:
+            images_ok = False
+            audio_ok = False
+
+    has_final_video = os.path.exists(final_video_path) and os.path.getsize(final_video_path) > 0
+
+    # 计算 current_step（对内与对外一致：1..5）
+    current_step = 0
+    if has_script:
+        current_step = 1
+    if has_keywords:
+        current_step = 2
+    if images_ok:
+        current_step = 3
+    if audio_ok:
+        current_step = 4
+    if has_final_video:
+        current_step = 5
+
+    return {
+        'has_script': has_script,
+        'has_keywords': has_keywords,
+        'images_ok': images_ok,
+        'audio_ok': audio_ok,
+        'has_final_video': has_final_video,
+        'current_step': current_step,
+        'current_step_display': max(1, min(5, current_step)),
+        'script': script,
+        'keywords': keywords,
+        'final_video_path': final_video_path,
+        'images_dir': images_dir,
+        'voice_dir': voice_dir,
+        'text_dir': text_dir
+    }
+
+from typing import Optional
+
+def prompt_step_to_rerun(current_step: int) -> Optional[int]:
+    """
+    询问用户要从哪一步开始重做（展示 1..5）。
+    - 输入 1..5（展示层）将映射到内部 2..6（核心逻辑层）。
+    - 返回值为内部步骤编号（2..6）；输入 q/CTRL-C 返回 None。
+    """
+    # 对外展示 1..5（合并了文档读取+智能缩写），但内部仍映射到 2..6
+    options = [
+        "第1步：智能缩写",
+        "第2步：关键词提取",
+        "第3步：AI图像生成",
+        "第4步：语音合成",
+        "第5步：视频合成",
+    ]
+    # 统一 1..5（对内对外一致）
+    current_display_step = max(1, min(5, current_step))
+    print("\n当前项目进度（共5步）：已完成到第{}步".format(current_display_step))
+    for i, opt in enumerate(options, 1):
+        marker = '*' if i == current_display_step else ' '
+        print(f" {marker} {i}. {opt}")
+    default_display = current_display_step
+    while True:
+        try:
+            raw = input(f"请输入步骤号 1-5 或输入 'q' 返回上一级 (默认 {default_display}): ").strip()
+            if raw == "":
+                return default_display
+            if raw.lower() == 'q':
+                return None
+            if raw.isdigit():
+                n = int(raw)
+                if 1 <= n <= 5:
+                    return n
+            print("无效输入，请输入 1-5。")
+        except KeyboardInterrupt:
+            print("\n操作已取消")
+            return None
+
+def collect_ordered_assets(project_dir: str, script_data: Dict[str, Any]) -> Dict[str, List[str]]:
+    """
+    根据 script_data 的段落顺序，收集按序排列的图片和音频文件路径。
+    """
+    images_dir = os.path.join(project_dir, "images")
+    voice_dir = os.path.join(project_dir, "voice")
+    title = script_data.get('title', 'untitled')
+    safe_title = make_safe_title(title)
+    num_segments = len(script_data.get('segments', []))
+
+    image_paths: List[str] = []
+    audio_paths: List[str] = []
+    for i in range(1, num_segments+1):
+        image_path = os.path.join(images_dir, f"segment_{i}.png")
+        audio_wav = os.path.join(voice_dir, f"{safe_title}_{i}.wav")
+        audio_mp3 = os.path.join(voice_dir, f"{safe_title}_{i}.mp3")
+        if not os.path.exists(image_path):
+            raise FileNotFoundError(f"缺少图片: {image_path}")
+        if os.path.exists(audio_wav):
+            audio_path = audio_wav
+        elif os.path.exists(audio_mp3):
+            audio_path = audio_mp3
+        else:
+            raise FileNotFoundError(f"缺少音频: {audio_wav} 或 {audio_mp3}")
+        image_paths.append(image_path)
+        audio_paths.append(audio_path)
+    return {"images": image_paths, "audio": audio_paths}
+
+def clear_downstream_outputs(project_dir: str, from_step: int) -> None:
+    """
+    清理从指定步骤之后的产物，以便重新生成。
+    from_step: 1..5（对外/对内统一步骤编号）
+    """
+    text_dir = os.path.join(project_dir, "text")
+    images_dir = os.path.join(project_dir, "images")
+    voice_dir = os.path.join(project_dir, "voice")
+    final_video_path = os.path.join(project_dir, "final_video.mp4")
+
+    try:
+        if from_step <= 1:
+            # 删除 keywords
+            kp = os.path.join(text_dir, "keywords.json")
+            if os.path.exists(kp):
+                os.remove(kp)
+        if from_step <= 2:
+            # 清空 images
+            if os.path.isdir(images_dir):
+                for f in os.listdir(images_dir):
+                    fp = os.path.join(images_dir, f)
+                    if os.path.isfile(fp):
+                        os.remove(fp)
+        if from_step <= 3:
+            # 清空 voice
+            if os.path.isdir(voice_dir):
+                for f in os.listdir(voice_dir):
+                    fp = os.path.join(voice_dir, f)
+                    if os.path.isfile(fp):
+                        os.remove(fp)
+        if from_step <= 4:
+            # 删除最终视频
+            if os.path.exists(final_video_path):
+                os.remove(final_video_path)
+    except Exception as e:
+        logger.warning(f"清理旧产物失败: {e}")
+
 # 导出主要函数和类
 __all__ = [
     'VideoProcessingError', 'APIError', 'FileProcessingError',
@@ -570,5 +859,7 @@ __all__ = [
     'calculate_duration', 'format_file_size', 'get_file_info',
     'retry_on_failure', 'validate_required_fields', 'create_processing_summary',
     'progress_callback', 'ProgressTracker', 'logger',
-    'scan_input_files', 'display_file_menu', 'get_user_file_selection', 'interactive_file_selector'
+    'scan_input_files', 'display_file_menu', 'get_user_file_selection', 'interactive_file_selector',
+    'scan_output_projects', 'interactive_project_selector', 'detect_project_progress', 'prompt_step_to_rerun',
+    'collect_ordered_assets', 'clear_downstream_outputs', 'display_project_menu', 'get_user_project_selection',
 ]

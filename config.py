@@ -37,7 +37,7 @@ class Config:
     DEFAULT_VOICE = "zh_male_yuanboxiaoshu_moon_bigtts"  # 默认语音（字节语音合成大模型）
     
     # 支持的服务商和模型
-    SUPPORTED_LLM_SERVERS = ["openrouter", "siliconflow", "openai"]  # 都使用OpenAI兼容接口
+    SUPPORTED_LLM_SERVERS = ["openrouter", "siliconflow", "aihubmix"]  # 都使用OpenAI兼容接口
     SUPPORTED_IMAGE_SERVERS = ["doubao"]  # 只支持火山引擎豆包
     SUPPORTED_TTS_SERVERS = ["bytedance"]    # 只支持字节语音合成大模型
     
@@ -54,7 +54,7 @@ class Config:
                 "moonshotai/Kimi-K2-Instruct",
                 "Qwen/Qwen3-235B-A22B-Thinking-2507"
             ],
-            "openai": ["gpt-5"]  # aihubmix代理仅支持gpt-5模型
+            "aihubmix": ["gpt-5"]  # aihubmix代理仅支持gpt-5模型
         },
         "image": {
             "doubao": ["doubao-seedream-3-0-t2i-250415"]
@@ -79,17 +79,6 @@ class Config:
         "1512x648"    # 21:9 - 超宽屏，适合横幅、封面图
     ]
     
-    # 图像尺寸说明
-    IMAGE_SIZE_DESCRIPTIONS = {
-        "1024x1024": "1:1 方形 - 适合头像、产品图、社交媒体",
-        "864x1152": "3:4 竖屏 - 适合手机竖屏内容、Instagram Story",
-        "1152x864": "4:3 横屏 - 适合传统屏幕比例、演示文稿", 
-        "1280x720": "16:9 宽屏 - 适合视频横屏内容、YouTube封面",
-        "720x1280": "9:16 竖屏视频 - 适合抖音、快手、Instagram Reels",
-        "832x1248": "2:3 竖屏 - 适合海报、书籍封面、Pinterest",
-        "1248x832": "3:2 横屏 - 适合摄影作品、风景照片",
-        "1512x648": "21:9 超宽屏 - 适合横幅、网站封面图"
-    }
     
     # 输出路径配置
     DEFAULT_OUTPUT_DIR = "output"
@@ -110,15 +99,15 @@ class Config:
     
     # 字幕配置
     SUBTITLE_CONFIG = {
-        "enabled": True,                        # 是否启用字幕
-        "font_size": 32,                       # 字体大小
+        "enabled": True,                       # 是否启用字幕
+        "font_size": 36,                       # 字体大小
         "font_family": None,                   # 字体（None使用系统默认字体）
         "color": "white",                      # 字体颜色
         "stroke_color": "black",               # 描边颜色
         "stroke_width": 3,                     # 描边宽度
         "position": ("center", "bottom"),      # 字幕位置
         "margin_bottom": 50,                   # 底部边距
-        "max_chars_per_line": 16,              # 每行最大字符数
+        "max_chars_per_line": 25,              # 每行最大字符数
         "max_lines": 2,                        # 最大行数
         "line_spacing": 15,                    # 行间距
         "background_color": None,              # 背景色（None为透明）
@@ -127,6 +116,9 @@ class Config:
         "shadow_color": "black",               # 阴影颜色
         "shadow_offset": (2, 2)                # 阴影偏移(x, y)，单位像素
     }
+    
+    # 音频混音配置
+    BGM_DEFAULT_VOLUME = 0.1  # 背景音乐默认音量（0-1），可统一在此调整
     
     @classmethod
     def validate_api_keys(cls) -> Dict[str, bool]:
@@ -146,7 +138,7 @@ class Config:
         
         if llm_server == "openrouter":
             required_keys.append("OPENROUTER_API_KEY")
-        elif llm_server == "openai":
+        elif llm_server == "aihubmix":
             required_keys.append("AIHUBMIX_API_KEY")
         elif llm_server == "siliconflow":
             required_keys.append("SILICONFLOW_KEY")
@@ -160,12 +152,6 @@ class Config:
             
         return list(set(required_keys))  # 去重
     
-    @classmethod
-    def get_image_size_info(cls, size: str = None) -> Dict[str, str]:
-        """获取图像尺寸信息"""
-        if size:
-            return {size: cls.IMAGE_SIZE_DESCRIPTIONS.get(size, "未知尺寸")}
-        return cls.IMAGE_SIZE_DESCRIPTIONS
     
     @classmethod
     def validate_parameters(cls, target_length: int, num_segments: int, 
@@ -197,5 +183,5 @@ config = Config()
 __all__ = [
     'Config', 'config',
     'SUPPORTED_LLM_SERVERS', 'SUPPORTED_IMAGE_SERVERS', 'SUPPORTED_TTS_SERVERS',
-    'RECOMMENDED_MODELS', 'SUPPORTED_IMAGE_SIZES', 'IMAGE_SIZE_DESCRIPTIONS'
+    'RECOMMENDED_MODELS', 'SUPPORTED_IMAGE_SIZES'
 ]

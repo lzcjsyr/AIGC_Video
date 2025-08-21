@@ -65,6 +65,11 @@
 - 支持自动添加字幕功能
 - **文件保存**：最终视频保存到 `output/{title}_{时间}/final_video.mp4`
 
+**背景音乐（BGM）支持**：
+- BGM 文件从项目根目录 `music/` 读取（参数 `bgm_filename`）
+- 常见支持格式：`mp3`, `wav`, `m4a`, `aac`, `ogg`, `flac`（具体取决于本机 ffmpeg 的编解码支持）
+- 默认 BGM 音量由 `config.BGM_DEFAULT_VOLUME` 控制
+
 ## 输入参数说明
 
 主函数 `main()`接受以下参数：
@@ -96,13 +101,16 @@ def main(
 - `llm_model`: 大语言模型选择
   - OpenRouter服务商: `google/gemini-2.5-pro`, `anthropic/claude-sonnet-4`
   - SiliconFlow服务商: `zai-org/GLM-4.5`, `moonshotai/Kimi-K2-Instruct`
-  - OpenAI代理: `gpt-5`
+  - aihubmix代理: `gpt-5`
 - `image_model`: 图像生成模型，当前支持 `doubao-seedream-3-0-t2i-250415`
 - `voice`: 语音音色，如 `zh_male_yuanboxiaoshu_moon_bigtts`, `zh_female_linjianvhai_moon_bigtts`
 
 **视觉参数**：
 - `image_size`: 图像尺寸，支持多种比例（1024x1024, 1280x720, 720x1280等）
 - `image_style_preset`: 预设风格（cinematic, documentary, artistic, minimalist, vintage）
+  
+**背景音乐参数**：
+- `bgm_filename`: 背景音乐文件名，放在项目根目录 `music/` 中。常见支持格式：`mp3/wav/m4a/aac/ogg/flac`（以本机 ffmpeg 支持为准）
 
 ## 输出结构说明
 
@@ -205,7 +213,7 @@ output/
 - `actual_segments`: 整数，实际生成的段落数
 - `created_time`: 字符串，ISO 8601格式的创建时间
 - `model_info`: 对象，使用的模型信息
-  - `llm_server`: 字符串，LLM服务商（openrouter/siliconflow/openai）
+  - `llm_server`: 字符串，LLM服务商（openrouter/siliconflow/aihubmix）
   - `llm_model`: 字符串，具体的LLM模型名称
   - `generation_type`: 字符串，生成类型（script_generation）
 - `segments[].index`: 整数，段落序号（从1开始）
@@ -362,7 +370,7 @@ output/
   - `moonshotai/Kimi-K2-Instruct` - 月之暗面Kimi模型
   - `Qwen/Qwen3-235B-A22B-Thinking-2507` - 阿里通义千问思维链模型
 
-**OpenAI 代理服务商**（aihubmix）
+**aihubmix 代理服务商**（OpenAI兼容）
 - 支持模型：`gpt-5`
 - 通过代理访问OpenAI API
 
@@ -412,7 +420,7 @@ BYTEDANCE_TTS_SECRET_KEY=你的字节语音SECRET_KEY（可选）
 **LLM模型**：
 - OpenRouter模型：需要 `OPENROUTER_API_KEY`
 - SiliconFlow模型：需要 `SILICONFLOW_KEY`
-- OpenAI代理模型：需要 `AIHUBMIX_API_KEY`
+- aihubmix代理模型：需要 `AIHUBMIX_API_KEY`
 
 **图像生成**：
 - 豆包Seedream 3.0：需要 `SEEDREAM_API_KEY`

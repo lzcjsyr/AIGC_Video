@@ -101,9 +101,9 @@ def check_alternative_configs():
     )
     siliconflow_available = all(getattr(config, key, None) for key in siliconflow_keys)
     
-    # 方案2: OpenAI代理 + Bytedance
+    # 方案2: aihubmix代理 + Bytedance
     openai_keys = config.get_required_keys_for_config(
-        llm_server="openai", 
+        llm_server="aihubmix", 
         image_server="doubao",
         tts_server="bytedance"
     )
@@ -119,7 +119,7 @@ def check_alternative_configs():
     
     if openai_available:
         print("✅ 方案B: aihubmix代理 + 豆包 - 可用")
-        print("   修改 main.py 中的 llm_server='openai'")
+        print("   修改 main.py 中的 llm_server='aihubmix'")
     else:
         print("❌ 方案B: aihubmix代理 + 豆包 - 不可用（缺少密钥）")
 

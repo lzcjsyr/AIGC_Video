@@ -32,7 +32,7 @@ def text_to_text(server, model, prompt, system_message="", max_tokens=4000, temp
     统一的文本生成接口 - 使用OpenAI兼容接口
     
     Args:
-        server: 服务商 ('openrouter', 'siliconflow', 'openai')
+        server: 服务商 ('openrouter', 'siliconflow', 'aihubmix')
         model: 模型名称
         prompt: 用户提示词
         system_message: 系统提示词
@@ -61,7 +61,7 @@ def text_to_text(server, model, prompt, system_message="", max_tokens=4000, temp
             api_key = config.SILICONFLOW_KEY
             base_url = config.SILICONFLOW_BASE_URL
             
-        elif server == "openai":
+        elif server == "aihubmix":
             if not config.AIHUBMIX_API_KEY:
                 raise APIError("AIHUBMIX_API_KEY未配置")
             api_key = config.AIHUBMIX_API_KEY
@@ -86,7 +86,7 @@ def text_to_text(server, model, prompt, system_message="", max_tokens=4000, temp
         }
         
         # 如果是aihubmix代理
-        if server == "openai" and "aihubmix" in base_url.lower():
+        if server == "aihubmix" and "aihubmix" in base_url.lower():
             messages = [
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": prompt}

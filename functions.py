@@ -4,6 +4,14 @@
 """
 
 from moviepy import ImageClip, AudioFileClip, CompositeVideoClip, concatenate_videoclips, VideoFileClip, TextClip, ColorClip, CompositeAudioClip
+# MoviePy 2.x 可能不再提供 moviepy.audio.fx.all 聚合模块，优先从具体模块导入
+try:
+    from moviepy.audio.fx.audio_loop import audio_loop  # type: ignore
+except Exception:
+    try:
+        from moviepy.audio.fx.all import audio_loop  # type: ignore
+    except Exception:
+        audio_loop = None  # fallback later
 try:
     from moviepy.audio.AudioClip import concatenate_audioclips  # type: ignore
 except Exception:
@@ -24,6 +32,10 @@ import pdfplumber
 from prompts import summarize_system_prompt, keywords_extraction_prompt, IMAGE_STYLE_PRESETS
 from genai_api import text_to_text, text_to_image_doubao, text_to_audio_bytedance
 from config import config
+try:
+    from proglog import TqdmProgressBar  # type: ignore
+except Exception:
+    TqdmProgressBar = None
 from utils import (
     logger, FileProcessingError, APIError, VideoProcessingError,
     log_function_call, ensure_directory_exists, clean_text, 
@@ -441,46 +453,108 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
         bgm_clip = None
         try:
             if bgm_audio_path and os.path.exists(bgm_audio_path):
+                print(f"🎵 开始处理背景音乐: {bgm_audio_path}")
                 bgm_clip = AudioFileClip(bgm_audio_path)
+                print(f"🎵 BGM加载成功，时长: {bgm_clip.duration:.2f}秒")
+                
                 # 调整音量（尽量使用with_volume，若不可用则保持原音量）
                 try:
                     if hasattr(bgm_clip, "with_volume"):
                         bgm_clip = bgm_clip.with_volume(bgm_volume)
+                        print(f"🎵 BGM音量调整为: {bgm_volume}")
                 except Exception:
+                    print("⚠️ BGM音量调整失败，使用原音量")
                     pass
-                # 循环或裁剪至视频总时长
+                
+                # 循环或裁剪至视频总时长（优先使用 audio_loop，更稳健）
                 try:
                     target_duration = final_video.duration
-                    if concatenate_audioclips is None:
-                        raise RuntimeError("缺少循环拼接能力(concatenate_audioclips)，无法循环BGM")
-                    if bgm_clip.duration <= 0:
-                        raise RuntimeError("BGM 音频无有效时长")
-                    segments = []
-                    remaining = target_duration
-                    while remaining > 0:
-                        seg_dur = min(bgm_clip.duration, remaining)
-                        segments.append(bgm_clip.subclip(0, seg_dur))
-                        remaining -= seg_dur
-                    bgm_clip = concatenate_audioclips(segments)
+                    print(f"🎵 视频总时长: {target_duration:.2f}秒，BGM时长: {bgm_clip.duration:.2f}秒")
+
+                    if audio_loop is not None:
+                        bgm_clip = audio_loop(bgm_clip, duration=target_duration)
+                        print(f"🎵 BGM长度适配完成（audio_loop），最终时长: {bgm_clip.duration:.2f}秒")
+                    else:
+                        # 尝试手动循环直至匹配长度，否则裁剪
+                        print("ℹ️ audio_loop 不可用，尝试手动循环BGM…")
+                        if concatenate_audioclips is not None:
+                            try:
+                                repeats = int(target_duration // bgm_clip.duration)
+                                remainder = float(max(0.0, target_duration - repeats * bgm_clip.duration))
+                                clips_to_concat = []
+                                if repeats > 0:
+                                    clips_to_concat.extend([bgm_clip] * repeats)
+                                if remainder > 0:
+                                    if hasattr(bgm_clip, "with_duration"):
+                                        clips_to_concat.append(bgm_clip.with_duration(remainder))
+                                if clips_to_concat:
+                                    bgm_clip = concatenate_audioclips(clips_to_concat)
+                                    print(f"🎵 BGM长度适配完成（manual loop），最终时长: {bgm_clip.duration:.2f}秒")
+                                else:
+                                    # 极短视频：裁剪
+                                    if hasattr(bgm_clip, "with_duration"):
+                                        bgm_clip = bgm_clip.with_duration(min(bgm_clip.duration, target_duration))
+                                        print("⚠️ 已将BGM裁剪到目标时长")
+                                    else:
+                                        raise RuntimeError("无法适配BGM长度：缺少with_duration能力")
+                            except Exception as _manual_err:
+                                print(f"⚠️ 手动循环失败: {_manual_err}，回退为裁剪处理")
+                                if hasattr(bgm_clip, "with_duration"):
+                                    bgm_clip = bgm_clip.with_duration(min(bgm_clip.duration, target_duration))
+                                    print("⚠️ 已将BGM裁剪到目标时长")
+                                else:
+                                    raise RuntimeError("audio_loop 不可用，手动循环失败，且不支持 with_duration")
+                        else:
+                            # 无法拼接：裁剪
+                            if hasattr(bgm_clip, "with_duration"):
+                                bgm_clip = bgm_clip.with_duration(min(bgm_clip.duration, target_duration))
+                                print("⚠️ audio_loop 不可用，已将BGM裁剪到目标时长")
+                            else:
+                                raise RuntimeError("audio_loop 不可用，且不支持 with_duration")
+
                 except Exception as loop_err:
-                    logger.warning(f"背景音乐循环失败: {loop_err}，将不添加BGM继续生成")
+                    print(f"⚠️ 背景音乐长度适配失败: {loop_err}，将不添加BGM继续生成")
+                    logger.warning(f"背景音乐循环/裁剪失败: {loop_err}，将不添加BGM继续生成")
                     bgm_clip = None
+                    
                 # 合成复合音频
                 if bgm_clip is not None:
+                    print("🎵 开始合成背景音乐和口播音频")
                     if final_video.audio is not None:
                         mixed_audio = CompositeAudioClip([final_video.audio, bgm_clip])
+                        print("🎵 BGM与口播音频合成完成")
                     else:
                         mixed_audio = CompositeAudioClip([bgm_clip])
+                        print("🎵 仅添加BGM音频（无口播音频）")
                     final_video = final_video.with_audio(mixed_audio)
+                    print("🎵 背景音乐添加成功！")
+                else:
+                    print("❌ BGM处理失败，生成无背景音乐视频")
+            else:
+                if bgm_audio_path:
+                    print(f"⚠️ 背景音乐文件不存在: {bgm_audio_path}")
+                else:
+                    print("ℹ️ 未指定背景音乐文件")
         except Exception as e:
+            print(f"❌ 背景音乐处理异常: {str(e)}")
             logger.warning(f"背景音乐处理失败: {str(e)}，将继续生成无背景音乐的视频")
 
-        # 输出最终视频
+        # 输出最终视频（使用单行进度条，避免终端刷屏）
+        moviepy_logger = None
+        try:
+            if TqdmProgressBar is not None:
+                moviepy_logger = TqdmProgressBar(tqdm_kwargs={"leave": False, "mininterval": 0.2})
+            else:
+                moviepy_logger = 'bar'
+        except Exception:
+            moviepy_logger = 'bar'
+
         final_video.write_videofile(
             output_path,
             fps=24,
             codec='libx264',
-            audio_codec='aac'
+            audio_codec='aac',
+            logger=moviepy_logger
         )
         
         # 释放资源
@@ -516,7 +590,7 @@ def get_image_style(style_name: str = "cinematic") -> str:
 
 def split_text_for_subtitle(text: str, max_chars_per_line: int = 20, max_lines: int = 2) -> List[str]:
     """
-    将长文本分割为适合字幕显示的短句
+    将长文本分割为适合字幕显示的短句，严格按每行字符数限制
     
     Args:
         text: 原始文本
@@ -526,7 +600,8 @@ def split_text_for_subtitle(text: str, max_chars_per_line: int = 20, max_lines: 
     Returns:
         List[str]: 分割后的字幕文本列表
     """
-    if len(text) <= max_chars_per_line * max_lines:
+    # 如果文本很短，直接按字符数切分
+    if len(text) <= max_chars_per_line:
         return [text]
     
     # 按句号、问号、感叹号分割
@@ -541,14 +616,29 @@ def split_text_for_subtitle(text: str, max_chars_per_line: int = 20, max_lines: 
     if current.strip():
         sentences.append(current.strip())
     
-    # 组合句子，确保不超过行数和字符数限制
+    # 如果没有句子分隔符，强制按字符数切分
+    if not sentences:
+        result = []
+        for i in range(0, len(text), max_chars_per_line):
+            result.append(text[i:i + max_chars_per_line])
+        return result
+    
+    # 组合句子，严格按每行字符数限制
     result = []
     current_subtitle = ""
     
     for sentence in sentences:
-        if not current_subtitle:
+        # 如果单个句子就超过了每行限制，强制切分
+        if len(sentence) > max_chars_per_line:
+            if current_subtitle:
+                result.append(current_subtitle)
+                current_subtitle = ""
+            # 强制按字符数切分长句子
+            for i in range(0, len(sentence), max_chars_per_line):
+                result.append(sentence[i:i + max_chars_per_line])
+        elif not current_subtitle:
             current_subtitle = sentence
-        elif len(current_subtitle + sentence) <= max_chars_per_line * max_lines:
+        elif len(current_subtitle + sentence) <= max_chars_per_line:
             current_subtitle += sentence
         else:
             result.append(current_subtitle)
@@ -755,4 +845,3 @@ def create_subtitle_clips(script_data: Dict[str, Any], subtitle_config: Dict[str
     
     logger.info(f"字幕创建完成，共创建 {len(subtitle_clips)} 个字幕剪辑")
     return subtitle_clips
-
