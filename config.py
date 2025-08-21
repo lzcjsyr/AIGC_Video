@@ -118,7 +118,17 @@ class Config:
     }
     
     # 音频混音配置
-    BGM_DEFAULT_VOLUME = 0.1  # 背景音乐默认音量（0-1），可统一在此调整
+    # BGM_DEFAULT_VOLUME: 背景音乐线性增益系数（传给 MoviePy 的 with_volume，直接按幅度相乘）。
+    #   - 0.0 = 静音；1.0 = 原始电平；>1.0 = 放大（可能导致失真/削波）。
+    #   - 推荐区间: 0.03 ~ 0.20（常用 0.06 ~ 0.12）。
+    #   - 实际可设置范围理论上不限，但背景音乐通常应显著低于口播。
+    BGM_DEFAULT_VOLUME = 0.05
+
+    # NARRATION_DEFAULT_VOLUME: 口播音轨线性增益系数（同上，混音前先对口播整体增益）。
+    #   - 0.5 ~ 3.0 都可以；推荐区间: 0.8 ~ 1.5（1.0 为原始电平）。
+    #   - >2.0 可能出现削波失真（尤其原始语音已接近满幅时）；如需更响建议同时适当降低 BGM。
+    #   - 当前默认值较高（2.5），请根据听感与是否失真按需回调。
+    NARRATION_DEFAULT_VOLUME = 2.5
     
     @classmethod
     def validate_api_keys(cls) -> Dict[str, bool]:

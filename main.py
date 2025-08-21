@@ -260,7 +260,7 @@ def main(
                 json.dump(script_data, f, ensure_ascii=False, indent=2)
             print(f"口播稿已保存到: {script_path}")
             # 若用户明确选择只重做第1步（智能缩写），则到此为止
-            if locals().get('selected_step') == 2:
+            if locals().get('selected_step') == 1:
                 # 步骤执行完成后返回到项目选择/步骤选择界面由主程序循环控制（此处返回成功信息）
                 return {"success": True, "message": "已完成第1步：智能缩写", "final_stage": "script", "script": {"file_path": script_path, "segments_count": script_data['actual_segments'], "total_length": script_data['total_length']}}
         else:
@@ -281,7 +281,7 @@ def main(
             script_data = load_json_file(script_path)
         
         # 关键词提取：新建或从关键词步骤开始重做时执行（步骤 2/5）
-        if not (goto_existing_branch and locals().get('step_to_rerun') > 3):
+        if not (goto_existing_branch and locals().get('step_to_rerun') > 2):
             print_section("步骤 2/5 关键词提取", "🧩")
             print("正在提取关键词...")
             keywords_data = extract_keywords(
@@ -294,17 +294,17 @@ def main(
                 json.dump(keywords_data, f, ensure_ascii=False, indent=2)
             print(f"关键词已保存到: {keywords_path}")
             # 若用户明确选择只重做第2步（关键词），则到此为止
-            if locals().get('selected_step') == 3:
+            if locals().get('selected_step') == 2:
                 return {"success": True, "message": "已完成第2步：关键词提取", "final_stage": "keywords", "keywords": {"file_path": keywords_path}}
         
-        if run_mode == "step" and not (goto_existing_branch and locals().get('step_to_rerun') > 3):
+        if run_mode == "step" and not (goto_existing_branch and locals().get('step_to_rerun') > 2):
             from utils import prompt_yes_no, load_json_file
             if not prompt_yes_no("是否继续到图像生成步骤？(可先在 output/text/keywords.json 修改后再继续)"):
                 return {"success": True, "message": "已生成关键词，用户终止于此", "final_stage": "keywords"}
             keywords_data = load_json_file(keywords_path)
         
         # 步骤 3/5 图像生成
-        if not (goto_existing_branch and locals().get('step_to_rerun') > 4):
+        if not (goto_existing_branch and locals().get('step_to_rerun') > 3):
             print_section("步骤 3/5 图像生成", "🖼️")
             print("正在生成图像...")
             image_paths = generate_images_for_segments(
@@ -324,7 +324,7 @@ def main(
                     return {"success": False, "message": "当前步骤需要先完成前置步骤。请按顺序执行，或选择重做缺失步骤：建议从第4步（语音合成）开始。", "final_stage": "pending_prerequisites", "needs_prior_steps": True}
                 return {"success": False, "message": f"资源缺失：{msg_text}", "final_stage": "pending_prerequisites", "needs_prior_steps": True}
         # 若用户明确选择只重做第3步（图像），则到此为止（仅当我们实际进行了图像生成时）
-        if locals().get('selected_step') == 4:
+        if locals().get('selected_step') == 3:
             return {"success": True, "message": "已完成第3步：图像生成", "final_stage": "images", "images": image_paths}
         
         if run_mode == "step" and not (goto_existing_branch and locals().get('step_to_rerun') > 4):
@@ -338,7 +338,7 @@ def main(
             image_paths = [os.path.join(project_output_dir, "images", os.path.basename(p)) for p in image_paths]
         
         # 步骤 4/5 语音合成
-        if not (goto_existing_branch and locals().get('step_to_rerun') > 5):
+        if not (goto_existing_branch and locals().get('step_to_rerun') > 4):
             print_section("步骤 4/5 语音合成", "🔊")
             print("正在合成语音...")
             audio_paths = synthesize_voice_for_segments(
@@ -357,7 +357,7 @@ def main(
                     return {"success": False, "message": "当前步骤需要先完成前置步骤。请按顺序执行，或选择重做缺失步骤：建议从第4步（语音合成）开始。", "final_stage": "pending_prerequisites", "needs_prior_steps": True}
                 return {"success": False, "message": f"资源缺失：{msg_text}", "final_stage": "pending_prerequisites", "needs_prior_steps": True}
         # 若用户明确选择只重做第4步（语音），则到此为止（仅当我们实际进行了语音合成或已收集到序列）
-        if locals().get('selected_step') == 5:
+        if locals().get('selected_step') == 4:
             return {"success": True, "message": "已完成第4步：语音合成", "final_stage": "audio", "audio": audio_paths}
         
         if run_mode == "step" and not (goto_existing_branch and locals().get('step_to_rerun') > 5):
@@ -413,7 +413,8 @@ def main(
         final_video_path = compose_final_video(
             image_paths, audio_paths, f"{project_output_dir}/final_video.mp4",
             script_data=script_data, enable_subtitles=enable_subtitles,
-            bgm_audio_path=bgm_audio_path, bgm_volume=config.BGM_DEFAULT_VOLUME
+            bgm_audio_path=bgm_audio_path, bgm_volume=config.BGM_DEFAULT_VOLUME,
+            narration_volume=config.NARRATION_DEFAULT_VOLUME
         )
         
         # 计算处理统计信息

@@ -388,7 +388,8 @@ def synthesize_voice_for_segments(server: str, voice: str, script_data: Dict[str
 ################ Video Composition ################
 def compose_final_video(image_paths: List[str], audio_paths: List[str], output_path: str, 
                        script_data: Dict[str, Any] = None, enable_subtitles: bool = False,
-                       bgm_audio_path: Optional[str] = None, bgm_volume: float = 0.15) -> str:
+                       bgm_audio_path: Optional[str] = None, bgm_volume: float = 0.15,
+                       narration_volume: float = 1.0) -> str:
     """
     合成最终视频
     
@@ -448,6 +449,17 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
                     print("未生成任何字幕剪辑")
             except Exception as e:
                 logger.warning(f"添加字幕失败: {str(e)}，继续生成无字幕视频")
+
+        # 调整口播音量（在与BGM混音前）
+        try:
+            if final_video.audio is not None and narration_volume is not None:
+                narration_audio = final_video.audio
+                if hasattr(narration_audio, "with_volume"):
+                    narration_audio = narration_audio.with_volume(narration_volume)
+                    final_video = final_video.with_audio(narration_audio)
+                    print(f"🔊 口播音量调整为: {narration_volume}")
+        except Exception as e:
+            logger.warning(f"口播音量调整失败: {str(e)}，将使用原始音量")
         
         # 可选：叠加背景音乐（与口播混音）
         bgm_clip = None
