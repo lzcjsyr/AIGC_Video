@@ -129,6 +129,14 @@ class Config:
     #   - >2.0 可能出现削波失真（尤其原始语音已接近满幅时）；如需更响建议同时适当降低 BGM。
     #   - 当前默认值较高（2.5），请根据听感与是否失真按需回调。
     NARRATION_DEFAULT_VOLUME = 2.5
+
+    # 自动 Ducking（口播期间自动压低 BGM）
+    #   - AUDIO_DUCKING_ENABLED: 是否启用 ducking
+    #   - AUDIO_DUCKING_STRENGTH: 压低强度（0~1），1 表示口播时将 BGM 完全压到 0；0.7 表示压到 30%（1-0.7）
+    #   - AUDIO_DUCKING_SMOOTH_SECONDS: 平滑时间（秒），用于对口播包络做滑动平均，避免突兀跳变
+    AUDIO_DUCKING_ENABLED = True
+    AUDIO_DUCKING_STRENGTH = 0.7
+    AUDIO_DUCKING_SMOOTH_SECONDS = 0.12
     
     @classmethod
     def validate_api_keys(cls) -> Dict[str, bool]:

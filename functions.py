@@ -13,6 +13,14 @@ except Exception:
     except Exception:
         audio_loop = None  # fallback later
 try:
+    # Prefer direct import (MoviePy 2.x may not expose all-in-one fx)
+    from moviepy.audio.fx.volumex import volumex as fx_volumex  # type: ignore
+except Exception:
+    try:
+        from moviepy.audio.fx.all import volumex as fx_volumex  # type: ignore
+    except Exception:
+        fx_volumex = None  # fallback later
+try:
     from moviepy.audio.AudioClip import concatenate_audioclips  # type: ignore
 except Exception:
     concatenate_audioclips = None  # fallback later
@@ -43,6 +51,7 @@ from utils import (
     calculate_duration, ProgressTracker, interactive_file_selector
 )
 from utils import parse_json_robust
+import numpy as np
 
 ################ Document Reading ################
 @log_function_call
@@ -454,8 +463,18 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
         try:
             if final_video.audio is not None and narration_volume is not None:
                 narration_audio = final_video.audio
+                adjusted = False
                 if hasattr(narration_audio, "with_volume"):
                     narration_audio = narration_audio.with_volume(narration_volume)
+                    adjusted = True
+                elif fx_volumex is not None:
+                    narration_audio = fx_volumex(narration_audio, narration_volume)
+                    adjusted = True
+                elif hasattr(narration_audio, "volumex"):
+                    # Some versions expose clip.volumex directly
+                    narration_audio = narration_audio.volumex(narration_volume)
+                    adjusted = True
+                if adjusted:
                     final_video = final_video.with_audio(narration_audio)
                     print(f"🔊 口播音量调整为: {narration_volume}")
         except Exception as e:
@@ -469,10 +488,19 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
                 bgm_clip = AudioFileClip(bgm_audio_path)
                 print(f"🎵 BGM加载成功，时长: {bgm_clip.duration:.2f}秒")
                 
-                # 调整音量（尽量使用with_volume，若不可用则保持原音量）
+                # 调整音量（先尝试 with_volume，回退到 volumex 以适配不同 MoviePy 版本）
                 try:
+                    adjusted_bgm = False
                     if hasattr(bgm_clip, "with_volume"):
                         bgm_clip = bgm_clip.with_volume(bgm_volume)
+                        adjusted_bgm = True
+                    elif fx_volumex is not None:
+                        bgm_clip = fx_volumex(bgm_clip, bgm_volume)
+                        adjusted_bgm = True
+                    elif hasattr(bgm_clip, "volumex"):
+                        bgm_clip = bgm_clip.volumex(bgm_volume)
+                        adjusted_bgm = True
+                    if adjusted_bgm:
                         print(f"🎵 BGM音量调整为: {bgm_volume}")
                 except Exception:
                     print("⚠️ BGM音量调整失败，使用原音量")
@@ -533,6 +561,59 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
                 if bgm_clip is not None:
                     print("🎵 开始合成背景音乐和口播音频")
                     if final_video.audio is not None:
+                        # 可选：自动 Ducking，根据口播包络动态压低 BGM
+                        try:
+                            if getattr(config, "AUDIO_DUCKING_ENABLED", False) and (fx_volumex is not None or hasattr(bgm_clip, "volumex")):
+                                strength = float(getattr(config, "AUDIO_DUCKING_STRENGTH", 0.7))
+                                smooth_sec = float(getattr(config, "AUDIO_DUCKING_SMOOTH_SECONDS", 0.12))
+                                total_dur = float(final_video.duration)
+                                # 采样频率（包络计算），20Hz 足够平滑且开销低
+                                env_fps = 20.0
+                                num_samples = max(2, int(total_dur * env_fps) + 1)
+                                times = np.linspace(0.0, total_dur, num_samples)
+                                # 估算口播瞬时幅度（绝对值，通道取均值）
+                                amp = np.zeros_like(times)
+                                for i, t in enumerate(times):
+                                    try:
+                                        frame = final_video.audio.get_frame(float(min(max(0.0, t), total_dur - 1e-6)))
+                                        # frame 形如 [L, R]
+                                        amp[i] = float(np.mean(np.abs(frame)))
+                                    except Exception:
+                                        amp[i] = 0.0
+                                # 平滑（简单滑动平均窗口）
+                                win = max(1, int(smooth_sec * env_fps))
+                                if win > 1:
+                                    kernel = np.ones(win, dtype=float) / win
+                                    amp = np.convolve(amp, kernel, mode="same")
+                                # 归一化
+                                max_amp = float(np.max(amp)) if np.max(amp) > 1e-8 else 1.0
+                                env = amp / max_amp
+                                # 计算 duck 增益曲线：口播强 -> BGM 更低
+                                gains = 1.0 - strength * env
+                                gains = np.clip(gains, 0.0, 1.0)
+
+                                # 构建时间变增益函数（基于预计算数组，O(1) 索引）
+                                def duck_gain(t: float) -> float:
+                                    if t <= 0.0:
+                                        return float(gains[0])
+                                    if t >= total_dur:
+                                        return float(gains[-1])
+                                    idx = int(t * env_fps)
+                                    if idx < 0:
+                                        idx = 0
+                                    if idx >= gains.shape[0]:
+                                        idx = gains.shape[0] - 1
+                                    return float(gains[idx])
+
+                                # 应用时间变增益到 BGM
+                                if fx_volumex is not None:
+                                    bgm_clip = fx_volumex(bgm_clip, duck_gain)
+                                else:
+                                    bgm_clip = bgm_clip.volumex(duck_gain)  # type: ignore
+                                print(f"🎚️ 已启用自动Ducking（strength={strength}, smooth={smooth_sec}s）")
+                        except Exception as duck_err:
+                            logger.warning(f"自动Ducking失败: {duck_err}，将使用恒定音量BGM")
+
                         mixed_audio = CompositeAudioClip([final_video.audio, bgm_clip])
                         print("🎵 BGM与口播音频合成完成")
                     else:
