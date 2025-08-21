@@ -1,3 +1,109 @@
+# 智能视频制作系统（精简说明）
+
+将 EPUB/PDF 文档自动转为短视频：LLM 智能缩写 → 关键词提取 → Seedream 3.0 生图 → 字节 TTS 配音 → MoviePy 合成（可选字幕与 BGM）。
+
+### 核心能力
+
+- **智能摘要**：长文压缩为口播稿，按段落输出 JSON。
+- **图像生成**：豆包 Seedream 3.0；支持多比例、多风格预设。
+- **语音合成**：字节语音合成大模型，多音色，逐段生成 WAV。
+- **视频合成**：按段对齐图像与音频；可自动字幕、可混入 BGM。
+- **交互式重跑**：支持新建或打开既有项目，选择任一步骤重做。
+
+### 工作流程（5步）
+
+1) **智能缩写**→ `text/script.json`
+2) **关键词提取** → `text/keywords.json`
+3) **图像生成** → `images/segment_{i}.png`
+4) **语音合成** → `voice/{title}_{i}.wav`
+5) **资源校验与视频合成** → `final_video.mp4`
+
+字幕按真实音频时长切分与对齐；BGM 从项目根目录 `music/` 读取（`bgm_filename`），默认音量见 `config.BGM_DEFAULT_VOLUME`。
+
+### 快速开始
+
+1) 配置密钥（创建 `.env`）
+
+```env
+OPENROUTER_API_KEY=...
+SILICONFLOW_KEY=...
+AIHUBMIX_API_KEY=...
+SEEDREAM_API_KEY=...
+BYTEDANCE_TTS_APPID=...
+BYTEDANCE_TTS_ACCESS_TOKEN=...
+```
+
+2) 可先运行配置检查
+
+```bash
+python check_config.py
+```
+
+3) 运行（交互式新建/打开项目，支持逐步确认）
+
+```bash
+python main.py
+```
+
+### 关键参数（简表）
+
+```python
+def main(
+    input_file=None,
+    target_length=1000,          # 500-2000
+    num_segments=10,             # 5-20
+    image_size="1280x720",       # 见 config.SUPPORTED_IMAGE_SIZES
+    llm_model="google/gemini-2.5-pro",
+    image_model="doubao-seedream-3-0-t2i-250415",
+    voice="zh_male_yuanboxiaoshu_moon_bigtts",
+    output_dir="output",
+    image_style_preset="cinematic",
+    enable_subtitles=True,
+    bgm_filename=None,           # 从项目根目录 music/ 读取
+    run_mode="auto"              # auto | step
+)
+```
+
+- **服务商自动识别**：根据模型名自动选择 openrouter/siliconflow/aihubmix 与 doubao/bytedance。
+- **尺寸/风格**：尺寸需在 `config.SUPPORTED_IMAGE_SIZES`，风格见 `prompts.IMAGE_STYLE_PRESETS`。
+
+### 输出结构
+
+```
+output/
+└── {title}_{MMDD_HHMM}/
+    ├── images/
+    ├── voice/
+    ├── text/
+    │   ├── script.json
+    │   └── keywords.json
+    └── final_video.mp4
+```
+
+### 模型与服务商（概览）
+
+- **LLM**：OpenRouter / SiliconFlow / aihubmix（按模型名自动识别）。
+- **图像**：豆包 Seedream 3.0。
+- **TTS**：字节语音合成大模型。
+
+### 项目结构（简）
+
+```
+AIGC_Video/
+├── main.py        # 入口与流程编排（含交互式重跑）
+├── functions.py   # 文档/LLM/生图/TTS/合成等核心逻辑
+├── config.py      # 配置与校验（尺寸、字幕、BGM音量等）
+├── genai_api.py   # 第三方服务调用封装
+├── utils.py       # 工具与交互组件
+├── prompts.py     # 提示词模板与风格预设
+├── check_config.py# 配置检查
+├── music/         # 可选BGM放置目录
+├── input/         # 输入文档目录
+└── output/        # 结果目录
+```
+
+> 下方为更详细的原始说明，供参考（如需极简只看上方）。
+
 # 智能视频制作系统
 
 一个基于多种AI技术的智能视频制作系统，将EPUB和PDF文档自动转换为短视频内容。系统通过LLM智能缩写、关键词提取、AI图像生成、语音合成等技术，实现从文档到视频的全自动化制作流程。
@@ -66,6 +172,7 @@
 - **文件保存**：最终视频保存到 `output/{title}_{时间}/final_video.mp4`
 
 **背景音乐（BGM）支持**：
+
 - BGM 文件从项目根目录 `music/` 读取（参数 `bgm_filename`）
 - 常见支持格式：`mp3`, `wav`, `m4a`, `aac`, `ogg`, `flac`（具体取决于本机 ffmpeg 的编解码支持）
 - 默认 BGM 音量由 `config.BGM_DEFAULT_VOLUME` 控制
@@ -92,12 +199,14 @@ def main(
 ### 参数详细说明
 
 **基础参数**：
+
 - `input_file`: 输入文档路径，支持EPUB和PDF格式。为None时自动从input文件夹读取
 - `target_length`: 目标字数，范围500-1000字
 - `num_segments`: 分段数量，范围5-20段
 - `enable_subtitles`: 是否启用字幕功能
 
 **AI模型参数**（系统会自动检测服务商）：
+
 - `llm_model`: 大语言模型选择
   - OpenRouter服务商: `google/gemini-2.5-pro`, `anthropic/claude-sonnet-4`
   - SiliconFlow服务商: `zai-org/GLM-4.5`, `moonshotai/Kimi-K2-Instruct`
@@ -106,10 +215,12 @@ def main(
 - `voice`: 语音音色，如 `zh_male_yuanboxiaoshu_moon_bigtts`, `zh_female_linjianvhai_moon_bigtts`
 
 **视觉参数**：
+
 - `image_size`: 图像尺寸，支持多种比例（1024x1024, 1280x720, 720x1280等）
 - `image_style_preset`: 预设风格（cinematic, documentary, artistic, minimalist, vintage）
-  
+
 **背景音乐参数**：
+
 - `bgm_filename`: 背景音乐文件名，放在项目根目录 `music/` 中。常见支持格式：`mp3/wav/m4a/aac/ogg/flac`（以本机 ffmpeg 支持为准）
 
 ## 输出结构说明
@@ -357,6 +468,7 @@ output/
 ### 大语言模型 (LLM)
 
 **OpenRouter 服务商**（推荐）
+
 - 通过OpenRouter统一调用多个顶级模型
 - 支持模型：
   - `google/gemini-2.5-pro` - 最新Gemini模型，支持大容量文档处理
@@ -364,6 +476,7 @@ output/
   - `anthropic/claude-3.7-sonnet:thinking` - 支持思维链推理的Claude模型
 
 **SiliconFlow 服务商**
+
 - 兼容OpenAI SDK接口，国内访问稳定
 - 推荐模型：
   - `zai-org/GLM-4.5` - 智谱AI最新版本
@@ -371,12 +484,14 @@ output/
   - `Qwen/Qwen3-235B-A22B-Thinking-2507` - 阿里通义千问思维链模型
 
 **aihubmix 代理服务商**（OpenAI兼容）
+
 - 支持模型：`gpt-5`
 - 通过代理访问OpenAI API
 
 ### 图像生成
 
 **豆包 Seedream 3.0**
+
 - 模型：`doubao-seedream-3-0-t2i-250415`
 - 字节跳动旗下图像生成模型，支持中文提示词优化
 - 基于火山引擎方舟SDK调用，生成质量高且响应速度快
@@ -385,6 +500,7 @@ output/
 ### 语音合成
 
 **字节语音合成大模型**
+
 - 使用WebSocket协议进行实时语音合成
 - 支持多种高质量中文音色：
   - `zh_male_yuanboxiaoshu_moon_bigtts` - 男声（元伯小叔风格）
@@ -392,182 +508,26 @@ output/
   - `zh_male_yangguangqingnian_moon_bigtts` - 男声（阳光青年风格）
 - 专为中文内容优化，发音自然流畅
 
-## 环境配置
+## 环境与密钥
 
-### API密钥配置
-
-在 `.env`文件中配置以下环境变量：
-
-```env
-# LLM服务商API密钥
-OPENROUTER_API_KEY=你的OpenRouter API密钥
-SILICONFLOW_KEY=你的SiliconFlow API密钥
-AIHUBMIX_API_KEY=你的aihubmix代理API密钥
-
-# 图像生成服务（豆包Seedream 3.0）
-SEEDREAM_API_KEY=你的火山引擎方舟API密钥
-
-# 语音合成服务（字节语音合成大模型）
-BYTEDANCE_TTS_APPID=你的字节语音APPID
-BYTEDANCE_TTS_ACCESS_TOKEN=你的字节语音ACCESS_TOKEN
-BYTEDANCE_TTS_SECRET_KEY=你的字节语音SECRET_KEY（可选）
-```
-
-### 必需的API密钥
-
-根据你选择的模型，需要配置对应的API密钥：
-
-**LLM模型**：
-- OpenRouter模型：需要 `OPENROUTER_API_KEY`
-- SiliconFlow模型：需要 `SILICONFLOW_KEY`
-- aihubmix代理模型：需要 `AIHUBMIX_API_KEY`
-
-**图像生成**：
-- 豆包Seedream 3.0：需要 `SEEDREAM_API_KEY`
-
-**语音合成**：
-- 字节语音合成：需要 `BYTEDANCE_TTS_APPID` 和 `BYTEDANCE_TTS_ACCESS_TOKEN`
-
-### 依赖包安装
-
-```bash
-# 安装所有依赖包
-pip install -r requirements.txt
-
-# 或者手动安装
-pip install openai>=1.12.0 requests>=2.31.0 python-dotenv>=1.0.0 Pillow>=10.0.0 \
-            moviepy>=2.0.0 ebooklib>=0.18 PyPDF2>=3.0.1 pdfplumber>=0.9.0 \
-            websockets>=11.0.0 "volcengine-python-sdk[ark]">=1.0.94
-```
-
-### 系统要求
-
-- Python 3.8+
-- 操作系统：macOS, Linux, Windows
-- 内存：建议8GB以上（处理大型文档时）
-- 硬盘：至少2GB可用空间（存储生成的视频文件）
+在 `.env` 中配置 LLM / 图像 / TTS 对应的密钥；具体示例见上方“快速开始”。
 
 ## 使用示例
 
-### 基础用法
-
-**步骤1：准备输入文件**
-
-```bash
-# 在项目根目录创建input文件夹
-mkdir input
-# 将EPUB或PDF文件放入input文件夹
-cp your_book.epub input/
-# 或
-cp your_book.pdf input/
-```
-
-**步骤2：运行程序**
-
-```python
-from main import main
-
-# 自动读取input文件夹中的文件，生成800字10段视频
-result = main(
-    target_length=800,
-    num_segments=10,
-    image_size="1280x720",
-    llm_model="google/gemini-2.5-pro",
-    image_model="doubao-seedream-3-0-t2i-250415",
-    voice="zh_male_yuanboxiaoshu_moon_bigtts",
-    image_style_preset="cinematic",
-    enable_subtitles=True
-)
-
-if result["success"]:
-    print("视频制作完成！")
-    print(f"口播稿段数: {result['script']['segments_count']}")
-    print(f"生成图片数量: {len(result['images'])}")
-    print(f"音频文件数量: {len(result['audio_files'])}")
-    print(f"最终视频: {result['final_video']}")
-    print(f"处理时间: {result['execution_time']:.1f}秒")
-else:
-    print(f"处理失败: {result['message']}")
-```
-
-### 高级配置示例
-
-```python
-# 指定具体文件路径和自定义参数
-result = main(
-    input_file="input/my_novel.epub",
-    target_length=900,  # 生成900字口播稿
-    num_segments=12,    # 分成12段
-    image_size="1024x1024",
-    llm_model="anthropic/claude-sonnet-4",
-    image_model="doubao-seedream-3-0-t2i-250415",
-    voice="zh_female_linjianvhai_moon_bigtts",
-    image_style_preset="artistic",
-    enable_subtitles=True,
-    output_dir="custom_output"
-)
-
-# 使用思维链模型进行更精确的内容处理
-result = main(
-    input_file="input/complex_story.pdf",
-    target_length=500,  # 生成500字短视频
-    num_segments=8,     # 分成8段
-    image_size="720x1280",  # 竖屏格式，适合短视频平台
-    llm_model="anthropic/claude-3.7-sonnet:thinking",
-    image_model="doubao-seedream-3-0-t2i-250415",
-    voice="zh_male_yangguangqingnian_moon_bigtts",
-    image_style_preset="documentary",
-    enable_subtitles=False  # 禁用字幕
-)
-
-# 使用SiliconFlow的国产模型
-result = main(
-    input_file="input/history_book.pdf",
-    target_length=800,
-    num_segments=10,
-    image_size="1280x720",
-    llm_model="zai-org/GLM-4.5",  # 智谱AI模型
-    image_model="doubao-seedream-3-0-t2i-250415",
-    voice="zh_male_yuanboxiaoshu_moon_bigtts",
-    image_style_preset="vintage",  # 复古风格
-    enable_subtitles=True
-)
-```
+最简用法：直接运行 `python main.py` 按提示操作；如需编程式调用，参考 `main()` 的参数简表。
 
 ## 支持的模型和参数
 
-### 图像尺寸选项
-```
-"1024x1024"    # 1:1 方形，适合社交媒体
-"1280x720"     # 16:9 横屏，适合YouTube等视频平台
-"720x1280"     # 9:16 竖屏，适合抖音、快手等短视频
-"864x1152"     # 3:4 竖屏，适合手机观看
-"1152x864"     # 4:3 横屏，适合传统屏幕
-"832x1248"     # 2:3 竖屏，适合海报风格
-"1248x832"     # 3:2 横屏，适合摄影作品
-"1512x648"     # 21:9 超宽屏，适合电影风格
-```
+### 选项速览
 
-### 图像风格预设
-```
-"cinematic"    # 电影级质感，温暖色调，细腻画风
-"documentary"  # 纪录片风格，自然真实，高清摄影
-"artistic"     # 艺术插画风格，色彩丰富，创意表现
-"minimalist"   # 简约现代风格，干净构图，简洁配色
-"vintage"      # 复古怀旧风格，胶片质感，暖色调
-```
-
-### 语音音色选项
-```
-"zh_male_yuanboxiaoshu_moon_bigtts"      # 男声（元伯小叔风格）
-"zh_female_linjianvhai_moon_bigtts"      # 女声（林建海风格）
-"zh_male_yangguangqingnian_moon_bigtts"  # 男声（阳光青年风格）
-"ICL_zh_female_heainainai_tob"           # 女声（可爱风格）
-```
+- **尺寸**：使用 `config.SUPPORTED_IMAGE_SIZES` 列表中的任一值。
+- **风格**：使用 `prompts.IMAGE_STYLE_PRESETS` 中的预设名。
+- **音色**：选择 `_bigtts` 系列中文音色（如 `zh_male_yuanboxiaoshu_moon_bigtts`）。
 
 ## 注意事项
 
 ### 使用限制
+
 - **文档格式**：支持EPUB和PDF格式（PDF建议为文本格式，非扫描件）
 - **文档大小**：可处理10万字级别的长篇文档
 - **目标字数**：500-1000字（系统会自动验证）
@@ -575,16 +535,15 @@ result = main(
 - **图像生成**：受内容政策限制，避免敏感内容
 
 ### 系统需求
+
 - **API密钥**：确保配置了所需的API密钥
 - **网络连接**：需要稳定的互联网连接访问AI服务
 - **存储空间**：每个视频项目约需要50-200MB空间
 - **处理时间**：根据文档长度和分段数，处理时间约2-10分钟
 
 ### 错误处理
-- 程序具备完整的错误处理机制
-- 支持API调用失败重试
-- 详细的日志记录，便于问题排查
-- 建议运行前使用 `check_config.py` 验证配置
+
+- 支持错误捕获与提示，建议先运行 `check_config.py` 验证配置。
 
 ## 项目结构
 
