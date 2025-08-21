@@ -1,0 +1,15 @@
+.env
+.gitignore
+__pycache__/
+.DS_Store
+
+# 输出文件夹
+output/
+
+# 输入文件夹内容（保留文件夹但忽略内容）
+input/*
+!input/.gitkeep
+
+# 日志文件
+*.logoutput/*
+!output/.gitkeep
