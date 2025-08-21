@@ -477,52 +477,21 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
                     print("⚠️ BGM音量调整失败，使用原音量")
                     pass
                 
-                # 循环或裁剪至视频总时长（优先使用 audio_loop，更稳健）
+                # 循环或裁剪至视频总时长（优先使用 MoviePy 2.x 的 AudioLoop）
                 try:
                     target_duration = final_video.duration
                     print(f"🎵 视频总时长: {target_duration:.2f}秒，BGM时长: {bgm_clip.duration:.2f}秒")
-
                     if AudioLoop is not None:
                         # 使用 2.x 的 AudioLoop 效果类
                         bgm_clip = bgm_clip.with_effects([AudioLoop(duration=target_duration)])
                         print(f"🎵 BGM长度适配完成（AudioLoop），最终时长: {bgm_clip.duration:.2f}秒")
                     else:
-                        # 尝试手动循环直至匹配长度，否则裁剪
-                        print("ℹ️ audio_loop 不可用，尝试手动循环BGM…")
-                        if concatenate_audioclips is not None:
-                            try:
-                                repeats = int(target_duration // bgm_clip.duration)
-                                remainder = float(max(0.0, target_duration - repeats * bgm_clip.duration))
-                                clips_to_concat = []
-                                if repeats > 0:
-                                    clips_to_concat.extend([bgm_clip] * repeats)
-                                if remainder > 0:
-                                    if hasattr(bgm_clip, "with_duration"):
-                                        clips_to_concat.append(bgm_clip.with_duration(remainder))
-                                if clips_to_concat:
-                                    bgm_clip = concatenate_audioclips(clips_to_concat)
-                                    print(f"🎵 BGM长度适配完成（manual loop），最终时长: {bgm_clip.duration:.2f}秒")
-                                else:
-                                    # 极短视频：裁剪
-                                    if hasattr(bgm_clip, "with_duration"):
-                                        bgm_clip = bgm_clip.with_duration(min(bgm_clip.duration, target_duration))
-                                        print("⚠️ 已将BGM裁剪到目标时长")
-                                    else:
-                                        raise RuntimeError("无法适配BGM长度：缺少with_duration能力")
-                            except Exception as _manual_err:
-                                print(f"⚠️ 手动循环失败: {_manual_err}，回退为裁剪处理")
-                                if hasattr(bgm_clip, "with_duration"):
-                                    bgm_clip = bgm_clip.with_duration(min(bgm_clip.duration, target_duration))
-                                    print("⚠️ 已将BGM裁剪到目标时长")
-                                else:
-                                    raise RuntimeError("audio_loop 不可用，手动循环失败，且不支持 with_duration")
+                        # 简化的回退：直接裁剪到目标时长（避免复杂手动循环）
+                        if hasattr(bgm_clip, "with_duration"):
+                            bgm_clip = bgm_clip.with_duration(min(bgm_clip.duration, target_duration))
+                            print("⚠️ AudioLoop 不可用，已将BGM裁剪到目标时长")
                         else:
-                            # 无法拼接：裁剪
-                            if hasattr(bgm_clip, "with_duration"):
-                                bgm_clip = bgm_clip.with_duration(min(bgm_clip.duration, target_duration))
-                                print("⚠️ audio_loop 不可用，已将BGM裁剪到目标时长")
-                            else:
-                                raise RuntimeError("audio_loop 不可用，且不支持 with_duration")
+                            raise RuntimeError("AudioLoop 不可用，且不支持 with_duration")
 
                 except Exception as loop_err:
                     print(f"⚠️ 背景音乐长度适配失败: {loop_err}，将不添加BGM继续生成")

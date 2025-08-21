@@ -117,25 +117,25 @@ class Config:
         "shadow_offset": (2, 2)                # 阴影偏移(x, y)，单位像素
     }
     
-    # 音频混音配置
-    # BGM_DEFAULT_VOLUME: 背景音乐线性增益系数（传给 MoviePy 的 with_volume，直接按幅度相乘）。
-    #   - 0.0 = 静音；1.0 = 原始电平；>1.0 = 放大（可能导致失真/削波）。
+    # 音频混音配置（MoviePy 2.x）
+    # BGM_DEFAULT_VOLUME: 背景音乐线性增益系数（通过 MultiplyVolume 应用，幅度相乘）。
+    #   - 0.0 = 静音；1.0 = 原始电平；>1.0 = 放大（可能导致削波）。
     #   - 推荐区间: 0.03 ~ 0.20（常用 0.06 ~ 0.12）。
-    #   - 实际可设置范围理论上不限，但背景音乐通常应显著低于口播。
-    BGM_DEFAULT_VOLUME = 0.05
+    #   - 背景音乐应显著低于口播；如需更响，建议同时降低口播or启用更弱 ducking。
+    BGM_DEFAULT_VOLUME = 0.1
 
-    # NARRATION_DEFAULT_VOLUME: 口播音轨线性增益系数（同上，混音前先对口播整体增益）。
-    #   - 0.5 ~ 3.0 都可以；推荐区间: 0.8 ~ 1.5（1.0 为原始电平）。
-    #   - >2.0 可能出现削波失真（尤其原始语音已接近满幅时）；如需更响建议同时适当降低 BGM。
-    #   - 当前默认值较高（2.5），请根据听感与是否失真按需回调。
-    NARRATION_DEFAULT_VOLUME = 2.5
+    # NARRATION_DEFAULT_VOLUME: 口播音轨线性增益系数（同上，混音前整体增益）。
+    #   - 0.5 ~ 3.0 可用；推荐区间: 0.8 ~ 1.5（1.0 为原始电平）。
+    #   - >2.0 易削波（若原始语音接近满幅）；建议同时下调 BGM。
+    #   - 如追求响度一致，建议后续引入 limiter 或 loudness 正规化（非本项目默认）。
+    NARRATION_DEFAULT_VOLUME = 2.0
 
-    # 自动 Ducking（口播期间自动压低 BGM）
+    # 自动 Ducking（口播期间自动压低 BGM）：MoviePy 2.x 通过 transform 做时间变增益
     #   - AUDIO_DUCKING_ENABLED: 是否启用 ducking
     #   - AUDIO_DUCKING_STRENGTH: 压低强度（0~1），1 表示口播时将 BGM 完全压到 0；0.7 表示压到 30%（1-0.7）
-    #   - AUDIO_DUCKING_SMOOTH_SECONDS: 平滑时间（秒），用于对口播包络做滑动平均，避免突兀跳变
+    #   - AUDIO_DUCKING_SMOOTH_SECONDS: 包络平滑时间（秒），防止跳变突兀
     AUDIO_DUCKING_ENABLED = True
-    AUDIO_DUCKING_STRENGTH = 0.7
+    AUDIO_DUCKING_STRENGTH = 0.3
     AUDIO_DUCKING_SMOOTH_SECONDS = 0.12
     
     @classmethod
