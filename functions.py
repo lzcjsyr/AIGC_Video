@@ -431,7 +431,9 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
         final_video = concatenate_videoclips(video_clips, method="compose")
         
         # 添加字幕（如果启用）
-        if enable_subtitles and script_data:
+        # 生效的字幕开关需同时满足：运行时参数与全局配置均为 True
+        effective_subtitles = bool(enable_subtitles) and bool(getattr(config, "SUBTITLE_CONFIG", {}).get("enabled", True))
+        if effective_subtitles and script_data:
             print("正在添加字幕...")
             try:
                 # 传入最终视频尺寸，便于字幕计算边距/背景

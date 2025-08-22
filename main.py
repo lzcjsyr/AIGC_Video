@@ -431,7 +431,9 @@ def main(
         print(f"🖼️  生成图片数量: {len(image_paths)}")
         print(f"🔊 音频文件数量: {len(audio_paths)}")
         print(f"🎬 最终视频: {final_video_path}")
-        print(f"📝 字幕功能: {'启用' if enable_subtitles else '禁用'}")
+        # 运行时与配置双重控制，展示最终生效状态
+        effective_subtitles = bool(enable_subtitles) and bool(getattr(config, 'SUBTITLE_CONFIG', {}).get('enabled', True))
+        print(f"📝 字幕功能: {'启用' if effective_subtitles else '禁用'}")
         print(f"🎵 背景音乐: {os.path.basename(bgm_audio_path) if bgm_audio_path else '未使用'}")
         print(f"⏱️  总处理时间: {execution_time:.1f}秒")
         print("="*60)
@@ -544,7 +546,7 @@ if __name__ == "__main__":
         image_model="doubao-seedream-3-0-t2i-250415",
         voice="zh_male_yuanboxiaoshu_moon_bigtts",
         image_style_preset="vintage",
-        enable_subtitles=True,
+        enable_subtitles=False,
         bgm_filename="Ramin Djawadi - Light of the Seven.mp3"  
     )
     
