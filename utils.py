@@ -786,9 +786,17 @@ def prompt_step_to_rerun(current_step: int) -> Optional[int]:
             print("\n操作已取消")
             return None
 
-def collect_ordered_assets(project_dir: str, script_data: Dict[str, Any]) -> Dict[str, List[str]]:
+def collect_ordered_assets(project_dir: str, script_data: Dict[str, Any], require_audio: bool = True) -> Dict[str, List[str]]:
     """
-    根据 script_data 的段落顺序，收集按序排列的图片和音频文件路径。
+    根据 script_data 的段落顺序，收集按序排列的图片和（可选）音频文件路径。
+
+    Args:
+        project_dir: 项目目录
+        script_data: 包含段落信息的脚本数据
+        require_audio: 是否强制要求每段音频都存在；为 False 时仅收集图片，音频如存在则收集，不存在不报错。
+
+    Returns:
+        Dict[str, List[str]]: {"images": [...], "audio": [...]}；当 require_audio=False 且音频不存在时，"audio" 可为空列表。
     """
     images_dir = os.path.join(project_dir, "images")
     voice_dir = os.path.join(project_dir, "voice")
@@ -804,14 +812,21 @@ def collect_ordered_assets(project_dir: str, script_data: Dict[str, Any]) -> Dic
         audio_mp3 = os.path.join(voice_dir, f"{safe_title}_{i}.mp3")
         if not os.path.exists(image_path):
             raise FileNotFoundError(f"缺少图片: {image_path}")
-        if os.path.exists(audio_wav):
-            audio_path = audio_wav
-        elif os.path.exists(audio_mp3):
-            audio_path = audio_mp3
+        if require_audio:
+            if os.path.exists(audio_wav):
+                audio_path = audio_wav
+            elif os.path.exists(audio_mp3):
+                audio_path = audio_mp3
+            else:
+                raise FileNotFoundError(f"缺少音频: {audio_wav} 或 {audio_mp3}")
+            audio_paths.append(audio_path)
         else:
-            raise FileNotFoundError(f"缺少音频: {audio_wav} 或 {audio_mp3}")
+            # 非强制音频：有则收集，无则跳过
+            if os.path.exists(audio_wav):
+                audio_paths.append(audio_wav)
+            elif os.path.exists(audio_mp3):
+                audio_paths.append(audio_mp3)
         image_paths.append(image_path)
-        audio_paths.append(audio_path)
     return {"images": image_paths, "audio": audio_paths}
 
 def clear_downstream_outputs(project_dir: str, from_step: int) -> None:

@@ -582,15 +582,8 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
             print(f"❌ 背景音乐处理异常: {str(e)}")
             logger.warning(f"背景音乐处理失败: {str(e)}，将继续生成无背景音乐的视频")
 
-        # 输出最终视频（使用单行进度条，避免终端刷屏）
-        moviepy_logger = None
-        try:
-            if TqdmProgressBar is not None:
-                moviepy_logger = TqdmProgressBar(tqdm_kwargs={"leave": False, "mininterval": 0.2})
-            else:
-                moviepy_logger = 'bar'
-        except Exception:
-            moviepy_logger = 'bar'
+        # 输出最终视频：使用简单进度条，避免某些终端环境下 tqdm 多行滚动刷屏
+        moviepy_logger = 'bar'
 
         final_video.write_videofile(
             output_path,

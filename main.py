@@ -183,8 +183,8 @@ def main(
                             else:
                                 return {"success": False, "message": "无效的步骤"}
 
-                            # 设置模式：在“打开现有项目并选择具体步骤重做”的场景下，直接执行该步，跳过处理方式与分步确认
-                            run_mode = "auto"
+                            # 设置模式：在“打开现有项目并选择具体步骤重做”的场景下，完成所选步骤后继续下一步，并在关键节点询问
+                            run_mode = "step"
                             selected_step = step_to_rerun
                             goto_existing_branch = step_to_rerun >= 2
                             # 完成选择，跳出至处理流程
@@ -260,7 +260,7 @@ def main(
                 json.dump(script_data, f, ensure_ascii=False, indent=2)
             print(f"口播稿已保存到: {script_path}")
             # 若用户明确选择只重做第1步（智能缩写），则到此为止
-            if locals().get('selected_step') == 1:
+            if locals().get('selected_step') == 1 and not goto_existing_branch:
                 # 步骤执行完成后返回到项目选择/步骤选择界面由主程序循环控制（此处返回成功信息）
                 return {"success": True, "message": "已完成第1步：智能缩写", "final_stage": "script", "script": {"file_path": script_path, "segments_count": script_data['actual_segments'], "total_length": script_data['total_length']}}
         else:
@@ -281,6 +281,11 @@ def main(
             script_data = load_json_file(script_path)
         
         # 关键词提取：新建或从关键词步骤开始重做时执行（步骤 2/5）
+        # 若从现有项目直接进入第2步，先询问是否开始执行
+        if run_mode == "step" and goto_existing_branch and locals().get('step_to_rerun') == 2:
+            from utils import prompt_yes_no
+            if not prompt_yes_no("是否开始第2步：关键词提取？"):
+                return {"success": True, "message": "用户取消开始第2步：关键词提取"}
         if not (goto_existing_branch and locals().get('step_to_rerun') > 2):
             print_section("步骤 2/5 关键词提取", "🧩")
             print("正在提取关键词...")
@@ -294,7 +299,7 @@ def main(
                 json.dump(keywords_data, f, ensure_ascii=False, indent=2)
             print(f"关键词已保存到: {keywords_path}")
             # 若用户明确选择只重做第2步（关键词），则到此为止
-            if locals().get('selected_step') == 2:
+            if locals().get('selected_step') == 2 and not goto_existing_branch:
                 return {"success": True, "message": "已完成第2步：关键词提取", "final_stage": "keywords", "keywords": {"file_path": keywords_path}}
         
         if run_mode == "step" and not (goto_existing_branch and locals().get('step_to_rerun') > 2):
@@ -304,6 +309,11 @@ def main(
             keywords_data = load_json_file(keywords_path)
         
         # 步骤 3/5 图像生成
+        # 若从现有项目直接进入第3步，先询问是否开始执行
+        if run_mode == "step" and goto_existing_branch and locals().get('step_to_rerun') == 3:
+            from utils import prompt_yes_no
+            if not prompt_yes_no("是否开始第3步：图像生成？"):
+                return {"success": True, "message": "用户取消开始第3步：图像生成"}
         if not (goto_existing_branch and locals().get('step_to_rerun') > 3):
             print_section("步骤 3/5 图像生成", "🖼️")
             print("正在生成图像...")
@@ -314,7 +324,8 @@ def main(
         else:
             from utils import collect_ordered_assets
             try:
-                assets = collect_ordered_assets(project_output_dir, script_data)
+                # 在从第4步开始重做时，仅需收集已存在的图片，不强制要求音频
+                assets = collect_ordered_assets(project_output_dir, script_data, require_audio=False)
                 image_paths = assets['images']
             except FileNotFoundError as e:
                 msg_text = str(e)
@@ -324,10 +335,10 @@ def main(
                     return {"success": False, "message": "当前步骤需要先完成前置步骤。请按顺序执行，或选择重做缺失步骤：建议从第4步（语音合成）开始。", "final_stage": "pending_prerequisites", "needs_prior_steps": True}
                 return {"success": False, "message": f"资源缺失：{msg_text}", "final_stage": "pending_prerequisites", "needs_prior_steps": True}
         # 若用户明确选择只重做第3步（图像），则到此为止（仅当我们实际进行了图像生成时）
-        if locals().get('selected_step') == 3:
+        if locals().get('selected_step') == 3 and not goto_existing_branch:
             return {"success": True, "message": "已完成第3步：图像生成", "final_stage": "images", "images": image_paths}
         
-        if run_mode == "step" and not (goto_existing_branch and locals().get('step_to_rerun') > 4):
+        if run_mode == "step" and not (goto_existing_branch and locals().get('step_to_rerun') >= 4):
             from utils import prompt_yes_no
             print("图像已生成至:")
             for p in image_paths:
@@ -338,6 +349,11 @@ def main(
             image_paths = [os.path.join(project_output_dir, "images", os.path.basename(p)) for p in image_paths]
         
         # 步骤 4/5 语音合成
+        # 若从现有项目直接进入第4步，先询问是否开始执行
+        if run_mode == "step" and goto_existing_branch and locals().get('step_to_rerun') == 4:
+            from utils import prompt_yes_no
+            if not prompt_yes_no("是否开始第4步：语音合成？"):
+                return {"success": True, "message": "用户取消开始第4步：语音合成"}
         if not (goto_existing_branch and locals().get('step_to_rerun') > 4):
             print_section("步骤 4/5 语音合成", "🔊")
             print("正在合成语音...")
@@ -357,10 +373,10 @@ def main(
                     return {"success": False, "message": "当前步骤需要先完成前置步骤。请按顺序执行，或选择重做缺失步骤：建议从第4步（语音合成）开始。", "final_stage": "pending_prerequisites", "needs_prior_steps": True}
                 return {"success": False, "message": f"资源缺失：{msg_text}", "final_stage": "pending_prerequisites", "needs_prior_steps": True}
         # 若用户明确选择只重做第4步（语音），则到此为止（仅当我们实际进行了语音合成或已收集到序列）
-        if locals().get('selected_step') == 4:
+        if locals().get('selected_step') == 4 and not goto_existing_branch:
             return {"success": True, "message": "已完成第4步：语音合成", "final_stage": "audio", "audio": audio_paths}
         
-        if run_mode == "step" and not (goto_existing_branch and locals().get('step_to_rerun') > 5):
+        if run_mode == "step" and not (goto_existing_branch and locals().get('step_to_rerun') >= 5):
             from utils import prompt_yes_no
             print("音频已生成至:")
             for p in audio_paths:
@@ -371,6 +387,11 @@ def main(
             audio_paths = [os.path.join(project_output_dir, "voice", os.path.basename(p)) for p in audio_paths]
         
         # 步骤 5/5 视频合成
+        # 若从现有项目直接进入第5步，先询问是否开始执行
+        if run_mode == "step" and goto_existing_branch and locals().get('step_to_rerun') == 5:
+            from utils import prompt_yes_no
+            if not prompt_yes_no("是否开始第5步：视频合成？"):
+                return {"success": True, "message": "用户取消开始第5步：视频合成"}
         # 5.1 资源完整性与命名规范校验（确保段数、图片、音频一一对应，编号连续 1..N）
         print_section("步骤 5/5 资源校验与视频合成", "🎬")
         from utils import validate_media_assets, prompt_yes_no
