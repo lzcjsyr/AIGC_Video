@@ -101,7 +101,17 @@ class Config:
     SUBTITLE_CONFIG = {
         "enabled": True,                       # 是否启用字幕
         "font_size": 36,                       # 字体大小
-        "font_family": None,                   # 字体（None使用系统默认字体）
+        # 字体设置：
+        # - 建议填写“绝对路径”最稳妥，能确保在不同环境下渲染一致（以下为常见的 macOS 路径示例）：
+        #     1) 宋体风格（接近思源宋体 Source Han Serif）：
+        #        /System/Library/Fonts/Supplemental/Songti.ttc
+        #     2) 黑体风格（接近思源黑体 Source Han Sans）：
+        #        /System/Library/Fonts/PingFang.ttc
+        #        /System/Library/Fonts/Hiragino Sans GB.ttc
+        # - 也可以直接写字体名（稳定性略差，依赖 Pillow 的字体解析）：
+        #     "Songti SC"、"PingFang SC"、"Hiragino Sans GB"
+        # - 留空(None) 时使用系统默认字体，可能导致中文显示/风格不如预期。
+        "font_family": "/System/Library/Fonts/PingFang.ttc",
         "color": "white",                      # 字体颜色
         "stroke_color": "black",               # 描边颜色
         "stroke_width": 3,                     # 描边宽度

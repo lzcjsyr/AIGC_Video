@@ -652,7 +652,8 @@ def split_text_for_subtitle(text: str, max_chars_per_line: int = 20, max_lines: 
     current = ""
     for char in text:
         current += char
-        if char in "。！？，、；":
+        # 一级分句：只按重停顿标点切分（。！？；）
+        if char in "。！？；":
             sentences.append(current.strip())
             current = ""
     
@@ -671,14 +672,55 @@ def split_text_for_subtitle(text: str, max_chars_per_line: int = 20, max_lines: 
     current_subtitle = ""
     
     for sentence in sentences:
-        # 如果单个句子就超过了每行限制，强制切分
+        # 如果单个句子超过每行限制：先尝试按次级标点（，、）细分，再必要时硬切
         if len(sentence) > max_chars_per_line:
             if current_subtitle:
                 result.append(current_subtitle)
                 current_subtitle = ""
-            # 强制按字符数切分长句子
-            for i in range(0, len(sentence), max_chars_per_line):
-                result.append(sentence[i:i + max_chars_per_line])
+
+            # 二级分句函数：按（，、）切分并保留标点
+            def _split_by_secondary(s: str) -> List[str]:
+                tokens = re.split(r'([，、])', s)
+                chunks: List[str] = []
+                buf = ""
+                for t in tokens:
+                    if not t:
+                        continue
+                    buf += t
+                    if t in "，、":
+                        chunks.append(buf)
+                        buf = ""
+                if buf:
+                    chunks.append(buf)
+                return chunks
+
+            parts = _split_by_secondary(sentence)
+
+            if len(parts) == 1:
+                # 无（，、）可用，回退到按字符数硬切
+                for i in range(0, len(sentence), max_chars_per_line):
+                    result.append(sentence[i:i + max_chars_per_line])
+            else:
+                # 使用二级分句，尽量合并到不超过上限的行
+                buf = ""
+                for p in parts:
+                    if len(p) <= max_chars_per_line:
+                        if not buf:
+                            buf = p
+                        elif len(buf + p) <= max_chars_per_line:
+                            buf += p
+                        else:
+                            result.append(buf)
+                            buf = p
+                    else:
+                        # 次级片段仍然过长，先输出已有缓冲，再硬切
+                        if buf:
+                            result.append(buf)
+                            buf = ""
+                        for i in range(0, len(p), max_chars_per_line):
+                            result.append(p[i:i + max_chars_per_line])
+                if buf:
+                    result.append(buf)
         elif not current_subtitle:
             current_subtitle = sentence
         elif len(current_subtitle + sentence) <= max_chars_per_line:
@@ -744,7 +786,8 @@ def create_subtitle_clips(script_data: Dict[str, Any], subtitle_config: Dict[str
     segment_durations = subtitle_config.get("segment_durations", [])
 
     # 定义需要替换为空格的标点集合（中英文常见标点）
-    punctuation_pattern = r"[-.,!?;:，。！？；：、“”\"'（）()\[\]{}<>《》【】—…·–]"
+    # 保留书名号《》与双引号（中文“”、英文"）不替换，其他标点替换为空格
+    punctuation_pattern = r"[-.,!?;:，。！？；：（）()\[\]{}【】—…·–]"
 
     for i, segment in enumerate(script_data["segments"], 1):
         content = segment["content"]
@@ -821,7 +864,8 @@ def create_subtitle_clips(script_data: Dict[str, Any], subtitle_config: Dict[str
                     # 设置时间和位置
                     # 计算文本的实际 y 坐标（当定位到 bottom 时，使用边距避免出界）
                     if isinstance(position, tuple) and len(position) == 2 and position[1] == "bottom":
-                        y_text = max(0, video_height - margin_bottom - main_clip.h)
+                        baseline_safe_padding = int(subtitle_config.get("baseline_safe_padding", 4))
+                        y_text = max(0, video_height - margin_bottom - main_clip.h - baseline_safe_padding)
                         main_pos = (anchor_x, y_text)
                         shadow_pos = (anchor_x, y_text)
                     else:
@@ -834,8 +878,8 @@ def create_subtitle_clips(script_data: Dict[str, Any], subtitle_config: Dict[str
                     # 背景条
                     bg_color = subtitle_config.get("background_color")
                     bg_opacity = float(subtitle_config.get("background_opacity", 0))
-                    if bg_color:
-                        bg_height = int(subtitle_config["font_size"] * subtitle_config.get("max_lines", 2) + subtitle_config.get("line_spacing", 10) + 20)
+                    if bg_color and bg_opacity > 0.0:
+                        bg_height = int(subtitle_config["font_size"] * subtitle_config.get("max_lines", 2) + subtitle_config.get("line_spacing", 10) + 4)
                         bg_clip = ColorClip(size=(video_width, bg_height), color=bg_color)
                         if hasattr(bg_clip, "with_opacity"):
                             bg_clip = bg_clip.with_opacity(bg_opacity)
@@ -860,7 +904,8 @@ def create_subtitle_clips(script_data: Dict[str, Any], subtitle_config: Dict[str
                     
                     # 计算文本的实际 y 坐标（当定位到 bottom 时，使用边距避免出界）
                     if isinstance(position, tuple) and len(position) == 2 and position[1] == "bottom":
-                        y_text = max(0, video_height - margin_bottom - txt_clip.h)
+                        baseline_safe_padding = int(subtitle_config.get("baseline_safe_padding", 4))
+                        y_text = max(0, video_height - margin_bottom - txt_clip.h - baseline_safe_padding)
                         txt_pos = (anchor_x, y_text)
                     else:
                         txt_pos = position
@@ -870,8 +915,8 @@ def create_subtitle_clips(script_data: Dict[str, Any], subtitle_config: Dict[str
                     # 背景条
                     bg_color = subtitle_config.get("background_color")
                     bg_opacity = float(subtitle_config.get("background_opacity", 0))
-                    if bg_color:
-                        bg_height = int(subtitle_config["font_size"] * subtitle_config.get("max_lines", 2) + subtitle_config.get("line_spacing", 10) + 20)
+                    if bg_color and bg_opacity > 0.0:
+                        bg_height = int(subtitle_config["font_size"] * subtitle_config.get("max_lines", 2) + subtitle_config.get("line_spacing", 10) + 4)
                         bg_clip = ColorClip(size=(video_width, bg_height), color=bg_color)
                         if hasattr(bg_clip, "with_opacity"):
                             bg_clip = bg_clip.with_opacity(bg_opacity)
