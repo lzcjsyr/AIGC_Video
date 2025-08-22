@@ -652,7 +652,7 @@ def split_text_for_subtitle(text: str, max_chars_per_line: int = 20, max_lines: 
     current = ""
     for char in text:
         current += char
-        if char in "。！？":
+        if char in "。！？，、；":
             sentences.append(current.strip())
             current = ""
     
@@ -743,6 +743,9 @@ def create_subtitle_clips(script_data: Dict[str, Any], subtitle_config: Dict[str
 
     segment_durations = subtitle_config.get("segment_durations", [])
 
+    # 定义需要替换为空格的标点集合（中英文常见标点）
+    punctuation_pattern = r"[-.,!?;:，。！？；：、“”\"'（）()\[\]{}<>《》【】—…·–]"
+
     for i, segment in enumerate(script_data["segments"], 1):
         content = segment["content"]
         # 优先使用真实音频时长，其次回退到估算时长
@@ -780,6 +783,8 @@ def create_subtitle_clips(script_data: Dict[str, Any], subtitle_config: Dict[str
         
         for subtitle_text, subtitle_duration in zip(subtitle_texts, line_durations):
             try:
+                # 将标点替换为两个空格
+                display_text = re.sub(punctuation_pattern, "  ", subtitle_text)
                 # 设置位置
                 position = subtitle_config["position"]
                 margin_bottom = int(subtitle_config.get("margin_bottom", 0))
@@ -793,7 +798,7 @@ def create_subtitle_clips(script_data: Dict[str, Any], subtitle_config: Dict[str
                     
                     # 创建阴影文本剪辑
                     shadow_clip = TextClip(
-                        text=subtitle_text,
+                        text=display_text,
                         font_size=subtitle_config["font_size"],
                         color=shadow_color,
                         font=resolved_font or subtitle_config["font_family"]
@@ -801,7 +806,7 @@ def create_subtitle_clips(script_data: Dict[str, Any], subtitle_config: Dict[str
                     
                     # 创建主文本剪辑
                     main_clip = TextClip(
-                        text=subtitle_text,
+                        text=display_text,
                         font_size=subtitle_config["font_size"],
                         color=subtitle_config["color"],
                         font=resolved_font or subtitle_config["font_family"],
@@ -845,7 +850,7 @@ def create_subtitle_clips(script_data: Dict[str, Any], subtitle_config: Dict[str
                 else:
                     # 创建普通字幕文本剪辑（无阴影）
                     txt_clip = TextClip(
-                        text=subtitle_text,
+                        text=display_text,
                         font_size=subtitle_config["font_size"],
                         color=subtitle_config["color"],
                         font=resolved_font or subtitle_config["font_family"],

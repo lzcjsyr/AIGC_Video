@@ -546,7 +546,7 @@ if __name__ == "__main__":
         image_model="doubao-seedream-3-0-t2i-250415",
         voice="zh_male_yuanboxiaoshu_moon_bigtts",
         image_style_preset="vintage",
-        enable_subtitles=False,
+        enable_subtitles=True,
         bgm_filename="Ramin Djawadi - Light of the Seven.mp3"  
     )
     
