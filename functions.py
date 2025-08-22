@@ -647,13 +647,13 @@ def split_text_for_subtitle(text: str, max_chars_per_line: int = 20, max_lines: 
     if len(text) <= max_chars_per_line:
         return [text]
     
-    # 按句号、问号、感叹号分割
+    # 按句号、问号、感叹号分割（含中英文）
     sentences = []
     current = ""
     for char in text:
         current += char
-        # 一级分句：只按重停顿标点切分（。！？；）
-        if char in "。！？；":
+        # 一级分句：按中英文重停顿标点切分（。！？；.!?）
+        if char in "。！？；.!?":
             sentences.append(current.strip())
             current = ""
     
@@ -678,18 +678,67 @@ def split_text_for_subtitle(text: str, max_chars_per_line: int = 20, max_lines: 
                 result.append(current_subtitle)
                 current_subtitle = ""
 
-            # 二级分句函数：按（，、）切分并保留标点
+            # 二级分句函数：按（，、、“”、‘ ’、《 》以及英文逗号, 和 ASCII 单引号'）切分并保留标点（不处理 ASCII 双引号）
             def _split_by_secondary(s: str) -> List[str]:
-                tokens = re.split(r'([，、])', s)
+                tokens = re.split(r'([，、,“”‘’《》，,])', s)
                 chunks: List[str] = []
                 buf = ""
+                in_ascii_single = False
+
+                OPENERS = ("“", "‘", "《")
+                CLOSERS = ("”", "’", "》")
+                COMMAS = ("，", "、", ",")
+
+                def flush_buf() -> None:
+                    nonlocal buf
+                    if buf:
+                        chunks.append(buf)
+                        buf = ""
+
+                def start_new_with(tok: str) -> None:
+                    nonlocal buf
+                    flush_buf()
+                    buf = tok
+
+                def end_with(tok: str) -> None:
+                    nonlocal buf
+                    if buf:
+                        buf += tok
+                        flush_buf()
+                    elif chunks:
+                        chunks[-1] += tok
+                    else:
+                        # 若不存在上一段，则临时放入缓冲，避免功能变化
+                        buf = tok
+
                 for t in tokens:
                     if not t:
                         continue
+
+                    if t in OPENERS:
+                        start_new_with(t)
+                        continue
+
+                    if t in CLOSERS:
+                        end_with(t)
+                        continue
+
+                    if t == "'":
+                        if not in_ascii_single:
+                            start_new_with(t)
+                            in_ascii_single = True
+                        else:
+                            end_with(t)
+                            in_ascii_single = False
+                        continue
+
+                    if t in COMMAS:
+                        end_with(t)
+                        continue
+
+                    # 普通文本
                     buf += t
-                    if t in "，、":
-                        chunks.append(buf)
-                        buf = ""
+
                 if buf:
                     chunks.append(buf)
                 return chunks
@@ -786,8 +835,67 @@ def create_subtitle_clips(script_data: Dict[str, Any], subtitle_config: Dict[str
     segment_durations = subtitle_config.get("segment_durations", [])
 
     # 定义需要替换为空格的标点集合（中英文常见标点）
-    # 保留书名号《》与双引号（中文“”、英文"）不替换，其他标点替换为空格
-    punctuation_pattern = r"[-.,!?;:，。！？；：（）()\[\]{}【】—…·–]"
+    # 中文引号“”‘’与书名号《》保留；英文双引号直接替换为双空格；其他标点替换为双空格
+    # 使用 + 将连续标点视作一个整体，避免产生过多空白
+    punctuation_pattern = r"[-.,!?;:\"，。！？；：（）()\[\]{}【】—…–、]+"
+
+    # 内部辅助：根据配置生成文本与可选阴影、背景条的剪辑列表
+    def _make_text_and_bg_clips(display_text: str, start_time: float, duration: float) -> List[Any]:
+        position = subtitle_config["position"]
+        margin_bottom = int(subtitle_config.get("margin_bottom", 0))
+        anchor_x = position[0] if isinstance(position, tuple) else "center"
+
+        # 主文本剪辑（用于测量高度与实际展示）
+        main_clip = TextClip(
+            text=display_text,
+            font_size=subtitle_config["font_size"],
+            color=subtitle_config["color"],
+            font=resolved_font or subtitle_config["font_family"],
+            stroke_color=subtitle_config["stroke_color"],
+            stroke_width=subtitle_config["stroke_width"]
+        )
+
+        # 计算文本位置（当定位 bottom 时基于文本高度与边距）
+        if isinstance(position, tuple) and len(position) == 2 and position[1] == "bottom":
+            baseline_safe_padding = int(subtitle_config.get("baseline_safe_padding", 4))
+            y_text = max(0, video_height - margin_bottom - main_clip.h - baseline_safe_padding)
+            main_pos = (anchor_x, y_text)
+        else:
+            main_pos = position
+
+        main_clip = main_clip.with_position(main_pos).with_start(start_time).with_duration(duration)
+
+        clips_to_add: List[Any] = []
+
+        # 背景条（如启用）
+        bg_color = subtitle_config.get("background_color")
+        bg_opacity = float(subtitle_config.get("background_opacity", 0))
+        if bg_color and bg_opacity > 0.0:
+            bg_height = int(
+                subtitle_config["font_size"] * subtitle_config.get("max_lines", 2)
+                + subtitle_config.get("line_spacing", 10) + 4
+            )
+            bg_clip = ColorClip(size=(video_width, bg_height), color=bg_color)
+            if hasattr(bg_clip, "with_opacity"):
+                bg_clip = bg_clip.with_opacity(bg_opacity)
+            y_bg = max(0, video_height - margin_bottom - bg_height)
+            bg_clip = bg_clip.with_position(("center", y_bg)).with_start(start_time).with_duration(duration)
+            clips_to_add.append(bg_clip)
+
+        # 可选阴影
+        if subtitle_config.get("shadow_enabled", False):
+            shadow_color = subtitle_config.get("shadow_color", "black")
+            shadow_clip = TextClip(
+                text=display_text,
+                font_size=subtitle_config["font_size"],
+                color=shadow_color,
+                font=resolved_font or subtitle_config["font_family"]
+            ).with_position(main_pos).with_start(start_time).with_duration(duration)
+            clips_to_add.extend([shadow_clip, main_clip])
+        else:
+            clips_to_add.append(main_clip)
+
+        return clips_to_add
 
     for i, segment in enumerate(script_data["segments"], 1):
         content = segment["content"]
@@ -826,107 +934,13 @@ def create_subtitle_clips(script_data: Dict[str, Any], subtitle_config: Dict[str
         
         for subtitle_text, subtitle_duration in zip(subtitle_texts, line_durations):
             try:
-                # 将标点替换为两个空格
+                # 将连续标点替换为两个空格，并压缩可能产生的多余空格
                 display_text = re.sub(punctuation_pattern, "  ", subtitle_text)
-                # 设置位置
-                position = subtitle_config["position"]
-                margin_bottom = int(subtitle_config.get("margin_bottom", 0))
-                anchor_x = position[0] if isinstance(position, tuple) else "center"
-                
-                # 创建字幕剪辑（可能包含阴影效果）
-                if subtitle_config.get("shadow_enabled", False):
-                    # 创建阴影效果：先创建阴影文本，再创建主文本
-                    shadow_offset = subtitle_config.get("shadow_offset", (2, 2))
-                    shadow_color = subtitle_config.get("shadow_color", "black")
-                    
-                    # 创建阴影文本剪辑
-                    shadow_clip = TextClip(
-                        text=display_text,
-                        font_size=subtitle_config["font_size"],
-                        color=shadow_color,
-                        font=resolved_font or subtitle_config["font_family"]
-                    )
-                    
-                    # 创建主文本剪辑
-                    main_clip = TextClip(
-                        text=display_text,
-                        font_size=subtitle_config["font_size"],
-                        color=subtitle_config["color"],
-                        font=resolved_font or subtitle_config["font_family"],
-                        stroke_color=subtitle_config["stroke_color"],
-                        stroke_width=subtitle_config["stroke_width"]
-                    )
-                    
-                    # 计算阴影位置（简化处理，使用相同的主要位置但稍微偏移）
-                    # 对于阴影效果，我们使用相同的基础位置，让MoviePy的stroke效果来处理阴影
-                    shadow_pos = position
-                    
-                    # 设置时间和位置
-                    # 计算文本的实际 y 坐标（当定位到 bottom 时，使用边距避免出界）
-                    if isinstance(position, tuple) and len(position) == 2 and position[1] == "bottom":
-                        baseline_safe_padding = int(subtitle_config.get("baseline_safe_padding", 4))
-                        y_text = max(0, video_height - margin_bottom - main_clip.h - baseline_safe_padding)
-                        main_pos = (anchor_x, y_text)
-                        shadow_pos = (anchor_x, y_text)
-                    else:
-                        main_pos = position
-                        shadow_pos = position
-                    shadow_clip = shadow_clip.with_position(shadow_pos).with_start(subtitle_start_time).with_duration(subtitle_duration)
-                    main_clip = main_clip.with_position(main_pos).with_start(subtitle_start_time).with_duration(subtitle_duration)
-                    
-                    clips_to_add = []
-                    # 背景条
-                    bg_color = subtitle_config.get("background_color")
-                    bg_opacity = float(subtitle_config.get("background_opacity", 0))
-                    if bg_color and bg_opacity > 0.0:
-                        bg_height = int(subtitle_config["font_size"] * subtitle_config.get("max_lines", 2) + subtitle_config.get("line_spacing", 10) + 4)
-                        bg_clip = ColorClip(size=(video_width, bg_height), color=bg_color)
-                        if hasattr(bg_clip, "with_opacity"):
-                            bg_clip = bg_clip.with_opacity(bg_opacity)
-                        y_bg = max(0, video_height - margin_bottom - bg_height)
-                        bg_clip = bg_clip.with_position(("center", y_bg)).with_start(subtitle_start_time).with_duration(subtitle_duration)
-                        clips_to_add.append(bg_clip)
-                    clips_to_add.extend([shadow_clip, main_clip])
-                    subtitle_clips.extend(clips_to_add)
-                    
-                    logger.debug(f"创建阴影字幕: '{subtitle_text[:20]}...' 时间: {subtitle_start_time:.1f}-{subtitle_start_time+subtitle_duration:.1f}s")
-                
-                else:
-                    # 创建普通字幕文本剪辑（无阴影）
-                    txt_clip = TextClip(
-                        text=display_text,
-                        font_size=subtitle_config["font_size"],
-                        color=subtitle_config["color"],
-                        font=resolved_font or subtitle_config["font_family"],
-                        stroke_color=subtitle_config["stroke_color"],
-                        stroke_width=subtitle_config["stroke_width"]
-                    )
-                    
-                    # 计算文本的实际 y 坐标（当定位到 bottom 时，使用边距避免出界）
-                    if isinstance(position, tuple) and len(position) == 2 and position[1] == "bottom":
-                        baseline_safe_padding = int(subtitle_config.get("baseline_safe_padding", 4))
-                        y_text = max(0, video_height - margin_bottom - txt_clip.h - baseline_safe_padding)
-                        txt_pos = (anchor_x, y_text)
-                    else:
-                        txt_pos = position
-                    txt_clip = txt_clip.with_position(txt_pos).with_start(subtitle_start_time).with_duration(subtitle_duration)
+                display_text = re.sub(r" {3,}", "  ", display_text)
 
-                    clips_to_add = []
-                    # 背景条
-                    bg_color = subtitle_config.get("background_color")
-                    bg_opacity = float(subtitle_config.get("background_opacity", 0))
-                    if bg_color and bg_opacity > 0.0:
-                        bg_height = int(subtitle_config["font_size"] * subtitle_config.get("max_lines", 2) + subtitle_config.get("line_spacing", 10) + 4)
-                        bg_clip = ColorClip(size=(video_width, bg_height), color=bg_color)
-                        if hasattr(bg_clip, "with_opacity"):
-                            bg_clip = bg_clip.with_opacity(bg_opacity)
-                        y_bg = max(0, video_height - margin_bottom - bg_height)
-                        bg_clip = bg_clip.with_position(("center", y_bg)).with_start(subtitle_start_time).with_duration(subtitle_duration)
-                        clips_to_add.append(bg_clip)
-                    clips_to_add.append(txt_clip)
-                    subtitle_clips.extend(clips_to_add)
-                    
-                    logger.debug(f"创建字幕: '{subtitle_text[:20]}...' 时间: {subtitle_start_time:.1f}-{subtitle_start_time+subtitle_duration:.1f}s")
+                clips_to_add = _make_text_and_bg_clips(display_text, subtitle_start_time, subtitle_duration)
+                subtitle_clips.extend(clips_to_add)
+                logger.debug(f"创建字幕: '{subtitle_text[:20]}...' 时间: {subtitle_start_time:.1f}-{subtitle_start_time+subtitle_duration:.1f}s")
                 
                 subtitle_start_time += subtitle_duration
                 
