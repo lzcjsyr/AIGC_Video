@@ -462,6 +462,28 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
         except Exception as e:
             logger.warning(f"口播音量调整失败: {str(e)}，将使用原始音量")
         
+        # 在片尾追加 config.ENDING_FADE_SECONDS 秒静帧并渐隐（仅画面，无口播音频）
+        try:
+            tail_seconds = float(getattr(config, "ENDING_FADE_SECONDS", 2.5))
+            if isinstance(image_paths, list) and len(image_paths) > 0 and tail_seconds > 1e-3:
+                last_image_path = image_paths[-1]
+                tail_clip = ImageClip(last_image_path).with_duration(tail_seconds)
+                # 使用 transform 实现到黑场的线性渐隐
+                def _fade_frame(gf, t):
+                    try:
+                        alpha = max(0.0, 1.0 - float(t) / float(tail_seconds))
+                    except Exception:
+                        alpha = 0.0
+                    return alpha * gf(t)
+                try:
+                    tail_clip = tail_clip.transform(_fade_frame, keep_duration=True)
+                except Exception:
+                    pass
+                final_video = concatenate_videoclips([final_video, tail_clip], method="compose")
+                print(f"🎬 已添加片尾静帧 {tail_seconds}s 并渐隐")
+        except Exception as tail_err:
+            logger.warning(f"片尾静帧添加失败: {tail_err}，将继续生成无片尾渐隐的视频")
+        
         # 可选：叠加背景音乐（与口播混音）
         bgm_clip = None
         try:
@@ -563,10 +585,55 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
                                 print(f"🎚️ 已启用自动Ducking（strength={strength}, smooth={smooth_sec}s）")
                         except Exception as duck_err:
                             logger.warning(f"自动Ducking失败: {duck_err}，将使用恒定音量BGM")
-
+                        # 在最终 config.ENDING_FADE_SECONDS 秒对 BGM 做淡出（不影响口播，因为尾段无口播）
+                        try:
+                            total_dur = float(final_video.duration)
+                            fade_tail = float(getattr(config, "ENDING_FADE_SECONDS", 2.5))
+                            cutoff = max(0.0, total_dur - fade_tail)
+                            def _fade_gain(t_any):
+                                import numpy as _np
+                                def _scalar(ts: float) -> float:
+                                    if ts <= cutoff:
+                                        return 1.0
+                                    if ts >= total_dur:
+                                        return 0.0
+                                    return max(0.0, 1.0 - (ts - cutoff) / fade_tail)
+                                if hasattr(t_any, "__len__"):
+                                    return _np.array([_scalar(float(ts)) for ts in t_any])
+                                return _scalar(float(t_any))
+                            bgm_clip = bgm_clip.transform(
+                                lambda gf, t: ((_fade_gain(t)[:, None]) if hasattr(t, "__len__") else _fade_gain(t)) * gf(t),
+                                keep_duration=True,
+                            )
+                            print(f"🎚️ 已添加BGM片尾{fade_tail}s淡出")
+                        except Exception as _fade_err:
+                            logger.warning(f"BGM淡出应用失败: {_fade_err}")
                         mixed_audio = CompositeAudioClip([final_video.audio, bgm_clip])
                         print("🎵 BGM与口播音频合成完成")
                     else:
+                        # 无口播，仅 BGM；同样添加片尾淡出
+                        try:
+                            total_dur = float(final_video.duration)
+                            fade_tail = float(getattr(config, "ENDING_FADE_SECONDS", 2.5))
+                            cutoff = max(0.0, total_dur - fade_tail)
+                            def _fade_gain2(t_any):
+                                import numpy as _np
+                                def _scalar(ts: float) -> float:
+                                    if ts <= cutoff:
+                                        return 1.0
+                                    if ts >= total_dur:
+                                        return 0.0
+                                    return max(0.0, 1.0 - (ts - cutoff) / fade_tail)
+                                if hasattr(t_any, "__len__"):
+                                    return _np.array([_scalar(float(ts)) for ts in t_any])
+                                return _scalar(float(t_any))
+                            bgm_clip = bgm_clip.transform(
+                                lambda gf, t: ((_fade_gain2(t)[:, None]) if hasattr(t, "__len__") else _fade_gain2(t)) * gf(t),
+                                keep_duration=True,
+                            )
+                            print(f"🎚️ 已添加BGM片尾{fade_tail}s淡出")
+                        except Exception as _fade_err:
+                            logger.warning(f"BGM淡出应用失败: {_fade_err}")
                         mixed_audio = CompositeAudioClip([bgm_clip])
                         print("🎵 仅添加BGM音频（无口播音频）")
                     final_video = final_video.with_audio(mixed_audio)

@@ -148,6 +148,12 @@ class Config:
     AUDIO_DUCKING_STRENGTH = 0.3
     AUDIO_DUCKING_SMOOTH_SECONDS = 0.12
     
+    # 片尾参数
+    # ENDING_FADE_SECONDS: 片尾时长（秒）。
+    #   - 画面：追加最后一帧静帧并在整段内线性渐隐至黑场
+    #   - BGM：在整段内线性淡出到 0（口播已结束）
+    ENDING_FADE_SECONDS = 2.5
+    
     @classmethod
     def validate_api_keys(cls) -> Dict[str, bool]:
         """验证API密钥配置"""

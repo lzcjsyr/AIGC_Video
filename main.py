@@ -134,7 +134,35 @@ def main(
                         # 三级循环：步骤选择
                         while True:
                             prog = detect_project_progress(project_dir)
-                            step_to_rerun = prompt_step_to_rerun(prog['current_step'])
+                            # 仅允许从第2-4步重做；第1步请新建项目
+                            while True:
+                                print("\n当前项目进度（共5步）：已完成到第{}步".format(prog['current_step_display']))
+                                options = [
+                                    "第1步：智能缩写",
+                                    "第2步：关键词提取",
+                                    "第3步：AI图像生成",
+                                    "第4步：语音合成",
+                                    "第5步：视频合成",
+                                ]
+                                for i, opt in enumerate(options, 1):
+                                    marker = '*' if i == prog['current_step_display'] else ' '
+                                    print(f" {marker} {i}. {opt}")
+                                raw = input("请输入步骤号 2-4 或输入 'q' 返回上一级: ").strip()
+                                if raw == "":
+                                    print("无效输入，请输入 2-4。")
+                                    continue
+                                if raw.lower() == 'q':
+                                    step_to_rerun = None
+                                    break
+                                if raw.isdigit():
+                                    n = int(raw)
+                                    if n in [2, 3, 4]:
+                                        step_to_rerun = n
+                                        break
+                                print("无效输入，请输入 2-4。")
+                            if step_to_rerun is None:
+                                print("👋 返回上一级")
+                                break
                             if step_to_rerun is None:
                                 # 返回上一级：回到项目列表
                                 print("👋 返回上一级")
@@ -259,6 +287,14 @@ def main(
             with open(script_path, 'w', encoding='utf-8') as f:
                 json.dump(script_data, f, ensure_ascii=False, indent=2)
             print(f"口播稿已保存到: {script_path}")
+            # 生成可阅读的DOCX（与script.json同目录）
+            try:
+                from utils import export_script_to_docx
+                docx_path = f"{project_output_dir}/text/script.docx"
+                export_script_to_docx(script_data, docx_path)
+                print(f"阅读版DOCX已保存到: {docx_path}")
+            except Exception as e:
+                print(f"⚠️  生成DOCX失败: {e}")
             # 若用户明确选择只重做第1步（智能缩写），则到此为止
             if locals().get('selected_step') == 1 and not goto_existing_branch:
                 # 步骤执行完成后返回到项目选择/步骤选择界面由主程序循环控制（此处返回成功信息）

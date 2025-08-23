@@ -866,6 +866,92 @@ def clear_downstream_outputs(project_dir: str, from_step: int) -> None:
     except Exception as e:
         logger.warning(f"清理旧产物失败: {e}")
 
+def export_script_to_docx(script_data: Dict[str, Any], docx_path: str) -> str:
+    """
+    将脚本JSON导出为可阅读的DOCX文档，仅包含标题与各段content。
+
+    要求：
+    - 1.5倍行距
+    - 字体：宋体（含东亚字体设置）
+    - 正文两端对齐，标题居中
+
+    Args:
+        script_data: 含有 title 与 segments 的脚本数据
+        docx_path: 输出的docx文件完整路径（建议位于 output/{project}/text/script.docx ）
+
+    Returns:
+        str: 实际保存的docx路径
+    """
+    from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
+    from docx.oxml.ns import qn
+
+    # 创建文档
+    document = Document()
+
+    # 尝试全局设置 Normal 样式字体与行距
+    try:
+        normal_style = document.styles['Normal']
+        normal_style.font.name = '宋体'
+        # 设置东亚字体
+        if hasattr(normal_style, 'element') and normal_style.element is not None:
+            rPr = normal_style.element.rPr
+            if rPr is not None and rPr.rFonts is not None:
+                rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+        # 行距 1.5 倍
+        if normal_style.paragraph_format is not None:
+            try:
+                normal_style.paragraph_format.line_spacing_rule = WD_LINE_SPACING.ONE_POINT_FIVE
+            except Exception:
+                normal_style.paragraph_format.line_spacing = 1.5
+    except Exception:
+        # 即使全局样式设置失败，也不影响后续逐段设置
+        pass
+
+    title_text = script_data.get('title', 'untitled')
+    segments = script_data.get('segments', []) or []
+
+    # 标题（居中）
+    title_para = document.add_paragraph()
+    title_run = title_para.add_run(title_text)
+    title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    # 标题字体（宋体）
+    try:
+        title_run.font.name = '宋体'
+        title_run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+    except Exception:
+        pass
+    # 标题行距 1.5
+    try:
+        title_para.paragraph_format.line_spacing_rule = WD_LINE_SPACING.ONE_POINT_FIVE
+    except Exception:
+        title_para.paragraph_format.line_spacing = 1.5
+
+    # 正文段落（两端对齐，每个content独立段落）
+    for seg in segments:
+        content = (seg or {}).get('content', '')
+        if not content:
+            continue
+        p = document.add_paragraph()
+        r = p.add_run(content)
+        # 字体宋体（含东亚）
+        try:
+            r.font.name = '宋体'
+            r._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+        except Exception:
+            pass
+        # 段落两端对齐 + 1.5倍行距
+        p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        try:
+            p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.ONE_POINT_FIVE
+        except Exception:
+            p.paragraph_format.line_spacing = 1.5
+
+    ensure_directory_exists(os.path.dirname(docx_path))
+    document.save(docx_path)
+    logger.info(f"阅读版DOCX已保存: {docx_path}")
+    return docx_path
+
 # 导出主要函数和类
 __all__ = [
     'VideoProcessingError', 'APIError', 'FileProcessingError',
@@ -877,4 +963,5 @@ __all__ = [
     'scan_input_files', 'display_file_menu', 'get_user_file_selection', 'interactive_file_selector',
     'scan_output_projects', 'interactive_project_selector', 'detect_project_progress', 'prompt_step_to_rerun',
     'collect_ordered_assets', 'clear_downstream_outputs', 'display_project_menu', 'get_user_project_selection',
+    'export_script_to_docx',
 ]
