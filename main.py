@@ -134,7 +134,7 @@ def main(
                         # 三级循环：步骤选择
                         while True:
                             prog = detect_project_progress(project_dir)
-                            # 仅允许从第2-4步重做；第1步请新建项目
+                            # 仅允许从第2-5步重做；第1步请新建项目
                             while True:
                                 print("\n当前项目进度（共5步）：已完成到第{}步".format(prog['current_step_display']))
                                 options = [
@@ -147,19 +147,19 @@ def main(
                                 for i, opt in enumerate(options, 1):
                                     marker = '*' if i == prog['current_step_display'] else ' '
                                     print(f" {marker} {i}. {opt}")
-                                raw = input("请输入步骤号 2-4 或输入 'q' 返回上一级: ").strip()
+                                raw = input("请输入步骤号 2-5 或输入 'q' 返回上一级: ").strip()
                                 if raw == "":
-                                    print("无效输入，请输入 2-4。")
+                                    print("无效输入，请输入 2-5。")
                                     continue
                                 if raw.lower() == 'q':
                                     step_to_rerun = None
                                     break
                                 if raw.isdigit():
                                     n = int(raw)
-                                    if n in [2, 3, 4]:
+                                    if n in [2, 3, 4, 5]:
                                         step_to_rerun = n
                                         break
-                                print("无效输入，请输入 2-4。")
+                                print("无效输入，请输入 2-5。")
                             if step_to_rerun is None:
                                 print("👋 返回上一级")
                                 break
