@@ -13,3 +13,7 @@ input/*
 
 *.logoutput/*
 !output/.gitkeep
+
+# 临时目录（保留文件夹但忽略内容）
+temp/*
+!temp/.gitkeep
