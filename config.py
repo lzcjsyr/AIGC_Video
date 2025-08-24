@@ -132,7 +132,7 @@ class Config:
     #   - 0.0 = 静音；1.0 = 原始电平；>1.0 = 放大（可能导致削波）。
     #   - 推荐区间: 0.03 ~ 0.20（常用 0.06 ~ 0.12）。
     #   - 背景音乐应显著低于口播；如需更响，建议同时降低口播or启用更弱 ducking。
-    BGM_DEFAULT_VOLUME = 0.1
+    BGM_DEFAULT_VOLUME = 0.3
 
     # NARRATION_DEFAULT_VOLUME: 口播音轨线性增益系数（同上，混音前整体增益）。
     #   - 0.5 ~ 3.0 可用；推荐区间: 0.8 ~ 1.5（1.0 为原始电平）。
@@ -144,7 +144,7 @@ class Config:
     #   - AUDIO_DUCKING_ENABLED: 是否启用 ducking
     #   - AUDIO_DUCKING_STRENGTH: 压低强度（0~1），1 表示口播时将 BGM 完全压到 0；0.7 表示压到 30%（1-0.7）
     #   - AUDIO_DUCKING_SMOOTH_SECONDS: 包络平滑时间（秒），防止跳变突兀
-    AUDIO_DUCKING_ENABLED = True
+    AUDIO_DUCKING_ENABLED = False
     AUDIO_DUCKING_STRENGTH = 0.3
     AUDIO_DUCKING_SMOOTH_SECONDS = 0.12   
 

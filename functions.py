@@ -28,7 +28,7 @@ from config import config
 from utils import (
     logger, FileProcessingError, APIError,
     log_function_call, ensure_directory_exists, clean_text, 
-    validate_file_format, make_safe_title
+    validate_file_format
 )
 from utils import parse_json_robust
 import numpy as np
@@ -51,6 +51,14 @@ def resolve_font_path(preferred: Optional[str]) -> Optional[str]:
         if os.path.exists(path):
             return path
     return preferred
+
+# 通用下载器：下载二进制内容并保存到指定路径
+def download_to_path(url: str, output_path: str, error_msg: str = "下载失败") -> None:
+    response = requests.get(url)
+    if response.status_code != 200:
+        raise ValueError(error_msg)
+    with open(output_path, 'wb') as f:
+        f.write(response.content)
 
 ################ Document Reading ################
 @log_function_call
@@ -337,12 +345,8 @@ def generate_opening_image(server: str, model: str, keywords_data: Dict[str, Any
 
         # 下载并保存
         ensure_directory_exists(output_dir)
-        response = requests.get(image_url)
-        if response.status_code != 200:
-            raise ValueError("开场图像下载失败")
         image_path = os.path.join(output_dir, "opening.png")
-        with open(image_path, 'wb') as f:
-            f.write(response.content)
+        download_to_path(image_url, image_path, error_msg="开场图像下载失败")
         print(f"开场图像已保存: {image_path}")
         return image_path
     except Exception as e:
@@ -397,15 +401,10 @@ def generate_images_for_segments(server: str, model: str, keywords_data: Dict[st
             
             if image_url:
                 # 下载并保存图像
-                response = requests.get(image_url)
-                if response.status_code == 200:
-                    image_path = os.path.join(output_dir, f"segment_{i}.png")
-                    with open(image_path, 'wb') as f:
-                        f.write(response.content)
-                    image_paths.append(image_path)
-                    print(f"第{i}段图像已保存: {image_path}")
-                else:
-                    raise ValueError(f"下载第{i}段图像失败")
+                image_path = os.path.join(output_dir, f"segment_{i}.png")
+                download_to_path(image_url, image_path, error_msg=f"下载第{i}段图像失败")
+                image_paths.append(image_path)
+                print(f"第{i}段图像已保存: {image_path}")
             else:
                 raise ValueError(f"生成第{i}段图像失败")
         
@@ -730,6 +729,21 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
                 # 合成复合音频
                 if bgm_clip is not None:
                     print("🎵 开始合成背景音乐和口播音频")
+                    # 通用线性淡出增益函数（用于片尾淡出）
+                    def _linear_fade_out_gain(total: float, tail: float):
+                        cutoff = max(0.0, total - tail)
+                        def _gain_any(t_any):
+                            import numpy as _np
+                            def _scalar(ts: float) -> float:
+                                if ts <= cutoff:
+                                    return 1.0
+                                if ts >= total:
+                                    return 0.0
+                                return max(0.0, 1.0 - (ts - cutoff) / tail)
+                            if hasattr(t_any, "__len__"):
+                                return _np.array([_scalar(float(ts)) for ts in t_any])
+                            return _scalar(float(t_any))
+                        return _gain_any
                     if final_video.audio is not None:
                         # 可选：自动 Ducking，根据口播包络动态压低 BGM（MoviePy 2.x 通过 transform 实现时间变增益）
                         try:
@@ -794,20 +808,9 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
                         try:
                             total_dur = float(final_video.duration)
                             fade_tail = float(getattr(config, "ENDING_FADE_SECONDS", 2.5))
-                            cutoff = max(0.0, total_dur - fade_tail)
-                            def _fade_gain_common(t_any):
-                                import numpy as _np
-                                def _scalar(ts: float) -> float:
-                                    if ts <= cutoff:
-                                        return 1.0
-                                    if ts >= total_dur:
-                                        return 0.0
-                                    return max(0.0, 1.0 - (ts - cutoff) / fade_tail)
-                                if hasattr(t_any, "__len__"):
-                                    return _np.array([_scalar(float(ts)) for ts in t_any])
-                                return _scalar(float(t_any))
+                            fade_gain = _linear_fade_out_gain(total_dur, fade_tail)
                             bgm_clip = bgm_clip.transform(
-                                lambda gf, t: ((_fade_gain_common(t)[:, None]) if hasattr(t, "__len__") else _fade_gain_common(t)) * gf(t),
+                                lambda gf, t: ((fade_gain(t)[:, None]) if hasattr(t, "__len__") else fade_gain(t)) * gf(t),
                                 keep_duration=True,
                             )
                             print(f"🎚️ 已添加BGM片尾{fade_tail}s淡出")
@@ -820,20 +823,9 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
                         try:
                             total_dur = float(final_video.duration)
                             fade_tail = float(getattr(config, "ENDING_FADE_SECONDS", 2.5))
-                            cutoff = max(0.0, total_dur - fade_tail)
-                            def _fade_gain_common(t_any):
-                                import numpy as _np
-                                def _scalar(ts: float) -> float:
-                                    if ts <= cutoff:
-                                        return 1.0
-                                    if ts >= total_dur:
-                                        return 0.0
-                                    return max(0.0, 1.0 - (ts - cutoff) / fade_tail)
-                                if hasattr(t_any, "__len__"):
-                                    return _np.array([_scalar(float(ts)) for ts in t_any])
-                                return _scalar(float(t_any))
+                            fade_gain = _linear_fade_out_gain(total_dur, fade_tail)
                             bgm_clip = bgm_clip.transform(
-                                lambda gf, t: ((_fade_gain_common(t)[:, None]) if hasattr(t, "__len__") else _fade_gain_common(t)) * gf(t),
+                                lambda gf, t: ((fade_gain(t)[:, None]) if hasattr(t, "__len__") else fade_gain(t)) * gf(t),
                                 keep_duration=True,
                             )
                             print(f"🎚️ 已添加BGM片尾{fade_tail}s淡出")

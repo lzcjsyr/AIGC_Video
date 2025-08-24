@@ -3,7 +3,6 @@
 集成LLM、图像生成、语音合成等AI服务
 """
 
-import os
 import random
 import asyncio
 import json
@@ -85,13 +84,7 @@ def text_to_text(server, model, prompt, system_message="", max_tokens=4000, temp
             "seed": random.randint(1, 1000000000)
         }
         
-        # 如果是aihubmix代理
-        if server == "aihubmix" and "aihubmix" in base_url.lower():
-            messages = [
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": prompt}
-            ]
-            request_params["messages"] = messages
+        # OpenAI 兼容接口统一走 messages，aihubmix 无需特殊处理
         
         response = client.chat.completions.create(**request_params)
         

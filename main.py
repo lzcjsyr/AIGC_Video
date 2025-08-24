@@ -1,8 +1,6 @@
 import os
-import shutil
 import json
 import datetime
-import glob
 from functions import (
     read_document, intelligent_summarize, extract_keywords, 
     generate_images_for_segments, synthesize_voice_for_segments, 
