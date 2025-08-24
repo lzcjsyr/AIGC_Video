@@ -589,6 +589,34 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
                     except Exception as _bindaerr:
                         logger.warning(f"为开场片段绑定音频失败: {_bindaerr}")
 
+                # 添加开场片段渐隐效果：在口播结束后的停留时间内逐渐变黑
+                try:
+                    if opening_voice_clip is not None and hold_after > 1e-3:
+                        voice_duration = float(opening_voice_clip.duration)
+                        fade_start_time = voice_duration  # 口播结束时开始渐隐
+                        fade_duration = hold_after        # 渐隐持续时间
+                        
+                        def _opening_fade_out(gf, t):
+                            try:
+                                if t < fade_start_time:
+                                    # 口播期间：正常显示
+                                    return gf(t)
+                                elif t >= opening_seconds:
+                                    # 超出总时长：完全黑屏
+                                    return 0.0 * gf(t)
+                                else:
+                                    # 渐隐期间：线性递减alpha
+                                    fade_progress = (t - fade_start_time) / fade_duration
+                                    alpha = max(0.0, 1.0 - fade_progress)
+                                    return alpha * gf(t)
+                            except Exception:
+                                return gf(t)
+                        
+                        opening_clip = opening_clip.transform(_opening_fade_out, keep_duration=True)
+                        print(f"🎬 已为开场片段添加{hold_after}s渐隐效果")
+                except Exception as fade_err:
+                    logger.warning(f"开场片段渐隐效果添加失败: {fade_err}")
+
                 video_clips.append(opening_clip)
             except Exception as e:
                 logger.warning(f"开场片段生成失败: {e}，将跳过开场")
@@ -849,13 +877,30 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
         # 输出最终视频：使用简单进度条，避免某些终端环境下 tqdm 多行滚动刷屏
         moviepy_logger = 'bar'
 
-        final_video.write_videofile(
-            output_path,
-            fps=24,
-            codec='libx264',
-            audio_codec='aac',
-            logger=moviepy_logger
-        )
+        try:
+            # 优先尝试 macOS 硬件编码（如 ffmpeg 启用了 videotoolbox，将显著加速）
+            final_video.write_videofile(
+                output_path,
+                fps=15,
+                codec='h264_videotoolbox',
+                audio_codec='aac',
+                bitrate='5M',
+                ffmpeg_params=['-pix_fmt', 'yuv420p', '-movflags', '+faststart'],
+                logger=moviepy_logger
+            )
+        except Exception as _hw_err:
+            print(f"⚠️ 硬件编码不可用或失败，回退到软件编码: {_hw_err}")
+            # 回退到软件 x264：保持 CRF 画质一致，同时提升 preset 和线程以加速
+            final_video.write_videofile(
+                output_path,
+                fps=15,
+                codec='libx264',
+                audio_codec='aac',
+                preset='veryfast',
+                threads=os.cpu_count() or 4,
+                ffmpeg_params=['-crf', '23', '-pix_fmt', 'yuv420p', '-movflags', '+faststart'],
+                logger=moviepy_logger
+            )
         
         # 释放资源
         for clip in video_clips:
