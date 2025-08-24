@@ -334,14 +334,13 @@ def validate_media_assets(script_data: Dict[str, Any], images_dir: str, voice_di
     
     要求：
     - 图片: segment_1.png...segment_N.png 连续且齐全
-    - 音频: {safe_title}_1.wav...{safe_title}_N.wav 或 mp3，连续且齐全
+    - 音频: voice_1.(wav|mp3)...voice_N.(wav|mp3) 连续且齐全
     - 数量与 script_data['segments'] 一致
     """
     issues: List[str] = []
     segments = script_data.get('segments', [])
     num_segments = len(segments)
-    title = script_data.get('title', 'untitled')
-    safe_title = make_safe_title(title)
+    # 不再依赖标题作为音频命名前缀
 
     # 收集实际文件
     try:
@@ -356,12 +355,12 @@ def validate_media_assets(script_data: Dict[str, Any], images_dir: str, voice_di
     # 解析编号
     image_indices: List[int] = []
     for f in image_files:
-        m = re.match(r'^segment_(\d+)\.png$', f)
+        m = re.match(r'^segment_(\d+)\.(png|jpg|jpeg)$', f, re.IGNORECASE)
         if m:
             image_indices.append(int(m.group(1)))
     audio_indices: List[int] = []
     for f in audio_files:
-        m = re.match(rf'^{re.escape(safe_title)}_(\d+)\.(wav|mp3)$', f)
+        m = re.match(r'^voice_(\d+)\.(wav|mp3)$', f)
         if m:
             audio_indices.append(int(m.group(1)))
 
@@ -383,7 +382,7 @@ def validate_media_assets(script_data: Dict[str, Any], images_dir: str, voice_di
     missing_audio = sorted(list(expected_set - set(audio_indices)))
     extra_audio = sorted(list(set(audio_indices) - expected_set))
     if missing_audio:
-        issues.append(f"缺少音频: {safe_title}_{missing_audio[0]}.*（共{len(missing_audio)}个缺口）")
+        issues.append(f"缺少音频: voice_{missing_audio[0]}.*（共{len(missing_audio)}个缺口）")
     if extra_audio:
         issues.append(f"存在多余音频编号: {extra_audio}")
 
@@ -391,7 +390,6 @@ def validate_media_assets(script_data: Dict[str, Any], images_dir: str, voice_di
     return {
         'ok': ok,
         'issues': issues,
-        'safe_title': safe_title,
         'images_dir': images_dir,
         'voice_dir': voice_dir,
         'num_segments': num_segments
@@ -698,17 +696,15 @@ def detect_project_progress(project_dir: str) -> Dict[str, Any]:
             import re as _re
             image_indices = []
             for f in image_files:
-                m = _re.match(r'^segment_(\d+)\.png$', f)
+                m = _re.match(r'^segment_(\d+)\.(png|jpg|jpeg)$', f, _re.IGNORECASE)
                 if m:
                     image_indices.append(int(m.group(1)))
             images_ok = (len(image_indices) == num_segments) and (set(image_indices) == set(range(1, num_segments+1)))
             # 音频检查
-            title = script.get('title', 'untitled')
-            safe_title = make_safe_title(title)
             audio_files = [f for f in os.listdir(voice_dir) if os.path.isfile(os.path.join(voice_dir, f))] if os.path.isdir(voice_dir) else []
             audio_indices = []
             for f in audio_files:
-                m = _re.match(rf'^{_re.escape(safe_title)}_(\d+)\.(wav|mp3)$', f)
+                m = _re.match(r'^voice_(\d+)\.(wav|mp3)$', f)
                 if m:
                     audio_indices.append(int(m.group(1)))
             audio_ok = (len(audio_indices) == num_segments) and (set(audio_indices) == set(range(1, num_segments+1)))
@@ -800,32 +796,42 @@ def collect_ordered_assets(project_dir: str, script_data: Dict[str, Any], requir
     """
     images_dir = os.path.join(project_dir, "images")
     voice_dir = os.path.join(project_dir, "voice")
-    title = script_data.get('title', 'untitled')
-    safe_title = make_safe_title(title)
+    # 不再依赖标题作为音频命名前缀
     num_segments = len(script_data.get('segments', []))
 
     image_paths: List[str] = []
     audio_paths: List[str] = []
     for i in range(1, num_segments+1):
-        image_path = os.path.join(images_dir, f"segment_{i}.png")
-        audio_wav = os.path.join(voice_dir, f"{safe_title}_{i}.wav")
-        audio_mp3 = os.path.join(voice_dir, f"{safe_title}_{i}.mp3")
-        if not os.path.exists(image_path):
-            raise FileNotFoundError(f"缺少图片: {image_path}")
+        # 按多种常见图片后缀依次探测
+        _candidates = [
+            os.path.join(images_dir, f"segment_{i}.png"),
+            os.path.join(images_dir, f"segment_{i}.jpg"),
+            os.path.join(images_dir, f"segment_{i}.jpeg"),
+        ]
+        image_path = None
+        for _p in _candidates:
+            if os.path.exists(_p):
+                image_path = _p
+                break
+        audio_wav_new = os.path.join(voice_dir, f"voice_{i}.wav")
+        audio_mp3_new = os.path.join(voice_dir, f"voice_{i}.mp3")
+        if not image_path:
+            # 以 .png 为主的规范名称提示
+            raise FileNotFoundError(f"缺少图片: segment_{i}.(png|jpg|jpeg)")
         if require_audio:
-            if os.path.exists(audio_wav):
-                audio_path = audio_wav
-            elif os.path.exists(audio_mp3):
-                audio_path = audio_mp3
+            if os.path.exists(audio_wav_new):
+                audio_path = audio_wav_new
+            elif os.path.exists(audio_mp3_new):
+                audio_path = audio_mp3_new
             else:
-                raise FileNotFoundError(f"缺少音频: {audio_wav} 或 {audio_mp3}")
+                raise FileNotFoundError(f"缺少音频: voice_{i}.(wav|mp3)")
             audio_paths.append(audio_path)
         else:
             # 非强制音频：有则收集，无则跳过
-            if os.path.exists(audio_wav):
-                audio_paths.append(audio_wav)
-            elif os.path.exists(audio_mp3):
-                audio_paths.append(audio_mp3)
+            if os.path.exists(audio_wav_new):
+                audio_paths.append(audio_wav_new)
+            elif os.path.exists(audio_mp3_new):
+                audio_paths.append(audio_mp3_new)
         image_paths.append(image_path)
     return {"images": image_paths, "audio": audio_paths}
 

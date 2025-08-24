@@ -6,7 +6,7 @@ import glob
 from functions import (
     read_document, intelligent_summarize, extract_keywords, 
     generate_images_for_segments, synthesize_voice_for_segments, 
-    compose_final_video
+    compose_final_video, generate_opening_image
 )
 from config import config
 
@@ -353,6 +353,11 @@ def main(
         if not (goto_existing_branch and locals().get('step_to_rerun') > 3):
             print_section("步骤 3/5 图像生成", "🖼️")
             print("正在生成图像...")
+            # 先尝试生成开场图像（可选）
+            opening_image_path = generate_opening_image(
+                image_server, image_model, keywords_data,
+                image_style_preset, image_size, f"{project_output_dir}/images"
+            )
             image_paths = generate_images_for_segments(
                 image_server, image_model, keywords_data, 
                 image_style_preset, image_size, f"{project_output_dir}/images"
@@ -467,11 +472,43 @@ def main(
                 print(f"⚠️  未找到指定的背景音乐文件: {global_candidate}，将继续生成无背景音乐的视频")
 
         # 5.3 执行视频合成：图像+口播音频；可选字幕与BGM在底层函数中处理
+        # 传入开场参数（可选）
+        opening_image_candidate = None
+        try:
+            candidate_path = os.path.join(project_output_dir, "images", "opening.png")
+            opening_image_candidate = candidate_path if os.path.exists(candidate_path) else None
+        except Exception:
+            opening_image_candidate = None
+
+        opening_quote = (script_data or {}).get("golden_quote", "")
+
+        # （新）开场金句TTS：若存在金句，则在开头生成并使用
+        opening_narration_audio_path = None
+        try:
+            if isinstance(opening_quote, str) and opening_quote.strip():
+                opening_voice_dir = os.path.join(project_output_dir, "voice")
+                os.makedirs(opening_voice_dir, exist_ok=True)
+                opening_narration_audio_path = os.path.join(opening_voice_dir, "opening.wav")
+                # 仅当不存在时生成，避免重复生成
+                if not os.path.exists(opening_narration_audio_path):
+                    from genai_api import text_to_audio_bytedance
+                    print("正在生成开场金句口播…")
+                    ok = text_to_audio_bytedance(opening_quote, opening_narration_audio_path, voice=voice, encoding="wav")
+                    if not ok:
+                        print("⚠️ 开场金句口播生成失败，将继续无开场口播")
+                        opening_narration_audio_path = None
+        except Exception as _openerr:
+            print(f"⚠️ 开场金句口播处理异常：{_openerr}，将继续无开场口播")
+            opening_narration_audio_path = None
+
         final_video_path = compose_final_video(
             image_paths, audio_paths, f"{project_output_dir}/final_video.mp4",
             script_data=script_data, enable_subtitles=enable_subtitles,
             bgm_audio_path=bgm_audio_path, bgm_volume=config.BGM_DEFAULT_VOLUME,
-            narration_volume=config.NARRATION_DEFAULT_VOLUME
+            narration_volume=config.NARRATION_DEFAULT_VOLUME,
+            opening_image_path=opening_image_candidate,
+            opening_golden_quote=opening_quote,
+            opening_narration_audio_path=opening_narration_audio_path
         )
         
         # 计算处理统计信息
@@ -596,7 +633,7 @@ if __name__ == "__main__":
     # 运行主程序 - input_file设为None以启用交互式选择
     result = main(
         input_file=None,  # 启用交互式文件选择
-        target_length=1000,
+        target_length=1500,
         num_segments=10,
         image_size="1280x720",
         llm_model="google/gemini-2.5-pro",

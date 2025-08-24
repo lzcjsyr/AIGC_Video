@@ -146,14 +146,40 @@ class Config:
     #   - AUDIO_DUCKING_SMOOTH_SECONDS: 包络平滑时间（秒），防止跳变突兀
     AUDIO_DUCKING_ENABLED = True
     AUDIO_DUCKING_STRENGTH = 0.3
-    AUDIO_DUCKING_SMOOTH_SECONDS = 0.12
+    AUDIO_DUCKING_SMOOTH_SECONDS = 0.12   
+
+    # 开场参数
+    # OPENING_FADEIN_SECONDS: 开场渐显时长（秒）。
+    #   - 对视频第一个画面进行从黑到正常的线性渐显
+    #   - 若存在开场片段（opening image），则对该片段应用；否则应用于第一段正片
+    OPENING_FADEIN_SECONDS = 2.0
+
+    # 开场画面在口播结束后的停留时长（秒）
+    # - 开场口播音频播放完毕后，画面继续保持该时长再进入正文
+    OPENING_HOLD_AFTER_NARRATION_SECONDS = 2.0
+
+    # 开场金句样式参数
+    OPENING_QUOTE_STYLE = {
+        "enabled": True,                 # 是否显示开场金句
+        "font_family": "/System/Library/Fonts/PingFang.ttc",  # 字体（建议绝对路径）
+        "font_size": 48,                 # 字体大小（将基于字幕字号的放大系数补正）
+        "font_scale": 1.3,               # 在字幕基础字号上的缩放系数
+        "color": "white",                # 文字颜色
+        "stroke_color": "black",         # 描边颜色
+        "stroke_width": 4,               # 描边宽度
+        "position": ("center", "center"),  # 居中
+        "max_lines": 4,                  # 最大行数（过长自动换行）
+        "max_chars_per_line": 18,        # 每行最大字符数（用于开场金句换行）
+        "line_spacing": 8,               # 行间距（像素，开场金句专用）
+        "letter_spacing": 0,             # 字间距（以空格数量近似控制，0 表示不加）
+    }
     
     # 片尾参数
     # ENDING_FADE_SECONDS: 片尾时长（秒）。
     #   - 画面：追加最后一帧静帧并在整段内线性渐隐至黑场
     #   - BGM：在整段内线性淡出到 0（口播已结束）
     ENDING_FADE_SECONDS = 2.5
-    
+
     @classmethod
     def validate_api_keys(cls) -> Dict[str, bool]:
         """验证API密钥配置"""

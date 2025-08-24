@@ -3,20 +3,14 @@
 包含文档读取、智能处理、图像生成、语音合成、视频制作等功能
 """
 
-from moviepy import ImageClip, AudioFileClip, CompositeVideoClip, concatenate_videoclips, VideoFileClip, TextClip, ColorClip, CompositeAudioClip
+from moviepy import ImageClip, AudioFileClip, CompositeVideoClip, concatenate_videoclips, TextClip, ColorClip, CompositeAudioClip
 # MoviePy 2.x: 使用类效果 API
 try:
     from moviepy.audio.fx.AudioLoop import AudioLoop  # type: ignore
 except Exception:
     AudioLoop = None  # fallback later
 from moviepy.audio.fx.MultiplyVolume import MultiplyVolume  # type: ignore
-try:
-    from moviepy.audio.AudioClip import concatenate_audioclips  # type: ignore
-except Exception:
-    concatenate_audioclips = None  # fallback later
 from typing import Optional, Dict, Any, List, Tuple
-from io import BytesIO
-from PIL import Image
 import requests
 import json
 import os
@@ -30,18 +24,33 @@ import pdfplumber
 from prompts import summarize_system_prompt, keywords_extraction_prompt, IMAGE_STYLE_PRESETS
 from genai_api import text_to_text, text_to_image_doubao, text_to_audio_bytedance
 from config import config
-try:
-    from proglog import TqdmProgressBar  # type: ignore
-except Exception:
-    TqdmProgressBar = None
+ 
 from utils import (
-    logger, FileProcessingError, APIError, VideoProcessingError,
+    logger, FileProcessingError, APIError,
     log_function_call, ensure_directory_exists, clean_text, 
-    validate_file_format, safe_json_loads, save_json_file,
-    calculate_duration, ProgressTracker, interactive_file_selector
+    validate_file_format, make_safe_title
 )
 from utils import parse_json_robust
 import numpy as np
+
+# 统一字体解析：优先使用系统中文字体路径，失败回退到传入名称
+def resolve_font_path(preferred: Optional[str]) -> Optional[str]:
+    if preferred and os.path.exists(preferred):
+        return preferred
+    candidate_paths = [
+        "/System/Library/Fonts/PingFang.ttc",
+        "/System/Library/Fonts/Hiragino Sans GB.ttc",
+        "/System/Library/Fonts/Supplemental/Songti.ttc",
+        "/System/Library/Fonts/STHeiti Light.ttc",
+        "/System/Library/Fonts/Supplemental/SimHei.ttf",
+        "/System/Library/Fonts/Supplemental/SimSun.ttf",
+        "/Library/Fonts/Arial Unicode.ttf",
+        "/Library/Fonts/Arial Unicode MS.ttf",
+    ]
+    for path in candidate_paths:
+        if os.path.exists(path):
+            return path
+    return preferred
 
 ################ Document Reading ################
 @log_function_call
@@ -174,7 +183,7 @@ def intelligent_summarize(server: str, model: str, content: str, target_length: 
         # 鲁棒解析（先常规，失败则修复）
         parsed_content = parse_json_robust(output)
         
-        # 验证必需字段
+        # 验证必需字段（golden_quote 为可选）
         required_keys = ["title", "segments"]
         if not all(key in parsed_content for key in required_keys):
             missing_keys = [key for key in required_keys if key not in parsed_content]
@@ -185,6 +194,7 @@ def intelligent_summarize(server: str, model: str, content: str, target_length: 
         
         enhanced_data = {
             "title": parsed_content["title"],
+            "golden_quote": parsed_content.get("golden_quote", ""),
             "total_length": total_length,
             "target_segments": num_segments,
             "actual_segments": len(parsed_content["segments"]),
@@ -201,8 +211,9 @@ def intelligent_summarize(server: str, model: str, content: str, target_length: 
         for i, segment in enumerate(parsed_content["segments"], 1):
             content_text = segment["content"]
             length = len(content_text)
-            # 按照每分钟300字计算播放时长
-            estimated_duration = length / 300 * 60
+            # 使用配置的语速估算播放时长（每分钟字数）
+            wpm = int(getattr(config, "SPEECH_SPEED_WPM", 300))
+            estimated_duration = length / max(1, wpm) * 60
             
             enhanced_data["segments"].append({
                 "index": i,
@@ -273,6 +284,70 @@ def extract_keywords(server: str, model: str, script_data: Dict[str, Any]) -> Di
         raise ValueError(f"关键词提取错误: {e}")
 
 ################ Image Generation ################
+def generate_opening_image(server: str, model: str, keywords_data: Dict[str, Any],
+                           image_style_preset: str, image_size: str, output_dir: str) -> Optional[str]:
+    """
+    基于关键词数据中的 opening_image 生成开场图像（简洁抽象）。
+
+    仅消费 opening_image 中的两类字段：
+      - keywords: 具象可视化的画面元素
+      - atmosphere: 抽象氛围/风格词（强调高对比度、强烈冲击等）
+
+    返回生成的开场图像路径；若缺少所需字段则返回 None。
+    """
+    try:
+        opening = (keywords_data or {}).get("opening_image") or {}
+        if not isinstance(opening, dict):
+            return None
+
+        # 仅消费 keywords / atmosphere
+        keywords = opening.get("keywords", []) or []
+        atmosphere = opening.get("atmosphere", []) or []
+
+        # 基础风格：极简、抽象
+        minimalist_style = get_image_style("minimalist")
+        base_style_parts: List[str] = [minimalist_style, "简洁抽象", "留白", "干净构图"]
+
+        # 强化氛围默认值（若未覆盖）
+        emphasis = ["高对比度", "强烈视觉冲击", "戏剧性光影"]
+        # 合并 atmosphere 与默认强调词，保序去重
+        atmo_merged: List[str] = []
+        for item in list(atmosphere) + emphasis:
+            if item and item not in atmo_merged:
+                atmo_merged.append(item)
+
+        prompt_parts: List[str] = []
+        prompt_parts.extend(base_style_parts)
+        if isinstance(keywords, list):
+            prompt_parts.extend(keywords[:8])
+        prompt_parts.extend(atmo_merged[:6])
+        prompt_parts.append("高质量，专业影像")
+
+        final_prompt = ", ".join([p for p in prompt_parts if p])
+
+        # 调用豆包图像生成API
+        image_url = text_to_image_doubao(
+            prompt=final_prompt,
+            size=image_size,
+            model=model
+        )
+
+        if not image_url:
+            raise ValueError("开场图像生成失败")
+
+        # 下载并保存
+        ensure_directory_exists(output_dir)
+        response = requests.get(image_url)
+        if response.status_code != 200:
+            raise ValueError("开场图像下载失败")
+        image_path = os.path.join(output_dir, "opening.png")
+        with open(image_path, 'wb') as f:
+            f.write(response.content)
+        print(f"开场图像已保存: {image_path}")
+        return image_path
+    except Exception as e:
+        logger.warning(f"开场图像生成失败: {e}")
+        return None
 def generate_images_for_segments(server: str, model: str, keywords_data: Dict[str, Any], 
                                 image_style_preset: str, image_size: str, output_dir: str) -> List[str]:
     """
@@ -347,19 +422,14 @@ def synthesize_voice_for_segments(server: str, voice: str, script_data: Dict[str
     try:
         audio_paths = []
         
-        # 从script_data中获取title，用于文件命名
-        title = script_data.get('title', 'untitled')
-        # 清理title中的特殊字符，确保文件名安全
-        safe_title = title.replace(' ', '_').replace('/', '_').replace('\\', '_').replace(':', '_').replace('?', '_').replace('*', '_').replace('"', '_').replace('<', '_').replace('>', '_').replace('|', '_')
-        
         for segment in script_data["segments"]:
             segment_index = segment["index"]
             content = segment["content"]
             
             print(f"正在生成第{segment_index}段语音...")
             
-            # 生成语音文件路径：{title}_{序号}.wav
-            audio_filename = f"{safe_title}_{segment_index}.wav"
+            # 生成语音文件路径：voice_{序号}.wav
+            audio_filename = f"voice_{segment_index}.wav"
             audio_path = os.path.join(output_dir, audio_filename)
             
             # 调用语音合成API - 根据语音音色智能选择接口
@@ -388,7 +458,10 @@ def synthesize_voice_for_segments(server: str, voice: str, script_data: Dict[str
 def compose_final_video(image_paths: List[str], audio_paths: List[str], output_path: str, 
                        script_data: Dict[str, Any] = None, enable_subtitles: bool = False,
                        bgm_audio_path: Optional[str] = None, bgm_volume: float = 0.15,
-                       narration_volume: float = 1.0) -> str:
+                       narration_volume: float = 1.0,
+                       opening_image_path: Optional[str] = None,
+                       opening_golden_quote: Optional[str] = None,
+                       opening_narration_audio_path: Optional[str] = None) -> str:
     """
     合成最终视频
     
@@ -409,6 +482,118 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
         video_clips = []
         audio_clips = []
         
+        # 可选：创建开场片段（图像 + 居中金句 + 可选开场口播）
+        # 开场时长逻辑：若提供开场口播 => 时长=口播时长+OPENING_HOLD_AFTER_NARRATION_SECONDS；否则无开场
+        opening_seconds = 0.0
+        opening_voice_clip = None
+        # 若提供开场口播音频，则以“音频长度 + 停留时长”作为总开场时长
+        try:
+            if opening_narration_audio_path and os.path.exists(opening_narration_audio_path):
+                opening_voice_clip = AudioFileClip(opening_narration_audio_path)
+                hold_after = float(getattr(config, "OPENING_HOLD_AFTER_NARRATION_SECONDS", 2.0))
+                opening_seconds = float(opening_voice_clip.duration) + max(0.0, hold_after)
+        except Exception as _oaerr:
+            logger.warning(f"开场口播音频加载失败: {_oaerr}，将退回固定时长开场")
+            opening_voice_clip = None
+        
+        if opening_image_path and os.path.exists(opening_image_path) and opening_seconds > 1e-3:
+            try:
+                print("正在创建开场片段…")
+                opening_base = ImageClip(opening_image_path).with_duration(opening_seconds)
+
+                # 解析可用字体（参考字幕配置）
+                subtitle_config = config.SUBTITLE_CONFIG.copy()
+
+                resolved_font = resolve_font_path(subtitle_config.get("font_family"))
+                quote_text = (opening_golden_quote or "").strip()
+                if quote_text:
+                    # 读取开场金句样式（带默认值回退）
+                    quote_style = getattr(config, "OPENING_QUOTE_STYLE", {}) or {}
+                    base_font = int(config.SUBTITLE_CONFIG.get("font_size", 36))
+                    scale = float(quote_style.get("font_scale", 1.3))
+                    font_size = int(quote_style.get("font_size", base_font * scale))
+                    text_color = quote_style.get("color", config.SUBTITLE_CONFIG.get("color", "white"))
+                    stroke_color = quote_style.get("stroke_color", config.SUBTITLE_CONFIG.get("stroke_color", "black"))
+                    stroke_width = int(quote_style.get("stroke_width", max(3, int(config.SUBTITLE_CONFIG.get("stroke_width", 3)))))
+                    pos = quote_style.get("position", ("center", "center"))
+
+                    # 开场金句换行：按 max_chars_per_line 和 max_lines 控制
+                    try:
+                        max_chars = int(quote_style.get("max_chars_per_line", 18))
+                        max_q_lines = int(quote_style.get("max_lines", 4))
+                        # 复用字幕拆分逻辑，严格按每行字符数限制
+                        candidate_lines = split_text_for_subtitle(quote_text, max_chars, max_q_lines)
+                        wrapped_quote = "\n".join(candidate_lines[:max_q_lines]) if candidate_lines else quote_text
+                    except Exception:
+                        wrapped_quote = quote_text
+
+                    # 覆盖字体解析（优先采用 OPENING_QUOTE_STYLE.font_family）
+                    font_override = quote_style.get("font_family")
+                    if font_override and os.path.exists(font_override):
+                        resolved_font = font_override
+
+                    # 行间距与字间距（MoviePy 2.x 无直接参数，这里通过逐行排版+空格近似实现）
+                    line_spacing_px = int(quote_style.get("line_spacing", 0))
+                    letter_spaces = int(quote_style.get("letter_spacing", 0))
+
+                    def _apply_letter_spacing(s: str, n: int) -> str:
+                        if n <= 0 or not s:
+                            return s
+                        return (" " * n).join(list(s))
+
+                    def _make_text_clip(text: str) -> TextClip:
+                        return TextClip(
+                            text=text,
+                            font_size=font_size,
+                            color=text_color,
+                            font=resolved_font or config.SUBTITLE_CONFIG.get("font_family"),
+                            stroke_color=stroke_color,
+                            stroke_width=stroke_width
+                        )
+
+                    try:
+                        # 预处理字间距
+                        lines = wrapped_quote.split("\n") if wrapped_quote else []
+                        lines = [_apply_letter_spacing(ln, letter_spaces) for ln in lines] if lines else []
+
+                        # 无需自定义行距：直接用单 TextClip（多行通过 \n 渲染）
+                        if line_spacing_px <= 0 or not (isinstance(pos, tuple) and pos == ("center", "center")):
+                            processed = "\n".join(lines) if lines else wrapped_quote
+                            text_clip = _make_text_clip(processed).with_position(pos).with_duration(opening_seconds)
+                            opening_clip = CompositeVideoClip([opening_base, text_clip])
+                        else:
+                            # 居中且需要行距：逐行排布
+                            video_w, video_h = opening_base.size
+                            line_clips: List[Any] = [_make_text_clip(ln) for ln in lines] if lines else []
+                            if line_clips:
+                                total_h = sum(c.h for c in line_clips) + line_spacing_px * (len(line_clips) - 1)
+                                y_start = max(0, (video_h - total_h) // 2)
+                                y_cur = y_start
+                                placed: List[Any] = [opening_base]
+                                for c in line_clips:
+                                    placed.append(c.with_position(("center", y_cur)).with_duration(opening_seconds))
+                                    y_cur += c.h + line_spacing_px
+                                opening_clip = CompositeVideoClip(placed)
+                            else:
+                                text_clip = _make_text_clip(wrapped_quote).with_position(pos).with_duration(opening_seconds)
+                                opening_clip = CompositeVideoClip([opening_base, text_clip])
+                    except Exception:
+                        text_clip = _make_text_clip(wrapped_quote).with_position(pos).with_duration(opening_seconds)
+                        opening_clip = CompositeVideoClip([opening_base, text_clip])
+                else:
+                    opening_clip = opening_base
+
+                # 绑定开场口播音频（如存在）
+                if opening_voice_clip is not None:
+                    try:
+                        opening_clip = opening_clip.with_audio(opening_voice_clip)
+                    except Exception as _bindaerr:
+                        logger.warning(f"为开场片段绑定音频失败: {_bindaerr}")
+
+                video_clips.append(opening_clip)
+            except Exception as e:
+                logger.warning(f"开场片段生成失败: {e}，将跳过开场")
+
         # 为每个段落创建视频片段
         for i, (image_path, audio_path) in enumerate(zip(image_paths, audio_paths)):
             print(f"正在处理第{i+1}段视频...")
@@ -441,6 +626,8 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
                 subtitle_config["video_size"] = final_video.size
                 # 传入每段音频真实时长用于精准对齐
                 subtitle_config["segment_durations"] = [ac.duration for ac in audio_clips]
+                # 开场字幕偏移：让第一段字幕从开场片段之后开始
+                subtitle_config["offset_seconds"] = opening_seconds
                 subtitle_clips = create_subtitle_clips(script_data, subtitle_config)
                 if subtitle_clips:
                     # 将字幕与视频合成
@@ -461,6 +648,24 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
                     print(f"🔊 口播音量调整为: {float(narration_volume)}")
         except Exception as e:
             logger.warning(f"口播音量调整失败: {str(e)}，将使用原始音量")
+
+        # 在视频开头应用视觉渐显（从黑到正常）
+        try:
+            fade_in_seconds = float(getattr(config, "OPENING_FADEIN_SECONDS", 0.0))
+            if fade_in_seconds > 1e-3:
+                def _fade_in_frame(gf, t):
+                    try:
+                        alpha = min(1.0, max(0.0, float(t) / float(fade_in_seconds)))
+                    except Exception:
+                        alpha = 1.0
+                    return alpha * gf(t)
+                try:
+                    final_video = final_video.transform(_fade_in_frame, keep_duration=True)
+                    print(f"🎬 已添加开场渐显 {fade_in_seconds}s")
+                except Exception as _ferr:
+                    logger.warning(f"开场渐显应用失败: {_ferr}")
+        except Exception as e:
+            logger.warning(f"读取开场渐显配置失败: {e}")
         
         # 在片尾追加 config.ENDING_FADE_SECONDS 秒静帧并渐隐（仅画面，无口播音频）
         try:
@@ -585,12 +790,12 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
                                 print(f"🎚️ 已启用自动Ducking（strength={strength}, smooth={smooth_sec}s）")
                         except Exception as duck_err:
                             logger.warning(f"自动Ducking失败: {duck_err}，将使用恒定音量BGM")
-                        # 在最终 config.ENDING_FADE_SECONDS 秒对 BGM 做淡出（不影响口播，因为尾段无口播）
+                        # 在片尾对 BGM 做淡出（不影响口播，因为尾段无口播）
                         try:
                             total_dur = float(final_video.duration)
                             fade_tail = float(getattr(config, "ENDING_FADE_SECONDS", 2.5))
                             cutoff = max(0.0, total_dur - fade_tail)
-                            def _fade_gain(t_any):
+                            def _fade_gain_common(t_any):
                                 import numpy as _np
                                 def _scalar(ts: float) -> float:
                                     if ts <= cutoff:
@@ -602,7 +807,7 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
                                     return _np.array([_scalar(float(ts)) for ts in t_any])
                                 return _scalar(float(t_any))
                             bgm_clip = bgm_clip.transform(
-                                lambda gf, t: ((_fade_gain(t)[:, None]) if hasattr(t, "__len__") else _fade_gain(t)) * gf(t),
+                                lambda gf, t: ((_fade_gain_common(t)[:, None]) if hasattr(t, "__len__") else _fade_gain_common(t)) * gf(t),
                                 keep_duration=True,
                             )
                             print(f"🎚️ 已添加BGM片尾{fade_tail}s淡出")
@@ -616,7 +821,7 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
                             total_dur = float(final_video.duration)
                             fade_tail = float(getattr(config, "ENDING_FADE_SECONDS", 2.5))
                             cutoff = max(0.0, total_dur - fade_tail)
-                            def _fade_gain2(t_any):
+                            def _fade_gain_common(t_any):
                                 import numpy as _np
                                 def _scalar(ts: float) -> float:
                                     if ts <= cutoff:
@@ -628,7 +833,7 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
                                     return _np.array([_scalar(float(ts)) for ts in t_any])
                                 return _scalar(float(t_any))
                             bgm_clip = bgm_clip.transform(
-                                lambda gf, t: ((_fade_gain2(t)[:, None]) if hasattr(t, "__len__") else _fade_gain2(t)) * gf(t),
+                                lambda gf, t: ((_fade_gain_common(t)[:, None]) if hasattr(t, "__len__") else _fade_gain_common(t)) * gf(t),
                                 keep_duration=True,
                             )
                             print(f"🎚️ 已添加BGM片尾{fade_tail}s淡出")
@@ -669,6 +874,11 @@ def compose_final_video(image_paths: List[str], audio_paths: List[str], output_p
         if bgm_clip is not None:
             try:
                 bgm_clip.close()
+            except Exception:
+                pass
+        if 'opening_voice_clip' in locals() and opening_voice_clip is not None:
+            try:
+                opening_voice_clip.close()
             except Exception:
                 pass
         
@@ -859,30 +1069,13 @@ def create_subtitle_clips(script_data: Dict[str, Any], subtitle_config: Dict[str
         subtitle_config = config.SUBTITLE_CONFIG.copy()
     
     subtitle_clips = []
-    current_time = 0
+    current_time = float(subtitle_config.get("offset_seconds", 0.0) if isinstance(subtitle_config, dict) else 0.0)
     
     logger.info("开始创建字幕剪辑...")
     
     # 解析可用字体（优先使用系统中的中文字体文件路径，避免中文缺字）
     def _resolve_font_path(preferred: Optional[str]) -> Optional[str]:
-        # 若直接传入的是可用路径，则直接使用
-        if preferred and os.path.exists(preferred):
-            return preferred
-        # 常见 macOS 中文字体文件路径候选
-        candidate_paths = [
-            "/System/Library/Fonts/PingFang.ttc",
-            "/System/Library/Fonts/Hiragino Sans GB.ttc",
-            "/System/Library/Fonts/Supplemental/Songti.ttc",
-            "/System/Library/Fonts/STHeiti Light.ttc",
-            "/System/Library/Fonts/Supplemental/SimHei.ttf",
-            "/System/Library/Fonts/Supplemental/SimSun.ttf",
-            "/Library/Fonts/Arial Unicode.ttf",
-            "/Library/Fonts/Arial Unicode MS.ttf",
-        ]
-        for path in candidate_paths:
-            if os.path.exists(path):
-                return path
-        return preferred  # 退回到传入名称（由 PIL 自行解析）
+        return resolve_font_path(preferred)
 
     resolved_font = _resolve_font_path(subtitle_config.get("font_family"))
     if not resolved_font:
