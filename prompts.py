@@ -100,20 +100,30 @@ summarize_system_prompt = """
 - 确保每段内容独立完整，逻辑清晰
 """
 
-# 通过调整“工作要求”里的内容，可以调整输出的内容。不要调整“输出格式要求”里的内容。
-keywords_extraction_prompt = """
+# ================================================================================
+# 关键词数量配置
+# ================================================================================
+KEYWORD_CONFIG = {
+    "opening_keywords_count": 3,      # 开场图像：keywords 数量
+    "opening_atmosphere_count": 3,    # 开场图像：atmosphere 数量  
+    "segment_keywords_count": 2,      # 正文分段：keywords 数量
+    "segment_atmosphere_count": 0,    # 正文分段：atmosphere 数量
+}
+
+# 通过调整"工作要求"里的内容，可以调整输出的内容。不要调整"输出格式要求"里的内容。
+keywords_extraction_prompt = f"""
 你是一位专业的关键词提取专家，专门为图像生成提取准确的视觉关键词。
 
 工作要求：
 1. 开场信息：
    - opening_image：仅包含两类字段，结构与正文 segments 保持一致：
-       • keywords：具体可视化的画面元素（物体、场景、几何/纹理等）
-       • atmosphere：氛围/风格词，需强调高对比度、强烈视觉冲击、戏剧性光影、冷暖冲突等表达。
+       • keywords：具体可视化的画面元素【数量要求：{KEYWORD_CONFIG['opening_keywords_count']}】
+       • atmosphere：氛围/风格词，需强调高对比度、强烈视觉冲击、戏剧性光影、冷暖冲突等表达。【数量要求：{KEYWORD_CONFIG['opening_atmosphere_count']}】
 2. 正文分段关键词：
    - 仔细分析每个段落，提取适合图像生成的关键词
    - 将关键词分为两类：
-       • keywords: 具体的画面内容关键词（物体、场景、人物、动作等具象元素）
-       • atmosphere: 氛围感关键词（情感、氛围、感觉、风格等抽象元素）
+       • keywords: 具体的画面内容关键词（物体、场景、人物、动作等具象元素）【数量要求：{KEYWORD_CONFIG['segment_keywords_count']}】
+       • atmosphere: 氛围感关键词（情感、氛围、感觉、风格等抽象元素）【数量要求：{KEYWORD_CONFIG['segment_atmosphere_count']}】
 
 开场图像要求（简述）：
 - 简洁、抽象、留白、构图干净，适合作为视频开场背景。
@@ -122,27 +132,28 @@ keywords_extraction_prompt = """
 ###### 输出格式要求 ######
 严格按照以下JSON格式输出，不要有任何额外的说明文字：
 
-{
-    "opening_image": {
-        "keywords": ["抽象元素1", "抽象元素2"],
-        "atmosphere": ["高对比度", "强烈视觉冲击", "戏剧性光影"]
-    },
+{{
+    "opening_image": {{
+        "keywords": ["抽象元素"],
+        "atmosphere": ["氛围词"]
+    }},
     "segments": [
-        {
-            "keywords": ["具体关键词1", "具体关键词2", "具体关键词3"],
-            "atmosphere": ["氛围词1", "氛围词2", "氛围词3"]
-        },
-        {
-            "keywords": ["具体关键词1", "具体关键词2", "具体关键词3"],
-            "atmosphere": ["氛围词1", "氛围词2", "氛围词3"]
-        }
+        {{
+            "keywords": ["具体关键词"],
+            "atmosphere": ["氛围词"]
+        }},
+        {{
+            "keywords": ["具体关键词"],
+            "atmosphere": ["氛围词"]
+        }}
     ]
-}
+}}
 
 注意：
-- 每类提供3-5个关键词
+- 请严格根据数量要求生成JSON内的关键词
+- 如果数量要求为0，则对应字段应为空数组[]
 - keywords要具体可视化，适合图像生成
-- atmosphere要能表达情感和氛围；开场的atmosphere务必包含“高对比度、强烈视觉冲击”等词
+- atmosphere要能表达情感和氛围；
 - 关键词要与段落内容高度相关
 - 只输出JSON格式，不要有其他解释
 """
@@ -166,5 +177,6 @@ IMAGE_STYLE_PRESETS = {
 __all__ = [
     'summarize_system_prompt', 
     'keywords_extraction_prompt',
-    'IMAGE_STYLE_PRESETS'
+    'IMAGE_STYLE_PRESETS',
+    'KEYWORD_CONFIG'
 ]
