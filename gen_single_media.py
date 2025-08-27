@@ -5,6 +5,9 @@ import requests
 from urllib.parse import urlparse
 from io import BytesIO
 from PIL import Image, UnidentifiedImageError
+import docx
+import PyPDF2
+import pdfplumber
 
 from genai_api import text_to_image_doubao, text_to_audio_bytedance
 
@@ -42,6 +45,138 @@ def build_filename(prompt: str, ext: str) -> str:
     # 扩展到包含秒，降低同一分钟内的重名概率
     time_suffix = datetime.datetime.now().strftime("%m%d_%H%M%S")
     return f"{prefix}_{time_suffix}{ext}"
+
+
+def read_document(file_path: str) -> str:
+    # 验证文件路径不为空
+    if not file_path or not file_path.strip():
+        raise ValueError("文件路径不能为空")
+    
+    file_path = file_path.strip()
+    
+    # 检查文件是否存在
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"文件不存在：{file_path}")
+    
+    # 检查是否为文件（而非目录）
+    if not os.path.isfile(file_path):
+        raise ValueError(f"路径不是有效文件：{file_path}")
+    
+    _, ext = os.path.splitext(file_path)
+    ext = ext.lower()
+    
+    if ext == '.txt':
+        return read_txt(file_path)
+    elif ext == '.pdf':
+        return read_pdf(file_path)
+    elif ext == '.docx':
+        return read_docx(file_path)
+    elif ext == '.doc':
+        raise NotImplementedError("暂不支持 .doc 格式，请转换为 .docx 格式")
+    else:
+        raise ValueError(f"不支持的文件格式：{ext}")
+
+
+def read_txt(file_path: str) -> str:
+    encodings = ['utf-8', 'gbk', 'gb2312', 'utf-16']
+    for encoding in encodings:
+        try:
+            with open(file_path, 'r', encoding=encoding) as f:
+                return f.read().strip()
+        except UnicodeDecodeError:
+            continue
+    raise RuntimeError(f"无法读取文本文件：{file_path}，尝试了多种编码格式")
+
+
+def read_pdf(file_path: str) -> str:
+    text_content = ""
+    try:
+        with pdfplumber.open(file_path) as pdf:
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text_content += page_text + "\n"
+    except Exception:
+        try:
+            with open(file_path, 'rb') as pdf_file:
+                pdf_reader = PyPDF2.PdfReader(pdf_file)
+                for page in pdf_reader.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text_content += page_text + "\n"
+        except Exception as e2:
+            raise RuntimeError(f"无法读取PDF文件：{file_path}，错误：{e2}")
+    
+    if not text_content.strip():
+        raise RuntimeError(f"PDF文件没有可提取的文本内容：{file_path}")
+    return text_content.strip()
+
+
+def read_docx(file_path: str) -> str:
+    try:
+        doc = docx.Document(file_path)
+        text_content = ""
+        for paragraph in doc.paragraphs:
+            text_content += paragraph.text + "\n"
+        
+        if not text_content.strip():
+            raise RuntimeError(f"DOCX文件没有文本内容：{file_path}")
+        return text_content.strip()
+    except Exception as e:
+        raise RuntimeError(f"无法读取DOCX文件：{file_path}，错误：{e}")
+
+
+def get_text_input() -> str:
+    print("\n请选择文字输入方式：")
+    print("  1) 直接输入")
+    print("  2) 从文档读取")
+    
+    while True:
+        choice = input("请输入选项 (1/2): ").strip()
+        if choice in ("1", "2"):
+            break
+        print("无效输入，请输入 1 或 2。")
+    
+    if choice == "1":
+        text = input("\n请输入文字内容：").strip()
+        if not text:
+            raise ValueError("文字内容不能为空")
+        return text
+    else:
+        while True:
+            file_path = input("\n请输入文档路径：").strip()
+            
+            # 处理空路径或引号包围的路径
+            if not file_path:
+                print("❌ 文档路径不能为空。")
+                continue
+                
+            # 移除可能的引号
+            if (file_path.startswith('"') and file_path.endswith('"')) or \
+               (file_path.startswith("'") and file_path.endswith("'")):
+                file_path = file_path[1:-1].strip()
+                
+            # 再次检查去除引号后是否为空
+            if not file_path:
+                print("❌ 文档路径不能为空。")
+                continue
+            
+            try:
+                text = read_document(file_path)
+                print(f"✅ 成功读取文档，文字长度：{len(text)} 字符")
+                preview = first_n_chars(text, 100)
+                print(f"内容预览：{preview}{'...' if len(text) > 100 else ''}")
+                return text
+            except (ValueError, FileNotFoundError) as e:
+                print(f"❌ 文件路径问题：{e}")
+                retry = input("是否重新输入文档路径？(y/n): ").strip().lower()
+                if retry != 'y':
+                    raise RuntimeError("用户取消文档读取")
+            except Exception as e:
+                print(f"❌ 读取文档失败：{e}")
+                retry = input("是否重新输入文档路径？(y/n): ").strip().lower()
+                if retry != 'y':
+                    raise RuntimeError("用户取消文档读取")
 
 
 def generate_image(prompt: str, save_dir: str, size: str = "1024x1024", model: str = "doubao-seedream-3-0-t2i-250415") -> str:
@@ -127,21 +262,21 @@ def main(
         print("已退出。")
         return 0
 
-    prompt = input("\n请输入提示词：").strip()
-    if not prompt:
-        print("提示词不能为空。")
-        return 1
-
     try:
         if choice == "1":
             # 生成图片
+            prompt = input("\n请输入提示词：").strip()
+            if not prompt:
+                print("提示词不能为空。")
+                return 1
             print("\n正在生成图片…")
             out_path = generate_image(prompt, temp_dir, size=image_size, model=image_model)
             print(f"完成！图片已保存：{out_path}")
         else:
             # 生成音频
+            text_content = get_text_input()
             print("\n正在合成音频…")
-            out_path = generate_audio(prompt, temp_dir, voice=tts_voice, encoding=audio_encoding)
+            out_path = generate_audio(text_content, temp_dir, voice=tts_voice, encoding=audio_encoding)
             print(f"完成！音频已保存：{out_path}")
         return 0
     except KeyboardInterrupt:
