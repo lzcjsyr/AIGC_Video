@@ -21,7 +21,7 @@ from ebooklib import epub
 import PyPDF2
 import pdfplumber
 
-from prompts import summarize_system_prompt, keywords_extraction_prompt, IMAGE_STYLE_PRESETS
+from prompts import summarize_system_prompt, keywords_extraction_prompt, IMAGE_STYLE_PRESETS, OPENING_IMAGE_STYLES
 from genai_api import text_to_text, text_to_image_doubao, text_to_audio_bytedance
 from config import config
  
@@ -292,50 +292,32 @@ def extract_keywords(server: str, model: str, script_data: Dict[str, Any]) -> Di
         raise ValueError(f"关键词提取错误: {e}")
 
 ################ Image Generation ################
-def generate_opening_image(server: str, model: str, keywords_data: Dict[str, Any],
-                           image_style_preset: str, image_size: str, output_dir: str) -> Optional[str]:
+def generate_opening_image(model: str, opening_style: str, 
+                           image_size: str, output_dir: str) -> Optional[str]:
     """
-    基于关键词数据中的 opening_image 生成开场图像（简洁抽象）。
-
-    仅消费 opening_image 中的两类字段：
-      - keywords: 具象可视化的画面元素
-      - atmosphere: 抽象氛围/风格词（强调高对比度、强烈冲击等）
-
-    返回生成的开场图像路径；若缺少所需字段则返回 None。
+    生成开场图像，使用预设风格。
+    
+    Args:
+        model: 图像生成模型  
+        opening_style: 开场图像风格键名 (minimal, tech, nature, abstract, vintage)
+        image_size: 图像尺寸
+        output_dir: 输出目录
+    
+    Returns:
+        Optional[str]: 生成的开场图像路径，失败时返回None
     """
     try:
-        opening = (keywords_data or {}).get("opening_image") or {}
-        if not isinstance(opening, dict):
-            return None
-
-        # 仅消费 keywords / atmosphere
-        keywords = opening.get("keywords", []) or []
-        atmosphere = opening.get("atmosphere", []) or []
-
-        # 基础风格：极简、抽象
-        minimalist_style = get_image_style("minimalist")
-        base_style_parts: List[str] = [minimalist_style, "简洁抽象", "留白", "干净构图"]
-
-        # 强化氛围默认值（若未覆盖）
-        emphasis = ["高对比度", "强烈视觉冲击", "戏剧性光影"]
-        # 合并 atmosphere 与默认强调词，保序去重
-        atmo_merged: List[str] = []
-        for item in list(atmosphere) + emphasis:
-            if item and item not in atmo_merged:
-                atmo_merged.append(item)
-
-        prompt_parts: List[str] = []
-        prompt_parts.extend(base_style_parts)
-        if isinstance(keywords, list):
-            prompt_parts.extend(keywords[:8])
-        prompt_parts.extend(atmo_merged[:6])
-        prompt_parts.append("高质量，专业影像")
-
-        final_prompt = ", ".join([p for p in prompt_parts if p])
-
+        # 获取预设风格提示词
+        prompt = OPENING_IMAGE_STYLES.get(opening_style)
+        if not prompt:
+            # 使用第一个风格作为默认值
+            default_style = next(iter(OPENING_IMAGE_STYLES))
+            logger.warning(f"未找到开场图像风格: {opening_style}，使用默认风格: {default_style}")
+            prompt = OPENING_IMAGE_STYLES[default_style]
+        
         # 调用豆包图像生成API
         image_url = text_to_image_doubao(
-            prompt=final_prompt,
+            prompt=prompt,
             size=image_size,
             model=model
         )
@@ -347,7 +329,7 @@ def generate_opening_image(server: str, model: str, keywords_data: Dict[str, Any
         ensure_directory_exists(output_dir)
         image_path = os.path.join(output_dir, "opening.png")
         download_to_path(image_url, image_path, error_msg="开场图像下载失败")
-        print(f"开场图像已保存: {image_path}")
+        print(f"开场图像已保存: {image_path} (风格: {opening_style})")
         return image_path
     except Exception as e:
         logger.warning(f"开场图像生成失败: {e}")
@@ -938,145 +920,104 @@ def get_image_style(style_name: str = "cinematic") -> str:
     """
     return IMAGE_STYLE_PRESETS.get(style_name, list(IMAGE_STYLE_PRESETS.values())[0])
 
-def split_text_for_subtitle(text: str, max_chars_per_line: int = 20, max_lines: int = 2) -> List[str]:
+def _split_text_evenly(text: str, max_chars_per_line: int) -> List[str]:
     """
-    将长文本分割为适合字幕显示的短句，严格按每行字符数限制
+    将文本均匀切分，避免出现过短的尾段
     
     Args:
-        text: 原始文本
+        text: 要切分的文本
         max_chars_per_line: 每行最大字符数
-        max_lines: 最大行数
     
     Returns:
-        List[str]: 分割后的字幕文本列表
+        List[str]: 均匀切分后的文本片段列表
     """
-    # 如果文本很短，直接按字符数切分
     if len(text) <= max_chars_per_line:
         return [text]
     
-    # 按句号、问号、感叹号分割（含中英文）
-    sentences = []
-    current = ""
-    for char in text:
-        current += char
-        # 一级分句：按中英文重停顿标点切分（。！？；.!?）
-        if char in "。！？；.!?":
-            sentences.append(current.strip())
-            current = ""
+    # 计算需要几段以及每段的理想长度
+    total_chars = len(text)
+    num_segments = (total_chars + max_chars_per_line - 1) // max_chars_per_line  # 向上取整
     
-    if current.strip():
-        sentences.append(current.strip())
+    # 计算每段的理想长度（尽可能均匀）
+    base_length = total_chars // num_segments
+    remainder = total_chars % num_segments
     
-    # 如果没有句子分隔符，强制按字符数切分
+    # 分配长度：前remainder段多分配1个字符
+    result = []
+    start = 0
+    
+    for i in range(num_segments):
+        # 前remainder段长度为base_length+1，后面的段长度为base_length
+        length = base_length + (1 if i < remainder else 0)
+        end = start + length
+        result.append(text[start:end])
+        start = end
+    
+    return result
+
+def split_text_for_subtitle(text: str, max_chars_per_line: int = 20, max_lines: int = 2) -> List[str]:
+    """
+    将长文本分割为适合字幕显示的短句，采用分层切分策略：
+    1. 优先按句号等重标点切分
+    2. 其次按逗号等轻标点切分  
+    3. 最后按字符数均匀硬切
+    """
+    def _smart_split(fragment: str) -> List[str]:
+        """统一的智能分割逻辑：对任意长度的文本片段进行最优切分"""
+        if len(fragment) <= max_chars_per_line:
+            return [fragment]
+        
+        # 尝试按轻标点切分
+        tokens = re.split(r'([，、,""''《》])', fragment)
+        if len(tokens) > 1:
+            # 有轻标点可用，尝试重组
+            parts = []
+            buf = ""
+            for token in tokens:
+                if not token:
+                    continue
+                if len(buf + token) <= max_chars_per_line:
+                    buf += token
+                else:
+                    if buf:
+                        parts.append(buf)
+                    buf = token
+            if buf:
+                parts.append(buf)
+            
+            # 检查切分结果，如果还有超长片段，递归处理
+            final_parts = []
+            for part in parts:
+                if len(part) <= max_chars_per_line:
+                    final_parts.append(part)
+                else:
+                    final_parts.extend(_split_text_evenly(part, max_chars_per_line))
+            return final_parts
+        
+        # 无标点可用，直接均匀硬切
+        return _split_text_evenly(fragment, max_chars_per_line)
+    
+    if len(text) <= max_chars_per_line:
+        return [text]
+    
+    # 按句号等重标点分割
+    sentences = re.split(r'([。！？；.!?])', text)
+    sentences = [s.strip() for s in sentences if s.strip()]
+    
     if not sentences:
-        result = []
-        for i in range(0, len(text), max_chars_per_line):
-            result.append(text[i:i + max_chars_per_line])
-        return result
+        return _smart_split(text)
     
-    # 组合句子，严格按每行字符数限制
+    # 逐句处理并合并
     result = []
     current_subtitle = ""
     
     for sentence in sentences:
-        # 如果单个句子超过每行限制：先尝试按次级标点（，、）细分，再必要时硬切
         if len(sentence) > max_chars_per_line:
+            # 句子过长，需要智能分割
             if current_subtitle:
                 result.append(current_subtitle)
                 current_subtitle = ""
-
-            # 二级分句函数：按（，、、“”、‘ ’、《 》以及英文逗号, 和 ASCII 单引号'）切分并保留标点（不处理 ASCII 双引号）
-            def _split_by_secondary(s: str) -> List[str]:
-                tokens = re.split(r'([，、,“”‘’《》，,])', s)
-                chunks: List[str] = []
-                buf = ""
-                in_ascii_single = False
-
-                OPENERS = ("“", "‘", "《")
-                CLOSERS = ("”", "’", "》")
-                COMMAS = ("，", "、", ",")
-
-                def flush_buf() -> None:
-                    nonlocal buf
-                    if buf:
-                        chunks.append(buf)
-                        buf = ""
-
-                def start_new_with(tok: str) -> None:
-                    nonlocal buf
-                    flush_buf()
-                    buf = tok
-
-                def end_with(tok: str) -> None:
-                    nonlocal buf
-                    if buf:
-                        buf += tok
-                        flush_buf()
-                    elif chunks:
-                        chunks[-1] += tok
-                    else:
-                        # 若不存在上一段，则临时放入缓冲，避免功能变化
-                        buf = tok
-
-                for t in tokens:
-                    if not t:
-                        continue
-
-                    if t in OPENERS:
-                        start_new_with(t)
-                        continue
-
-                    if t in CLOSERS:
-                        end_with(t)
-                        continue
-
-                    if t == "'":
-                        if not in_ascii_single:
-                            start_new_with(t)
-                            in_ascii_single = True
-                        else:
-                            end_with(t)
-                            in_ascii_single = False
-                        continue
-
-                    if t in COMMAS:
-                        end_with(t)
-                        continue
-
-                    # 普通文本
-                    buf += t
-
-                if buf:
-                    chunks.append(buf)
-                return chunks
-
-            parts = _split_by_secondary(sentence)
-
-            if len(parts) == 1:
-                # 无（，、）可用，回退到按字符数硬切
-                for i in range(0, len(sentence), max_chars_per_line):
-                    result.append(sentence[i:i + max_chars_per_line])
-            else:
-                # 使用二级分句，尽量合并到不超过上限的行
-                buf = ""
-                for p in parts:
-                    if len(p) <= max_chars_per_line:
-                        if not buf:
-                            buf = p
-                        elif len(buf + p) <= max_chars_per_line:
-                            buf += p
-                        else:
-                            result.append(buf)
-                            buf = p
-                    else:
-                        # 次级片段仍然过长，先输出已有缓冲，再硬切
-                        if buf:
-                            result.append(buf)
-                            buf = ""
-                        for i in range(0, len(p), max_chars_per_line):
-                            result.append(p[i:i + max_chars_per_line])
-                if buf:
-                    result.append(buf)
+            result.extend(_smart_split(sentence))
         elif not current_subtitle:
             current_subtitle = sentence
         elif len(current_subtitle + sentence) <= max_chars_per_line:
@@ -1102,7 +1043,6 @@ def create_subtitle_clips(script_data: Dict[str, Any], subtitle_config: Dict[str
         List[TextClip]: 字幕剪辑列表
     """
     if subtitle_config is None:
-        from config import config
         subtitle_config = config.SUBTITLE_CONFIG.copy()
     
     subtitle_clips = []

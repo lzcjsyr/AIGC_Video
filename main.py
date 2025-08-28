@@ -64,6 +64,7 @@ def main(
     voice="zh_male_yuanboxiaoshu_moon_bigtts",      # 语音音色
     output_dir="output",  # 输出目录，默认为当前目录下的output文件夹
     image_style_preset="cinematic",  # 图像风格预设，可选：cinematic, documentary, artistic等
+    opening_image_style="minimal",  # 开场图像风格，可选：minimal, tech, nature, abstract, vintage
     enable_subtitles=True,  # 是否启用字幕，默认启用
     bgm_filename: str = None,  # 背景音乐文件名（位于项目根目录的 music 文件夹，常见支持：mp3/wav/m4a/aac）
     run_mode="auto"  # 运行模式：auto 全自动；step 分步确认
@@ -353,8 +354,8 @@ def main(
             print("正在生成图像...")
             # 先尝试生成开场图像（可选）
             opening_image_path = generate_opening_image(
-                image_server, image_model, keywords_data,
-                image_style_preset, image_size, f"{project_output_dir}/images"
+                image_model, opening_image_style, 
+                image_size, f"{project_output_dir}/images"
             )
             image_paths = generate_images_for_segments(
                 image_server, image_model, keywords_data, 
@@ -631,13 +632,14 @@ if __name__ == "__main__":
     # 运行主程序 - input_file设为None以启用交互式选择
     result = main(
         input_file=None,  # 启用交互式文件选择
-        target_length=1500,
+        target_length=2000,
         num_segments=10,
         image_size="1280x720",
         llm_model="google/gemini-2.5-pro",
         image_model="doubao-seedream-3-0-t2i-250415",
         voice="zh_male_yuanboxiaoshu_moon_bigtts",
         image_style_preset="vintage",
+        opening_image_style="vintage",
         enable_subtitles=True,
         bgm_filename="Ramin Djawadi - Light of the Seven.mp3"  
     )
