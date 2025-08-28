@@ -958,76 +958,84 @@ def _split_text_evenly(text: str, max_chars_per_line: int) -> List[str]:
 def split_text_for_subtitle(text: str, max_chars_per_line: int = 20, max_lines: int = 2) -> List[str]:
     """
     将长文本分割为适合字幕显示的短句，采用分层切分策略：
-    1. 优先按句号等重标点切分
-    2. 其次按逗号等轻标点切分  
-    3. 最后按字符数均匀硬切
+    1. 第一层：按句号等重标点切分
+    2. 第二层：对超长片段按逗号等轻标点切分  
+    3. 第三层：对仍超长的片段按字符数均匀硬切
     """
-    def _smart_split(fragment: str) -> List[str]:
-        """统一的智能分割逻辑：对任意长度的文本片段进行最优切分"""
-        if len(fragment) <= max_chars_per_line:
+    def _split_by_light_punctuation(fragment: str) -> List[str]:
+        """第二层：按轻标点切分"""
+        tokens = re.split(r'([，、,""''《》])', fragment)
+        if len(tokens) <= 1:
+            # 没有轻标点，直接返回原片段
             return [fragment]
         
-        # 尝试按轻标点切分
-        tokens = re.split(r'([，、,""''《》])', fragment)
-        if len(tokens) > 1:
-            # 有轻标点可用，尝试重组
-            parts = []
-            buf = ""
-            for token in tokens:
-                if not token:
-                    continue
-                if len(buf + token) <= max_chars_per_line:
-                    buf += token
-                else:
-                    if buf:
-                        parts.append(buf)
-                    buf = token
-            if buf:
-                parts.append(buf)
-            
-            # 检查切分结果，如果还有超长片段，递归处理
-            final_parts = []
-            for part in parts:
-                if len(part) <= max_chars_per_line:
-                    final_parts.append(part)
-                else:
-                    final_parts.extend(_split_text_evenly(part, max_chars_per_line))
-            return final_parts
+        # 有轻标点，尝试重组成适合长度的片段
+        parts = []
+        buf = ""
+        for token in tokens:
+            if not token:
+                continue
+            if len(buf + token) <= max_chars_per_line:
+                buf += token
+            else:
+                if buf:
+                    parts.append(buf)
+                buf = token
+        if buf:
+            parts.append(buf)
         
-        # 无标点可用，直接均匀硬切
-        return _split_text_evenly(fragment, max_chars_per_line)
+        return parts
     
+    # 如果文本不超长，直接返回
     if len(text) <= max_chars_per_line:
         return [text]
     
-    # 按句号等重标点分割
-    sentences = re.split(r'([。！？；.!?])', text)
-    sentences = [s.strip() for s in sentences if s.strip()]
+    # 第一层：按句号等重标点分割
+    raw_parts = re.split(r'([。！？；.!?])', text)
     
+    # 重新组合：将标点符号附加到前面的文本
+    sentences = []
+    i = 0
+    while i < len(raw_parts):
+        if not raw_parts[i].strip():
+            i += 1
+            continue
+        
+        # 当前是文本内容
+        current = raw_parts[i].strip()
+        
+        # 检查下一个是否是标点符号
+        if i + 1 < len(raw_parts) and raw_parts[i + 1].strip() in '。！？；.!?':
+            current += raw_parts[i + 1].strip()
+            i += 2
+        else:
+            i += 1
+        
+        if current:
+            sentences.append(current)
+    
+    # 如果没有重标点，跳到第二层处理
     if not sentences:
-        return _smart_split(text)
+        sentences = [text]
     
-    # 逐句处理并合并
+    # 逐片段处理
     result = []
-    current_subtitle = ""
     
     for sentence in sentences:
-        if len(sentence) > max_chars_per_line:
-            # 句子过长，需要智能分割
-            if current_subtitle:
-                result.append(current_subtitle)
-                current_subtitle = ""
-            result.extend(_smart_split(sentence))
-        elif not current_subtitle:
-            current_subtitle = sentence
-        elif len(current_subtitle + sentence) <= max_chars_per_line:
-            current_subtitle += sentence
+        if len(sentence) <= max_chars_per_line:
+            # 第一层切分结果符合要求，直接保留
+            result.append(sentence)
         else:
-            result.append(current_subtitle)
-            current_subtitle = sentence
-    
-    if current_subtitle:
-        result.append(current_subtitle)
+            # 第一层切分结果超长，进入第二层
+            second_level_parts = _split_by_light_punctuation(sentence)
+            
+            for part in second_level_parts:
+                if len(part) <= max_chars_per_line:
+                    # 第二层切分结果符合要求，直接保留
+                    result.append(part)
+                else:
+                    # 第二层切分结果仍超长，进入第三层硬切
+                    result.extend(_split_text_evenly(part, max_chars_per_line))
     
     return result
 
