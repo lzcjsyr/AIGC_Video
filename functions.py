@@ -963,13 +963,77 @@ def split_text_for_subtitle(text: str, max_chars_per_line: int = 20, max_lines: 
     3. 第三层：对仍超长的片段按字符数均匀硬切
     """
     def _split_by_light_punctuation(fragment: str) -> List[str]:
-        """第二层：按轻标点切分"""
-        tokens = re.split(r'([，、,""''《》])', fragment)
-        if len(tokens) <= 1:
-            # 没有轻标点，直接返回原片段
-            return [fragment]
+        """第二层：智能配对标点切分，保持引用内容完整"""
+        # 配对标点映射（仅处理中文配对标点）
+        paired_punctuation = {'"': '"', "'": "'", '《': '》'}
         
-        # 有轻标点，尝试重组成适合长度的片段
+        # 第一步：提取配对标点内容和普通文本
+        segments = []
+        i = 0
+        
+        while i < len(fragment):
+            # 查找下一个配对标点的开始
+            next_pair_start = float('inf')
+            pair_type = None
+            
+            for start_p in paired_punctuation:
+                pos = fragment.find(start_p, i)
+                if pos != -1 and pos < next_pair_start:
+                    next_pair_start = pos
+                    pair_type = start_p
+            
+            if next_pair_start == float('inf'):
+                # 没有更多配对标点，剩余文本作为普通段
+                if i < len(fragment):
+                    segments.append(('text', fragment[i:]))
+                break
+            
+            # 添加配对标点前的普通文本
+            if next_pair_start > i:
+                segments.append(('text', fragment[i:next_pair_start]))
+            
+            # 查找配对的结束标点
+            end_punct = paired_punctuation[pair_type]
+            end_pos = fragment.find(end_punct, next_pair_start + 1)
+            
+            if end_pos != -1:
+                # 找到配对，提取完整配对内容
+                paired_content = fragment[next_pair_start:end_pos + 1]
+                segments.append(('paired', paired_content))
+                i = end_pos + 1
+            else:
+                # 没找到配对，当作普通字符处理
+                segments.append(('text', fragment[next_pair_start:next_pair_start + 1]))
+                i = next_pair_start + 1
+        
+        # 第二步：处理每个段落
+        final_parts = []
+        
+        for seg_type, content in segments:
+            if seg_type == 'paired':
+                # 配对内容保持完整（但检查是否超长）
+                if len(content) <= max_chars_per_line:
+                    final_parts.append(content)
+                else:
+                    # 配对内容太长，需要硬切（保持配对标点完整性的前提下）
+                    final_parts.extend(_split_text_evenly(content, max_chars_per_line))
+            else:
+                # 普通文本应用轻标点切分（不包含配对标点）
+                if len(content) <= max_chars_per_line:
+                    final_parts.append(content)
+                else:
+                    # 对普通文本应用简化的轻标点切分
+                    text_parts = _split_simple_punctuation(content)
+                    final_parts.extend(text_parts)
+        
+        return [part for part in final_parts if part.strip()]
+    
+    def _split_simple_punctuation(text: str) -> List[str]:
+        """对普通文本进行简化的轻标点切分（不处理配对标点）"""
+        tokens = re.split(r'([，、,"])', text)
+        if len(tokens) <= 1:
+            return _split_text_evenly(text, max_chars_per_line)
+        
         parts = []
         buf = ""
         for token in tokens:
@@ -984,7 +1048,15 @@ def split_text_for_subtitle(text: str, max_chars_per_line: int = 20, max_lines: 
         if buf:
             parts.append(buf)
         
-        return parts
+        # 检查是否还有超长片段需要硬切
+        final_parts = []
+        for part in parts:
+            if len(part) <= max_chars_per_line:
+                final_parts.append(part)
+            else:
+                final_parts.extend(_split_text_evenly(part, max_chars_per_line))
+        
+        return final_parts
     
     # 如果文本不超长，直接返回
     if len(text) <= max_chars_per_line:
