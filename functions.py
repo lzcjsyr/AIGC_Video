@@ -1030,7 +1030,7 @@ def split_text_for_subtitle(text: str, max_chars_per_line: int = 20, max_lines: 
     
     def _split_simple_punctuation(text: str) -> List[str]:
         """对普通文本进行简化的轻标点切分（不处理配对标点）"""
-        tokens = re.split(r'([，、,"])', text)
+        tokens = re.split(r'([，、,:："])', text)
         if len(tokens) <= 1:
             return _split_text_evenly(text, max_chars_per_line)
         
