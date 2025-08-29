@@ -20,6 +20,11 @@ import ebooklib
 from ebooklib import epub
 import PyPDF2
 import pdfplumber
+try:
+    import fitz  # pymupdf
+    FITZ_AVAILABLE = True
+except ImportError:
+    FITZ_AVAILABLE = False
 
 from prompts import summarize_system_prompt, keywords_extraction_prompt, IMAGE_STYLE_PRESETS, OPENING_IMAGE_STYLES
 from genai_api import text_to_text, text_to_image_doubao, text_to_audio_bytedance
@@ -64,27 +69,22 @@ def download_to_path(url: str, output_path: str, error_msg: str = "下载失败"
 @log_function_call
 def read_document(file_path: str) -> Tuple[str, int]:
     """
-    读取EPUB或PDF文档，返回内容和字数
-    
-    Args:
-        file_path: 文档文件路径
-    
-    Returns:
-        Tuple[str, int]: (文档内容, 字数)
+    读取EPUB、PDF、MOBI、DOCX、DOC文档，返回内容和字数
+    简化分发逻辑，统一清理与统计。
     """
-    # 验证文件格式
     validate_file_format(file_path, config.SUPPORTED_INPUT_FORMATS)
-    
-    file_extension = os.path.splitext(file_path)[1].lower()
-    
-    logger.info(f"开始读取{file_extension.upper()}文件: {os.path.basename(file_path)}")
-    
-    if file_extension == '.epub':
+    ext = os.path.splitext(file_path)[1].lower()
+    logger.info(f"开始读取{ext.upper()}文件: {os.path.basename(file_path)}")
+
+    if ext == '.epub':
         return read_epub(file_path)
-    elif file_extension == '.pdf':
+    if ext == '.pdf':
         return read_pdf(file_path)
-    else:
-        raise FileProcessingError(f"不支持的文件格式: {file_extension}")
+    if ext == '.mobi':
+        return read_mobi(file_path)
+    if ext in ('.docx', '.doc'):
+        return read_word(file_path)
+    raise FileProcessingError(f"不支持的文件格式: {ext}")
 
 def read_epub(file_path: str) -> Tuple[str, int]:
     """读取EPUB文件内容"""
@@ -121,91 +121,304 @@ def read_pdf(file_path: str) -> Tuple[str, int]:
     try:
         content_parts = []
         
-        logger.debug("正在使用pdfplumber提取PDF文本...")
+        # 首选：PyMuPDF（fitz）——速度快、鲁棒性好
+        if FITZ_AVAILABLE:
+            logger.debug("使用PyMuPDF提取PDF文本...")
+            try:
+                doc = fitz.open(file_path)
+                for i in range(len(doc)):
+                    page = doc.load_page(i)
+                    text = page.get_text()
+                    if text and text.strip():
+                        content_parts.append(text)
+                        logger.debug(f"已提取第{i+1}页内容，字符数: {len(text)}")
+                doc.close()
+            except Exception as e:
+                logger.debug(f"PyMuPDF提取失败: {str(e)}")
         
-        # 先尝试pdfplumber（更准确的文本提取）
-        with pdfplumber.open(file_path) as pdf:
-            for i, page in enumerate(pdf.pages, 1):
-                text = page.extract_text()
-                if text:
-                    content_parts.append(text)
-                    logger.debug(f"已提取第{i}页内容，字符数: {len(text)}")
-        
-        # 如果pdfplumber没有提取到内容，尝试PyPDF2
+        # 备用：pdfplumber（如未安装PyMuPDF或提取为空）
         if not content_parts:
-            logger.debug("pdfplumber未提取到内容，尝试使用PyPDF2...")
-            with open(file_path, 'rb') as file:
-                pdf_reader = PyPDF2.PdfReader(file)
-                for i, page in enumerate(pdf_reader.pages, 1):
+            logger.debug("尝试使用pdfplumber提取PDF文本...")
+            with pdfplumber.open(file_path) as pdf:
+                for i, page in enumerate(pdf.pages, 1):
                     text = page.extract_text()
                     if text:
                         content_parts.append(text)
                         logger.debug(f"已提取第{i}页内容，字符数: {len(text)}")
         
         if not content_parts:
-            raise FileProcessingError("无法从PDF文件中提取文本内容，可能是扫描版PDF")
+            raise FileProcessingError("无法从PDF文件中提取文本内容，可能是扫描版PDF或编码问题")
         
         full_content = ' '.join(content_parts)
-        # 清理文本
-        full_content = clean_text(full_content)
-        word_count = len(full_content)
         
-        logger.info(f"PDF文件读取成功，总字数: {word_count:,}字")
-        return full_content, word_count
+        # 清理文本
+        cleaned_content = clean_text(full_content)
+        cleaned_length = len(cleaned_content)
+        
+        # 分析内容质量
+        cid_count = full_content.count('(cid:')
+        total_chars = len(full_content)
+        chinese_chars = sum(1 for c in cleaned_content if '\u4e00' <= c <= '\u9fff')
+        english_chars = sum(1 for c in cleaned_content if c.isalpha() and ord(c) < 128)
+        readable_chars = chinese_chars + english_chars
+        
+        # 计算损坏程度
+        loss_ratio = (total_chars - cleaned_length) / max(1, total_chars)  # 清理时丢失的字符比例
+        readable_ratio = readable_chars / max(1, cleaned_length)  # 清理后的可读比例
+        
+        logger.info(f"PDF内容分析: 原始={total_chars:,}, 清理后={cleaned_length:,}, 可读={readable_chars:,}")
+        logger.info(f"质量评估: 内容丢失={loss_ratio:.1%}, 可读性={readable_ratio:.1%}")
+        
+        # 严格的乱码检测：避免将大量乱码发送给LLM
+        if (loss_ratio > 0.8 or  # 超过80%的内容在清理时丢失
+            readable_ratio < 0.5 or  # 可读字符低于50%
+            cleaned_length < 1000 or  # 清理后内容过少
+            readable_chars < 5000):    # 可读字符绝对数量过少
+            
+            # 判断主要问题类型
+            if cid_count > total_chars * 0.1:
+                main_issue = "CID字体编码问题"
+                issue_detail = f"检测到 {cid_count:,} 个CID字符 ({cid_count/total_chars:.1%})"
+            elif loss_ratio > 0.8:
+                main_issue = "字体映射损坏"
+                issue_detail = f"清理时丢失了 {loss_ratio:.1%} 的内容，大部分为乱码字符"
+            else:
+                main_issue = "内容质量不足"
+                issue_detail = f"可读内容太少，只有 {readable_chars:,} 个有效字符"
+            
+            logger.error(f"PDF内容质量不佳：{main_issue}（{issue_detail}）")
+            raise FileProcessingError(
+                "PDF文本质量不足，可能为扫描版或编码异常。建议使用OCR识别，或先转换为EPUB/TXT后重试。"
+            )
+        
+        logger.info(f"PDF内容检测通过: 中文字符={chinese_chars}, 英文字符={english_chars}, 总长度={cleaned_length}")
+        logger.info(f"PDF文件读取成功，总字数: {cleaned_length:,}字")
+        return cleaned_content, cleaned_length
     
+    except FileProcessingError:
+        # 直接重新抛出FileProcessingError，避免重复包装
+        raise
     except Exception as e:
         logger.error(f"读取PDF文件失败: {str(e)}")
         raise FileProcessingError(f"读取PDF文件失败: {str(e)}")
+
+def read_mobi(file_path: str) -> Tuple[str, int]:
+    """读取MOBI文件内容"""
+    import struct
+    import re
+    
+    try:
+        logger.debug("正在读取MOBI文件...")
+        
+        with open(file_path, 'rb') as f:
+            # 读取文件头，检查是否为MOBI格式
+            f.seek(60)  # MOBI标识符位置
+            mobi_header = f.read(4)
+            
+            if mobi_header != b'MOBI':
+                # 如果不是标准MOBI，尝试作为AZW格式
+                f.seek(0)
+                content = f.read()
+                if b'BOOKMOBI' not in content[:100]:
+                    raise FileProcessingError("文件不是有效的MOBI格式")
+            
+            # 简单的MOBI文本提取
+            f.seek(0)
+            raw_content = f.read()
+            
+            # 查找文本内容区域
+            text_content = ""
+            
+            # 方法1: 搜索HTML标签内容
+            html_matches = re.findall(b'<.*?>(.*?)</.*?>', raw_content, re.DOTALL)
+            for match in html_matches:
+                try:
+                    text = match.decode('utf-8', errors='ignore')
+                    if text.strip():
+                        text_content += text + " "
+                except:
+                    continue
+            
+            # 方法2: 如果没有找到HTML，尝试直接提取可读文本
+            if not text_content.strip():
+                try:
+                    # 寻找文本记录的开始位置
+                    for i in range(0, len(raw_content) - 100, 1000):
+                        chunk = raw_content[i:i+1000]
+                        try:
+                            decoded = chunk.decode('utf-8', errors='ignore')
+                            # 过滤出可能的文本内容
+                            clean_chunk = re.sub(r'[^\w\s\u4e00-\u9fff\u3000-\u303f\uff00-\uffef.,!?;:"\'()[\]{}]', ' ', decoded)
+                            if len(clean_chunk.strip()) > 50:  # 如果有足够的可读内容
+                                words = clean_chunk.split()
+                                # 过滤掉过短的"词"
+                                valid_words = [w for w in words if len(w) >= 2 or re.match(r'[\u4e00-\u9fff]', w)]
+                                if len(valid_words) > 5:
+                                    text_content += " ".join(valid_words) + " "
+                        except:
+                            continue
+                except:
+                    pass
+            
+            if not text_content.strip():
+                raise FileProcessingError("无法从MOBI文件中提取文本内容，可能是加密文件或格式不支持")
+            
+            # 清理提取的文本
+            cleaned_content = clean_text(text_content)
+            word_count = len(cleaned_content)
+            
+            # 质量检查
+            if word_count < 100:
+                raise FileProcessingError("MOBI文件内容过少，可能是加密文件或解析失败")
+            
+            logger.info(f"MOBI文件读取成功，总字数: {word_count:,}字")
+            return cleaned_content, word_count
+    
+    except Exception as e:
+        logger.error(f"读取MOBI文件失败: {str(e)}")
+        raise FileProcessingError(f"读取MOBI文件失败: {str(e)}。建议使用Calibre转换为EPUB格式后重试。")
+
+def read_word(file_path: str) -> Tuple[str, int]:
+    """
+    简洁的通用方案：
+    - .docx: 直接用 python-docx 解析
+    - .doc: 尝试用 LibreOffice 将 .doc 转 .docx 后再解析；失败则用 antiword 提取纯文本
+    """
+    import subprocess
+    import tempfile
+    ext = os.path.splitext(file_path)[1].lower()
+
+    # 首先处理 .docx：纯 Python，最通用
+    if ext == '.docx':
+        try:
+            from docx import Document
+            doc = Document(file_path)
+            parts: List[str] = []
+            for p in doc.paragraphs:
+                t = (p.text or '').strip()
+                if t:
+                    parts.append(t)
+            for table in getattr(doc, 'tables', []) or []:
+                for row in table.rows:
+                    for cell in row.cells:
+                        t = (cell.text or '').strip()
+                        if t:
+                            parts.append(t)
+            raw = "\n".join(parts)
+            cleaned = clean_text(raw)
+            return cleaned, len(cleaned)
+        except Exception as e:
+            logger.error(f"读取DOCX失败: {e}")
+            raise FileProcessingError("读取DOCX失败：请确认文件未损坏，或转为PDF/EPUB后重试。")
+
+    # 处理 .doc：先尝试用 LibreOffice 转换为 .docx，再用 python-docx 解析；否则退回 antiword 取纯文本
+    try:
+        with tempfile.TemporaryDirectory() as tmpd:
+            out_docx = os.path.join(tmpd, "converted.docx")
+            # 先转 docx
+            try:
+                subprocess.run([
+                    "soffice", "--headless", "--convert-to", "docx", file_path, "--outdir", tmpd
+                ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+                # 找到输出的 docx（LibreOffice会保留原文件名）
+                base = os.path.splitext(os.path.basename(file_path))[0]
+                candidate = os.path.join(tmpd, base + ".docx")
+                if os.path.exists(candidate):
+                    out_docx = candidate
+                # 用 python-docx 解析转换后的 docx
+                from docx import Document
+                doc = Document(out_docx)
+                parts = []
+                for p in doc.paragraphs:
+                    t = (p.text or '').strip()
+                    if t:
+                        parts.append(t)
+                for table in getattr(doc, 'tables', []) or []:
+                    for row in table.rows:
+                        for cell in row.cells:
+                            t = (cell.text or '').strip()
+                            if t:
+                                parts.append(t)
+                raw = "\n".join(parts)
+                cleaned = clean_text(raw)
+                return cleaned, len(cleaned)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # 退回 antiword（输出纯文本）
+    try:
+        result = subprocess.run(["antiword", file_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        raw = result.stdout.decode('utf-8', errors='ignore')
+        cleaned = clean_text(raw)
+        return cleaned, len(cleaned)
+    except Exception:
+        pass
+
+    raise FileProcessingError("读取DOC失败：请安装 LibreOffice 或 antiword，或先将DOC转换为DOCX/PDF后重试。")
+
+def read_docx(file_path: str) -> Tuple[str, int]:
+    """向后兼容：转调统一的 read_word。"""
+    return read_word(file_path)
+
+def read_doc(file_path: str) -> Tuple[str, int]:
+    """向后兼容：转调统一的 read_word。"""
+    return read_word(file_path)
 
 ################ Intelligent Summarization ################
 def intelligent_summarize(server: str, model: str, content: str, target_length: int, num_segments: int) -> Dict[str, Any]:
     """
     智能缩写 - 第一次LLM处理
-    将长篇内容压缩为指定长度的口播稿
+    新逻辑：LLM一次性生成完整口播终稿（content），代码按重标点切分为 num_segments 段。
     """
     try:
-        user_message = f"""请将以下内容智能压缩为{target_length}字的口播稿，分成{num_segments}段，每段约{target_length//num_segments}字。
+        user_message = f"""请将以下内容智能压缩为约{target_length}字的口播终稿，不要分段：
 
 原文内容：
 {content}
 
 要求：
-1. 保持内容的核心信息和逻辑结构
-2. 语言要适合口播，自然流畅
-3. 分成{num_segments}段，每段独立完整
-4. 总字数控制在{target_length}字左右
+1. 保持核心信息与清晰逻辑，语言适合口播
+2. 输出完整终稿到 content 字段，勿做任何分段
+3. 总字数控制在{target_length}字左右
 """
-        
+
         output = text_to_text(
-            server=server, 
-            model=model, 
-            prompt=user_message, 
-            system_message=summarize_system_prompt, 
-            max_tokens=4096, 
+            server=server,
+            model=model,
+            prompt=user_message,
+            system_message=summarize_system_prompt,
+            max_tokens=4096,
             temperature=config.LLM_TEMPERATURE_SCRIPT
         )
-        
+
         if output is None:
             raise ValueError("未能从 API 获取响应。")
-        
-        # 鲁棒解析（先常规，失败则修复）
-        parsed_content = parse_json_robust(output)
-        
-        # 验证必需字段（golden_quote 为可选）
-        required_keys = ["title", "segments"]
-        if not all(key in parsed_content for key in required_keys):
-            missing_keys = [key for key in required_keys if key not in parsed_content]
-            raise ValueError(f"生成的 JSON 缺少必需的 Key: {', '.join(missing_keys)}")
-        
-        # 添加系统字段
-        total_length = sum(len(segment['content']) for segment in parsed_content['segments'])
-        
-        enhanced_data = {
-            "title": parsed_content["title"],
-            "golden_quote": parsed_content.get("golden_quote", ""),
+
+        parsed = parse_json_robust(output)
+
+        # 新格式强约束：必须包含 title / content，golden_quote 可选
+        if "title" not in parsed or "content" not in parsed:
+            raise ValueError("生成的 JSON 缺少必需字段：title 或 content")
+
+        title = parsed.get("title", "untitled")
+        golden_quote = parsed.get("golden_quote", "")
+        full_text = (parsed.get("content") or "").strip()
+        if not full_text:
+            raise ValueError("生成的 content 为空")
+
+        # 代码分段：按重标点优先，尽量均衡为 num_segments 段
+        segments_text = _split_text_into_segments(full_text, num_segments)
+
+        # 汇总统计
+        total_length = len(full_text)
+        enhanced_data: Dict[str, Any] = {
+            "title": title,
+            "golden_quote": golden_quote,
             "total_length": total_length,
             "target_segments": num_segments,
-            "actual_segments": len(parsed_content["segments"]),
+            "actual_segments": len(segments_text),
             "created_time": datetime.datetime.now().isoformat(),
             "model_info": {
                 "llm_server": server,
@@ -214,28 +427,123 @@ def intelligent_summarize(server: str, model: str, content: str, target_length: 
             },
             "segments": []
         }
-        
-        # 处理每个段落，添加详细信息
-        for i, segment in enumerate(parsed_content["segments"], 1):
-            content_text = segment["content"]
-            length = len(content_text)
-            # 使用配置的语速估算播放时长（每分钟字数）
-            wpm = int(getattr(config, "SPEECH_SPEED_WPM", 300))
-            estimated_duration = length / max(1, wpm) * 60
-            
+
+        # 估算每段时长
+        wpm = int(getattr(config, "SPEECH_SPEED_WPM", 300))
+        for i, seg_text in enumerate(segments_text, 1):
+            length_i = len(seg_text)
+            estimated_duration = length_i / max(1, wpm) * 60
             enhanced_data["segments"].append({
                 "index": i,
-                "content": content_text,
-                "length": length,
+                "content": seg_text,
+                "length": length_i,
                 "estimated_duration": round(estimated_duration, 1)
             })
-        
+
         return enhanced_data
-    
+
     except json.JSONDecodeError:
         raise ValueError("解析 JSON 输出失败")
     except Exception as e:
         raise ValueError(f"智能缩写处理错误: {e}")
+
+def _split_text_into_segments(full_text: str, num_segments: int) -> List[str]:
+    """
+    使用重标点（。？！；.!?）先切成句子，再在句子边界上均衡聚合为 num_segments 段。
+    若句子不足，则字符级均分补齐，保证输出恰好 num_segments 段。
+    """
+    text = (full_text or "").strip()
+    if num_segments <= 1 or len(text) == 0:
+        return [text] if text else [""]
+
+    # 1) 句子级切分：将标点附着到前句
+    raw_parts = re.split(r'([。！？；.!?])', text)
+    sentences: List[str] = []
+    i = 0
+    while i < len(raw_parts):
+        token = raw_parts[i]
+        if token and token.strip():
+            cur = token.strip()
+            if i + 1 < len(raw_parts) and raw_parts[i + 1] and raw_parts[i + 1].strip() in '。！？；.!?':
+                cur += raw_parts[i + 1].strip()
+                i += 2
+            else:
+                i += 1
+            sentences.append(cur)
+        else:
+            i += 1
+
+    if not sentences:
+        sentences = [text]
+
+    # 2) 若句子数量 >= 段数：在句子边界上均衡聚合
+    total_len = sum(len(s) for s in sentences)
+    if len(sentences) >= num_segments:
+        ideal = total_len / float(num_segments)
+        cum = 0
+        boundaries: List[int] = []  # 选取 num_segments-1 个边界（句索引之后）
+        for idx, s in enumerate(sentences):
+            prev = cum
+            cum += len(s)
+            target_k = len(boundaries) + 1
+            threshold = ideal * target_k
+            # 当累计长度跨过阈值，或已经接近阈值，就在此边界切分
+            if prev < threshold <= cum or (abs(cum - threshold) <= len(s) // 2):
+                if len(boundaries) < num_segments - 1:
+                    boundaries.append(idx)
+            if len(boundaries) >= num_segments - 1:
+                break
+
+        # 根据边界组装段落
+        segments: List[str] = []
+        start = 0
+        for b in boundaries:
+            segment_text = ''.join(sentences[start:b+1]).strip()
+            if segment_text:
+                segments.append(segment_text)
+            else:
+                segments.append('')
+            start = b + 1
+        last_text = ''.join(sentences[start:]).strip()
+        segments.append(last_text)
+
+        # 如因边界选择不充分导致段数不足或过多，做轻微修正
+        if len(segments) < num_segments:
+            # 从尾段开始字符级补切，直到达到 num_segments
+            while len(segments) < num_segments:
+                last = segments.pop() if segments else ''
+                if len(last) <= 1:
+                    segments.extend([last, ''])
+                else:
+                    mid = len(last) // 2
+                    segments.extend([last[:mid], last[mid:]])
+        elif len(segments) > num_segments:
+            # 合并最短相邻两段
+            while len(segments) > num_segments and len(segments) >= 2:
+                # 找到最短相邻对
+                min_i = 0
+                min_sum = float('inf')
+                for i2 in range(len(segments) - 1):
+                    ssum = len(segments[i2]) + len(segments[i2+1])
+                    if ssum < min_sum:
+                        min_sum = ssum
+                        min_i = i2
+                merged = segments[min_i] + segments[min_i+1]
+                segments = segments[:min_i] + [merged] + segments[min_i+2:]
+        return segments[:num_segments]
+
+    # 3) 若句子数量 < 段数：字符级等分，尽量均衡
+    # 等分为 num_segments 段
+    base = total_len // num_segments
+    rem = total_len % num_segments
+    result: List[str] = []
+    start_idx = 0
+    for i in range(num_segments):
+        length = base + (1 if i < rem else 0)
+        end_idx = start_idx + length
+        result.append(text[start_idx:end_idx])
+        start_idx = end_idx
+    return result
 
 ################ Keywords Extraction ################
 def extract_keywords(server: str, model: str, script_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -1109,9 +1417,8 @@ def split_text_for_subtitle(text: str, max_chars_per_line: int = 20, max_lines: 
                     # 第二层切分结果仍超长，进入第三层硬切
                     result.extend(_split_text_evenly(part, max_chars_per_line))
     
-    # 应用 max_lines 限制：如果结果超过最大行数，只返回前 max_lines 行
-    if len(result) > max_lines:
-        result = result[:max_lines]
+    # 注释：移除 max_lines 截断逻辑，确保所有分割的字幕都能轮播显示
+    # 原逻辑会截断超出行数限制的字幕，导致只显示前几句
     
     return result
 

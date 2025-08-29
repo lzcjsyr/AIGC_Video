@@ -573,12 +573,10 @@ def main(
             "error": "KeyboardInterrupt"
         }
     except Exception as e:
-        print(f"\n❌ 程序执行失败: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        # 不在这里输出错误信息，由调用者处理
         return {
             "success": False,
-            "message": f"处理失败: {str(e)}",
+            "message": str(e),
             "execution_time": 0,
             "error": str(e)
         }
@@ -629,11 +627,10 @@ if __name__ == "__main__":
     #               传入 None / 留空 / 错误文件名 则不使用 BGM。
     # ========================================================================
     
-    # 运行主程序 - input_file设为None以启用交互式选择
+    # 运行主程序 - 使用默认的交互式选择
     result = main(
-        input_file=None,  # 启用交互式文件选择
         target_length=2000,
-        num_segments=10,
+        num_segments=20,
         image_size="1280x720",
         llm_model="google/gemini-2.5-pro",
         image_model="doubao-seedream-3-0-t2i-250415",

@@ -56,7 +56,7 @@ def log_function_call(func):
             logger.info(f"函数 {func.__name__} 执行成功")
             return result
         except Exception as e:
-            logger.error(f"函数 {func.__name__} 执行失败: {str(e)}")
+            logger.debug(f"函数 {func.__name__} 执行失败: {str(e)}")
             raise
     return wrapper
 
@@ -72,6 +72,43 @@ def clean_text(text: str) -> str:
     
     # 移除HTML标签
     text = re.sub(r'<[^>]+>', '', text)
+    
+    # 清理PDF CID字符乱码：移除 (cid:数字) 格式的字符
+    text = re.sub(r'\(cid:\d+\)', '', text)
+    
+    # 清理其他常见的PDF解析问题
+    # 移除单独的数字和字母组合（可能是字体编码残留）
+    text = re.sub(r'\b[A-Z]{1,3}\d*\b', ' ', text)
+    
+    # 更强力的乱码字符清理
+    # 移除明显的非文本字符（保留中文、英文、数字、常见标点）
+    def is_valid_char(char):
+        # 中文字符
+        if '\u4e00' <= char <= '\u9fff':
+            return True
+        # 英文字母和数字
+        if char.isalnum() and ord(char) < 128:
+            return True
+        # 常见标点符号
+        if char in '，。！？；：""''（）【】《》、—…·.,:;!?()[]{}"-\'':
+            return True
+        # 空格和换行
+        if char in ' \n\t\r':
+            return True
+        return False
+    
+    # 字符级过滤
+    filtered_chars = []
+    for char in text:
+        if is_valid_char(char):
+            filtered_chars.append(char)
+        else:
+            # 用空格替换无效字符
+            if filtered_chars and filtered_chars[-1] != ' ':
+                filtered_chars.append(' ')
+    
+    text = ''.join(filtered_chars)
+    
     # 标准化空白字符
     text = re.sub(r'\s+', ' ', text)
     # 移除首尾空白
@@ -431,7 +468,7 @@ class ProgressTracker:
 
 def scan_input_files(input_dir: str = "input") -> List[Dict[str, Any]]:
     """
-    扫描input文件夹中的PDF和EPUB文件
+    扫描input文件夹中的PDF、EPUB和MOBI文件
     
     Args:
         input_dir: 输入文件夹路径
@@ -447,7 +484,7 @@ def scan_input_files(input_dir: str = "input") -> List[Dict[str, Any]]:
         logger.warning(f"输入目录不存在: {input_dir}")
         return []
     
-    supported_extensions = ['.pdf', '.epub']
+    supported_extensions = ['.pdf', '.epub', '.mobi']
     files = []
     
     logger.info(f"正在扫描 {input_dir} 文件夹...")
@@ -474,7 +511,10 @@ def scan_input_files(input_dir: str = "input") -> List[Dict[str, Any]]:
     # 按修改时间排序，最新的在前
     files.sort(key=lambda x: x['modified_time'], reverse=True)
     
-    logger.info(f"共找到 {len(files)} 个文件 (PDF: {sum(1 for f in files if f['extension'] == '.pdf')}, EPUB: {sum(1 for f in files if f['extension'] == '.epub')})")
+    pdf_count = sum(1 for f in files if f['extension'] == '.pdf')
+    epub_count = sum(1 for f in files if f['extension'] == '.epub')
+    mobi_count = sum(1 for f in files if f['extension'] == '.mobi')
+    logger.info(f"共找到 {len(files)} 个文件 (PDF: {pdf_count}, EPUB: {epub_count}, MOBI: {mobi_count})")
     
     return files
 
@@ -490,12 +530,19 @@ def display_file_menu(files: List[Dict[str, Any]]) -> None:
     print("="*60)
     
     if not files:
-        print("❌ 在input文件夹中未找到PDF或EPUB文件")
-        print("请将要处理的PDF或EPUB文件放入input文件夹中")
+        print("❌ 在input文件夹中未找到PDF、EPUB或MOBI文件")
+        print("请将要处理的PDF、EPUB或MOBI文件放入input文件夹中")
         return
     
     for i, file_info in enumerate(files, 1):
-        file_type = "📖 EPUB" if file_info['extension'] == '.epub' else "📄 PDF"
+        if file_info['extension'] == '.epub':
+            file_type = "📖 EPUB"
+        elif file_info['extension'] == '.pdf':
+            file_type = "📄 PDF"
+        elif file_info['extension'] == '.mobi':
+            file_type = "📱 MOBI"
+        else:
+            file_type = "📄 FILE"
         modified_date = file_info['modified_time'].strftime('%Y-%m-%d %H:%M')
         
         print(f"{i:2}. {file_type} {file_info['name']}")

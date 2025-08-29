@@ -66,7 +66,7 @@ class Config:
     
     
     # 文件格式支持
-    SUPPORTED_INPUT_FORMATS = [".epub", ".pdf"]
+    SUPPORTED_INPUT_FORMATS = [".epub", ".pdf", ".mobi", ".docx", ".doc"]
     # 豆包Seedream 3.0支持的图像尺寸
     SUPPORTED_IMAGE_SIZES = [
         "1024x1024",  # 1:1 - 方形，适合头像、产品图
