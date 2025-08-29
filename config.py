@@ -131,32 +131,21 @@ class Config:
         "shadow_offset": (2, 2)                # 阴影偏移(x, y)，单位像素
     }
     
-    # BGM_DEFAULT_VOLUME: 背景音乐线性增益系数（通过 MultiplyVolume 应用，幅度相乘）。
-    #   - 0.0 = 静音；1.0 = 原始电平；>1.0 = 放大（可能导致削波）。
-    #   - 推荐区间: 0.03 ~ 0.20（常用 0.06 ~ 0.12）。
+    # 背景音乐增益（0=静音, 1=原始, >1放大；推荐0.03~0.20）
     BGM_DEFAULT_VOLUME = 0.2
 
-    # NARRATION_DEFAULT_VOLUME: 口播音轨线性增益系数（同上，混音前整体增益）。
-    #   - 0.5 ~ 3.0 可用；推荐区间: 0.8 ~ 1.5（1.0 为原始电平）。
-    #   - >2.0 易削波（若原始语音接近满幅）；建议同时下调 BGM。
+    # 口播增益（可用0.5~3.0，推荐0.8~1.5；>2.0有削波风险）
     NARRATION_DEFAULT_VOLUME = 2.0
 
-    # 自动 Ducking（口播期间自动压低 BGM）：MoviePy 2.x 通过 transform 做时间变增益
-    #   - AUDIO_DUCKING_ENABLED: 是否启用 ducking
-    #   - AUDIO_DUCKING_STRENGTH: 压低强度（0~1），1 表示口播时将 BGM 完全压到 0；0.7 表示压到 30%（1-0.7）
-    #   - AUDIO_DUCKING_SMOOTH_SECONDS: 包络平滑时间（秒），防止跳变突兀
+    # 口播期间压低BGM（强度0~1；平滑秒数避免突兀）
     AUDIO_DUCKING_ENABLED = False
     AUDIO_DUCKING_STRENGTH = 0.3
     AUDIO_DUCKING_SMOOTH_SECONDS = 0.12   
 
-    # 开场参数
-    # OPENING_FADEIN_SECONDS: 开场渐显时长（秒）。
-    #   - 对视频第一个画面进行从黑到正常的线性渐显
-    #   - 若存在开场片段（opening image），则对该片段应用；否则应用于第一段正片
+    # 开场渐显秒数（对首帧/开场片段从黑到正常）
     OPENING_FADEIN_SECONDS = 2.0
 
-    # 开场画面在口播结束后的停留时长（秒）
-    # - 开场口播音频播放完毕后，画面继续保持该时长再进入正文
+    # 开场口播结束后画面停留秒数
     OPENING_HOLD_AFTER_NARRATION_SECONDS = 2.0
 
     # 开场金句样式参数
@@ -175,10 +164,7 @@ class Config:
         "letter_spacing": 0,             # 字间距（以空格数量近似控制，0 表示不加）
     }
     
-    # 片尾参数
-    # ENDING_FADE_SECONDS: 片尾时长（秒）。
-    #   - 画面：追加最后一帧静帧并在整段内线性渐隐至黑场
-    #   - BGM：在整段内线性淡出到 0（口播已结束）
+    # 片尾参数: 片尾静帧与淡出秒数
     ENDING_FADE_SECONDS = 2.5
     
     # ================================================================================

@@ -622,6 +622,7 @@ def generate_opening_image(model: str, opening_style: str,
             default_style = next(iter(OPENING_IMAGE_STYLES))
             logger.warning(f"未找到开场图像风格: {opening_style}，使用默认风格: {default_style}")
             prompt = OPENING_IMAGE_STYLES[default_style]
+        prompt = str(prompt).strip()
         
         # 调用豆包图像生成API
         image_url = text_to_image_doubao(
@@ -670,15 +671,15 @@ def generate_images_for_segments(server: str, model: str, keywords_data: Dict[st
             atmosphere = segment_keywords.get("atmosphere", [])
             
             # 构建图像提示词
-            prompt_parts = []
-            if image_style:
-                prompt_parts.append(image_style)
+            style_part = f"[风格] {image_style}" if image_style else ""
+            content_parts = []
+            content_parts.extend(keywords)
+            content_parts.extend(atmosphere)
+            content_part = f"[内容] {' | '.join(content_parts)}" if content_parts else ""
             
-            prompt_parts.extend(keywords)
-            prompt_parts.extend(atmosphere)
-            prompt_parts.append("高质量，细节丰富，专业摄影")
-            
-            final_prompt = ", ".join(prompt_parts)
+            # 用换行符分隔不同部分，提高可读性
+            prompt_sections = [part for part in [style_part, content_part] if part]
+            final_prompt = "\n".join(prompt_sections)
             
             print(f"正在生成第{i}段图像...")
             

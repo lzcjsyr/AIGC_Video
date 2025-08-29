@@ -63,8 +63,8 @@ def main(
     image_model="doubao-seedream-3-0-t2i-250415",  # 图像生成模型
     voice="zh_male_yuanboxiaoshu_moon_bigtts",      # 语音音色
     output_dir="output",  # 输出目录，默认为当前目录下的output文件夹
-    image_style_preset="cinematic",  # 图像风格预设，可选：cinematic, documentary, artistic等
-    opening_image_style="minimal",  # 开场图像风格，可选：minimal, tech, nature, abstract, vintage
+    image_style_preset="style05",  # 图像风格预设，可选：cinematic, documentary, artistic等
+    opening_image_style="des01",  # 开场图像风格，可选：minimal, tech, nature, abstract, vintage
     enable_subtitles=True,  # 是否启用字幕，默认启用
     bgm_filename: str = None,  # 背景音乐文件名（位于项目根目录的 music 文件夹，常见支持：mp3/wav/m4a/aac）
     run_mode="auto"  # 运行模式：auto 全自动；step 分步确认
@@ -619,9 +619,6 @@ if __name__ == "__main__":
     # voice: zh_male_yuanboxiaoshu_moon_bigtts | zh_female_linjianvhai_moon_bigtts | 
     #        zh_male_yangguangqingnian_moon_bigtts | ICL_zh_female_heainainai_tob
     
-    # 图像风格预设
-    # image_style_preset: cinematic | documentary | artistic | minimalist | vintage
-    
     # 背景音乐
     # bgm_filename: 背景音乐文件名（将音频放在项目根目录的 music/ 下，常见支持：mp3/wav/m4a/aac）；
     #               传入 None / 留空 / 错误文件名 则不使用 BGM。
@@ -630,13 +627,13 @@ if __name__ == "__main__":
     # 运行主程序 - 使用默认的交互式选择
     result = main(
         target_length=2000,
-        num_segments=20,
+        num_segments=15,
         image_size="1280x720",
         llm_model="google/gemini-2.5-pro",
         image_model="doubao-seedream-3-0-t2i-250415",
         voice="zh_male_yuanboxiaoshu_moon_bigtts",
-        image_style_preset="vintage",
-        opening_image_style="vintage",
+        image_style_preset="style05",
+        opening_image_style="des01",
         enable_subtitles=True,
         bgm_filename="Ramin Djawadi - Light of the Seven.mp3"  
     )
