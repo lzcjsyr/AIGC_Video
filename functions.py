@@ -82,6 +82,8 @@ def read_document(file_path: str) -> Tuple[str, int]:
         return read_pdf(file_path)
     if ext == '.mobi':
         return read_mobi(file_path)
+    if ext == '.azw3':
+        return read_azw3(file_path)
     if ext in ('.docx', '.doc'):
         return read_word(file_path)
     raise FileProcessingError(f"不支持的文件格式: {ext}")
@@ -277,6 +279,110 @@ def read_mobi(file_path: str) -> Tuple[str, int]:
     except Exception as e:
         logger.error(f"读取MOBI文件失败: {str(e)}")
         raise FileProcessingError(f"读取MOBI文件失败: {str(e)}。建议使用Calibre转换为EPUB格式后重试。")
+
+def read_azw3(file_path: str) -> Tuple[str, int]:
+    """
+    读取AZW3文件内容
+    AZW3是Amazon Kindle的专有格式，基于MOBI演进，支持HTML5/CSS3
+    """
+    try:
+        logger.debug("正在读取AZW3文件...")
+        
+        # 首先尝试使用mobi库解析（最佳方案）
+        try:
+            import mobi
+            import tempfile
+            import shutil
+            
+            # 使用mobi库提取内容
+            tempdir, filepath = mobi.extract(file_path)
+            
+            if not filepath or not os.path.exists(filepath):
+                raise FileProcessingError("mobi库解析失败：未生成有效的输出文件")
+            
+            # 根据输出文件类型读取内容
+            ext = os.path.splitext(filepath)[1].lower()
+            text_content = ""
+            
+            if ext == '.epub':
+                # 如果输出为EPUB，使用现有的EPUB读取逻辑
+                content, word_count = read_epub(filepath)
+                # 清理临时文件
+                try:
+                    shutil.rmtree(tempdir)
+                except:
+                    pass
+                logger.info(f"AZW3文件读取成功（通过mobi库转EPUB），总字数: {word_count:,}字")
+                return content, word_count
+            
+            elif ext in ['.html', '.htm']:
+                # 如果输出为HTML，解析HTML内容
+                with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                    html_content = f.read()
+                
+                # 简单的HTML标签清理
+                import re
+                # 移除script和style标签及其内容
+                html_content = re.sub(r'<(script|style)[^>]*>.*?</\1>', '', html_content, flags=re.DOTALL | re.IGNORECASE)
+                # 移除HTML标签，保留文本
+                html_content = re.sub(r'<[^>]+>', '', html_content)
+                # 解码HTML实体
+                import html
+                text_content = html.unescape(html_content)
+                
+            elif ext == '.txt':
+                # 如果输出为纯文本
+                with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                    text_content = f.read()
+            
+            else:
+                # 尝试直接读取为文本
+                with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                    text_content = f.read()
+            
+            # 清理临时文件
+            try:
+                shutil.rmtree(tempdir)
+            except:
+                pass
+            
+            if not text_content.strip():
+                raise FileProcessingError("mobi库解析成功但未提取到文本内容")
+            
+            # 清理提取的文本
+            cleaned_content = clean_text(text_content)
+            word_count = len(cleaned_content)
+            
+            # 质量检查
+            if word_count < 100:
+                raise FileProcessingError("AZW3文件内容过少，可能是加密文件或解析失败")
+            
+            logger.info(f"AZW3文件读取成功（通过mobi库），总字数: {word_count:,}字")
+            return cleaned_content, word_count
+            
+        except ImportError:
+            logger.warning("mobi库未安装，尝试回退到基础MOBI解析")
+            # 回退到现有的MOBI解析逻辑
+            return read_mobi(file_path)
+            
+        except Exception as e:
+            logger.warning(f"mobi库解析失败: {str(e)}，尝试回退到基础MOBI解析")
+            # 回退到现有的MOBI解析逻辑
+            try:
+                return read_mobi(file_path)
+            except Exception as fallback_e:
+                raise FileProcessingError(
+                    f"AZW3文件解析失败。主要尝试（mobi库）: {str(e)}；"
+                    f"回退尝试（基础解析）: {str(fallback_e)}。"
+                    f"建议: 1) 确认文件无DRM保护；2) 使用Calibre转换为EPUB格式后重试"
+                )
+    
+    except FileProcessingError:
+        # 直接重新抛出FileProcessingError，避免重复包装
+        raise
+    except Exception as e:
+        logger.error(f"读取AZW3文件失败: {str(e)}")
+        raise FileProcessingError(f"读取AZW3文件失败: {str(e)}。建议使用Calibre转换为EPUB格式后重试。")
 
 def read_word(file_path: str) -> Tuple[str, int]:
     """
