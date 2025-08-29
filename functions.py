@@ -182,7 +182,7 @@ def intelligent_summarize(server: str, model: str, content: str, target_length: 
             prompt=user_message, 
             system_message=summarize_system_prompt, 
             max_tokens=4096, 
-            temperature=0.7
+            temperature=0.7 # 范围 0-1，越大越随机
         )
         
         if output is None:
