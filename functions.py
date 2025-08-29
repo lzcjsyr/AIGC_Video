@@ -1109,6 +1109,10 @@ def split_text_for_subtitle(text: str, max_chars_per_line: int = 20, max_lines: 
                     # 第二层切分结果仍超长，进入第三层硬切
                     result.extend(_split_text_evenly(part, max_chars_per_line))
     
+    # 应用 max_lines 限制：如果结果超过最大行数，只返回前 max_lines 行
+    if len(result) > max_lines:
+        result = result[:max_lines]
+    
     return result
 
 def create_subtitle_clips(script_data: Dict[str, Any], subtitle_config: Dict[str, Any] = None) -> List[TextClip]:
@@ -1155,27 +1159,111 @@ def create_subtitle_clips(script_data: Dict[str, Any], subtitle_config: Dict[str
         margin_bottom = int(subtitle_config.get("margin_bottom", 0))
         anchor_x = position[0] if isinstance(position, tuple) else "center"
 
-        # 主文本剪辑（用于测量高度与实际展示）
-        main_clip = TextClip(
-            text=display_text,
-            font_size=subtitle_config["font_size"],
-            color=subtitle_config["color"],
-            font=resolved_font or subtitle_config["font_family"],
-            stroke_color=subtitle_config["stroke_color"],
-            stroke_width=subtitle_config["stroke_width"]
-        )
-
-        # 计算文本位置（当定位 bottom 时基于文本高度与边距）
-        if isinstance(position, tuple) and len(position) == 2 and position[1] == "bottom":
-            baseline_safe_padding = int(subtitle_config.get("baseline_safe_padding", 4))
-            y_text = max(0, video_height - margin_bottom - main_clip.h - baseline_safe_padding)
-            main_pos = (anchor_x, y_text)
-        else:
-            main_pos = position
-
-        main_clip = main_clip.with_position(main_pos).with_start(start_time).with_duration(duration)
-
+        # 检查是否有多行文本，如果有则需要特殊处理行间距
+        lines = display_text.split('\n') if '\n' in display_text else [display_text]
+        line_spacing_px = int(subtitle_config.get("line_spacing", 15))
+        
         clips_to_add: List[Any] = []
+        
+        if len(lines) > 1 and line_spacing_px > 0:
+            # 多行文本：手动排版每一行，应用行间距
+            line_clips = []
+            for line in lines:
+                if line.strip():  # 忽略空行
+                    line_clip = TextClip(
+                        text=line.strip(),
+                        font_size=subtitle_config["font_size"],
+                        color=subtitle_config["color"],
+                        font=resolved_font or subtitle_config["font_family"],
+                        stroke_color=subtitle_config["stroke_color"],
+                        stroke_width=subtitle_config["stroke_width"]
+                    )
+                    line_clips.append(line_clip)
+            
+            if line_clips:
+                # 计算总高度并居中
+                total_height = sum(clip.h for clip in line_clips) + line_spacing_px * (len(line_clips) - 1)
+                
+                # 计算起始Y位置
+                if isinstance(position, tuple) and len(position) == 2 and position[1] == "bottom":
+                    baseline_safe_padding = int(subtitle_config.get("baseline_safe_padding", 4))
+                    y_start = max(0, video_height - margin_bottom - total_height - baseline_safe_padding)
+                elif isinstance(position, tuple) and len(position) == 2:
+                    try:
+                        y_start = max(0, (video_height - total_height) // 2) if position[1] == "center" else int(position[1])
+                    except:
+                        y_start = (video_height - total_height) // 2
+                else:
+                    y_start = (video_height - total_height) // 2
+                
+                # 放置每一行
+                current_y = y_start
+                for line_clip in line_clips:
+                    main_pos = (anchor_x, current_y)
+                    line_clip = line_clip.with_position(main_pos).with_start(start_time).with_duration(duration)
+                    clips_to_add.append(line_clip)
+                    
+                    # 添加阴影（如果启用）
+                    if subtitle_config.get("shadow_enabled", False):
+                        shadow_color = subtitle_config.get("shadow_color", "black")
+                        shadow_offset = subtitle_config.get("shadow_offset", (2, 2))
+                        shadow_x = main_pos[0] if isinstance(main_pos[0], int) else 0
+                        shadow_y = main_pos[1] if isinstance(main_pos[1], int) else current_y
+                        try:
+                            shadow_pos = (shadow_x + shadow_offset[0], shadow_y + shadow_offset[1])
+                        except:
+                            shadow_pos = main_pos
+                            
+                        shadow_clip = TextClip(
+                            text=line_clip.text,
+                            font_size=subtitle_config["font_size"],
+                            color=shadow_color,
+                            font=resolved_font or subtitle_config["font_family"]
+                        ).with_position(shadow_pos).with_start(start_time).with_duration(duration)
+                        clips_to_add.insert(-1, shadow_clip)  # 插入到文本前面
+                    
+                    current_y += line_clip.h + line_spacing_px
+        else:
+            # 单行文本：使用原来的逻辑
+            main_clip = TextClip(
+                text=display_text,
+                font_size=subtitle_config["font_size"],
+                color=subtitle_config["color"],
+                font=resolved_font or subtitle_config["font_family"],
+                stroke_color=subtitle_config["stroke_color"],
+                stroke_width=subtitle_config["stroke_width"]
+            )
+
+            # 计算文本位置（当定位 bottom 时基于文本高度与边距）
+            if isinstance(position, tuple) and len(position) == 2 and position[1] == "bottom":
+                baseline_safe_padding = int(subtitle_config.get("baseline_safe_padding", 4))
+                y_text = max(0, video_height - margin_bottom - main_clip.h - baseline_safe_padding)
+                main_pos = (anchor_x, y_text)
+            else:
+                main_pos = position
+
+            main_clip = main_clip.with_position(main_pos).with_start(start_time).with_duration(duration)
+
+            # 可选阴影
+            if subtitle_config.get("shadow_enabled", False):
+                shadow_color = subtitle_config.get("shadow_color", "black")
+                shadow_offset = subtitle_config.get("shadow_offset", (2, 2))
+                shadow_x = main_pos[0] if isinstance(main_pos[0], int) else 0
+                shadow_y = main_pos[1] if isinstance(main_pos[1], int) else 0
+                try:
+                    shadow_pos = (shadow_x + shadow_offset[0], shadow_y + shadow_offset[1])
+                except:
+                    shadow_pos = main_pos
+                    
+                shadow_clip = TextClip(
+                    text=display_text,
+                    font_size=subtitle_config["font_size"],
+                    color=shadow_color,
+                    font=resolved_font or subtitle_config["font_family"]
+                ).with_position(shadow_pos).with_start(start_time).with_duration(duration)
+                clips_to_add.extend([shadow_clip, main_clip])
+            else:
+                clips_to_add.append(main_clip)
 
         # 背景条（如启用）
         bg_color = subtitle_config.get("background_color")
@@ -1190,20 +1278,7 @@ def create_subtitle_clips(script_data: Dict[str, Any], subtitle_config: Dict[str
                 bg_clip = bg_clip.with_opacity(bg_opacity)
             y_bg = max(0, video_height - margin_bottom - bg_height)
             bg_clip = bg_clip.with_position(("center", y_bg)).with_start(start_time).with_duration(duration)
-            clips_to_add.append(bg_clip)
-
-        # 可选阴影
-        if subtitle_config.get("shadow_enabled", False):
-            shadow_color = subtitle_config.get("shadow_color", "black")
-            shadow_clip = TextClip(
-                text=display_text,
-                font_size=subtitle_config["font_size"],
-                color=shadow_color,
-                font=resolved_font or subtitle_config["font_family"]
-            ).with_position(main_pos).with_start(start_time).with_duration(duration)
-            clips_to_add.extend([shadow_clip, main_clip])
-        else:
-            clips_to_add.append(main_clip)
+            clips_to_add.insert(0, bg_clip)  # 背景在最底层
 
         return clips_to_add
 

@@ -90,12 +90,12 @@ class Config:
     
     # 处理限制
     MIN_TARGET_LENGTH = 500
-    MAX_TARGET_LENGTH = 2000
+    MAX_TARGET_LENGTH = 3000
     MIN_NUM_SEGMENTS = 5
     MAX_NUM_SEGMENTS = 20
     
     # 语音时长估算 (每分钟字数)
-    SPEECH_SPEED_WPM = 300  # 中文普通话正常语速
+    SPEECH_SPEED_WPM = 250  # 中文普通话正常语速
     
     # LLM 生成参数配置
     LLM_TEMPERATURE_SCRIPT = 0.7   # 智能缩写(脚本生成)的temperature参数，范围0-1，越大越随机
@@ -122,7 +122,7 @@ class Config:
         "position": ("center", "bottom"),      # 字幕位置
         "margin_bottom": 50,                   # 底部边距
         "max_chars_per_line": 25,              # 每行最大字符数
-        "max_lines": 2,                        # 最大行数
+        "max_lines": 1,                        # 最大行数
         "line_spacing": 15,                    # 行间距
         "background_color": None,              # 背景色（None为透明）
         "background_opacity": 0.8,             # 背景透明度
@@ -131,17 +131,14 @@ class Config:
         "shadow_offset": (2, 2)                # 阴影偏移(x, y)，单位像素
     }
     
-    # 音频混音配置（MoviePy 2.x）
     # BGM_DEFAULT_VOLUME: 背景音乐线性增益系数（通过 MultiplyVolume 应用，幅度相乘）。
     #   - 0.0 = 静音；1.0 = 原始电平；>1.0 = 放大（可能导致削波）。
     #   - 推荐区间: 0.03 ~ 0.20（常用 0.06 ~ 0.12）。
-    #   - 背景音乐应显著低于口播；如需更响，建议同时降低口播or启用更弱 ducking。
     BGM_DEFAULT_VOLUME = 0.2
 
     # NARRATION_DEFAULT_VOLUME: 口播音轨线性增益系数（同上，混音前整体增益）。
     #   - 0.5 ~ 3.0 可用；推荐区间: 0.8 ~ 1.5（1.0 为原始电平）。
     #   - >2.0 易削波（若原始语音接近满幅）；建议同时下调 BGM。
-    #   - 如追求响度一致，建议后续引入 limiter 或 loudness 正规化（非本项目默认）。
     NARRATION_DEFAULT_VOLUME = 2.0
 
     # 自动 Ducking（口播期间自动压低 BGM）：MoviePy 2.x 通过 transform 做时间变增益
