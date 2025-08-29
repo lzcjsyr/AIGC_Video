@@ -182,7 +182,7 @@ def intelligent_summarize(server: str, model: str, content: str, target_length: 
             prompt=user_message, 
             system_message=summarize_system_prompt, 
             max_tokens=4096, 
-            temperature=0.7 # 范围 0-1，越大越随机
+            temperature=config.LLM_TEMPERATURE_SCRIPT
         )
         
         if output is None:
@@ -259,7 +259,7 @@ def extract_keywords(server: str, model: str, script_data: Dict[str, Any]) -> Di
             prompt=user_message,
             system_message=keywords_extraction_prompt,
             max_tokens=4096,
-            temperature=0.5
+            temperature=config.LLM_TEMPERATURE_KEYWORDS
         )
         
         if output is None:

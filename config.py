@@ -97,6 +97,10 @@ class Config:
     # 语音时长估算 (每分钟字数)
     SPEECH_SPEED_WPM = 300  # 中文普通话正常语速
     
+    # LLM 生成参数配置
+    LLM_TEMPERATURE_SCRIPT = 0.7   # 智能缩写(脚本生成)的temperature参数，范围0-1，越大越随机
+    LLM_TEMPERATURE_KEYWORDS = 0.5 # 关键词提取的temperature参数，范围0-1，越大越随机
+    
     # 字幕配置
     SUBTITLE_CONFIG = {
         "enabled": True,                       # 是否启用字幕
