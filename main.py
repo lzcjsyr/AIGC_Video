@@ -135,35 +135,38 @@ def main(
                             prog = detect_project_progress(project_dir)
                             # 仅允许从第2-5步重做；第1步请新建项目
                             while True:
-                                print("\n当前项目进度（共5步）：已完成到第{}步".format(prog['current_step_display']))
+                                print(f"\n当前项目进度（共5步）：已完成到第{prog['current_step_name']}步")
                                 options = [
-                                    "第1步：智能缩写",
-                                    "第2步：关键词提取",
-                                    "第3步：AI图像生成",
-                                    "第4步：语音合成",
-                                    "第5步：视频合成",
+                                    "第1.5步：段落切分", 
+                                    "第2步：  关键词提取",
+                                    "第3步：  AI图像生成",
+                                    "第4步：  语音合成",
+                                    "第5步：  视频合成",
                                 ]
-                                for i, opt in enumerate(options, 1):
-                                    marker = '*' if i == prog['current_step_display'] else ' '
-                                    print(f" {marker} {i}. {opt}")
-                                raw = input("请输入步骤号 2-5 或输入 'q' 返回上一级: ").strip()
+                                step_values = [1.5, 2, 3, 4, 5]
+                                
+                                for i, (opt, step_val) in enumerate(zip(options, step_values)):
+                                    marker = '*' if step_val == prog['current_step'] else ' '
+                                    print(f" {marker} {step_val}. {opt}")
+                                
+                                raw = input("请输入步骤号 (1.5, 2-5) 或输入 'q' 返回上一级: ").strip()
                                 if raw == "":
-                                    print("无效输入，请输入 2-5。")
+                                    print("无效输入，请输入有效的步骤号。")
                                     continue
                                 if raw.lower() == 'q':
                                     step_to_rerun = None
                                     break
-                                if raw.isdigit():
-                                    n = int(raw)
-                                    if n in [2, 3, 4, 5]:
+                                
+                                try:
+                                    n = float(raw)
+                                    if n in [1.5, 2, 3, 4, 5]:
                                         step_to_rerun = n
                                         break
-                                print("无效输入，请输入 2-5。")
+                                    else:
+                                        print("无效输入，请输入 1.5, 2, 3, 4 或 5。")
+                                except ValueError:
+                                    print("无效输入，请输入数字。")
                             if step_to_rerun is None:
-                                print("👋 返回上一级")
-                                break
-                            if step_to_rerun is None:
-                                # 返回上一级：回到项目列表
                                 print("👋 返回上一级")
                                 break
 
@@ -173,24 +176,20 @@ def main(
                             script_data = load_json_file(script_path) if os.path.exists(script_path) else None
                             keywords_data = load_json_file(keywords_path) if os.path.exists(keywords_path) else None
 
-                            # 清理下游产物（从第2步及之后开始重做时）
-                            if step_to_rerun >= 2:
+                            # 清理下游产物
+                            if step_to_rerun == 1.5:
+                                # 步骤1.5：清理script.json及其后续产物
+                                clear_downstream_outputs(project_dir, from_step=1.5)
+                            elif step_to_rerun >= 2:
                                 clear_downstream_outputs(project_dir, from_step=step_to_rerun)
 
                             # 根据选择的步骤进行处理分支
-                            if step_to_rerun == 1:
-                                # 需要重新读取文档 -> 无源文件信息，提示用户重新选择输入文档
-                                print("将从第1步重做（智能缩写），需要源文档。")
-                                input_file = interactive_file_selector(input_dir=os.path.join(project_root, "input"))
-                                if input_file is None:
-                                    # 返回上一级：回到项目步骤选择
-                                    print("👋 返回上一级")
-                                    continue
-                                # 继续后续逻辑，如新建项目（但复用已选参数），并将输出生成到新的项目目录
-                                goto_existing_branch = False
-                                selected_step = 2  # 标记仅完成第1步后返回（沿用下方逻辑判断）
-                                proceed_to_processing = True
-                                break
+                            if step_to_rerun == 1.5:
+                                # 从步骤1.5开始：需要raw.json文件
+                                raw_json_path = os.path.join(project_dir, 'text', 'raw.json')
+                                if not os.path.exists(raw_json_path):
+                                    return {"success": False, "message": "当前项目缺少 raw.json，无法从第1.5步开始"}
+                                project_output_dir = project_dir
                             elif step_to_rerun == 2:
                                 if not script_data:
                                     return {"success": False, "message": "当前项目缺少 script.json，无法从第2步开始"}
@@ -210,10 +209,10 @@ def main(
                             else:
                                 return {"success": False, "message": "无效的步骤"}
 
-                            # 设置模式：在“打开现有项目并选择具体步骤重做”的场景下，完成所选步骤后继续下一步，并在关键节点询问
+                            # 设置模式：在"打开现有项目并选择具体步骤重做"的场景下，完成所选步骤后继续下一步，并在关键节点询问
                             run_mode = "step"
                             selected_step = step_to_rerun
-                            goto_existing_branch = step_to_rerun >= 2
+                            goto_existing_branch = step_to_rerun >= 1.5
                             # 完成选择，跳出至处理流程
                             proceed_to_processing = True
                             break
@@ -259,9 +258,9 @@ def main(
         
         # 步骤 1/5 智能缩写（包含读取文档）
         if not goto_existing_branch:
-            # 保持运行逻辑不变，仅简化输出：继续执行智能缩写
+            # 新逻辑：先生成原始数据，保存raw.json和raw.docx
             print("正在进行智能缩写处理...")
-            script_data = intelligent_summarize(
+            raw_data = intelligent_summarize(
                 llm_server, llm_model, document_content, 
                 target_length, num_segments
             )
@@ -269,7 +268,7 @@ def main(
             # 创建带有title+时间的输出目录结构
             current_time = datetime.datetime.now()
             time_suffix = current_time.strftime("%m%d_%H%M")
-            title = script_data.get('title', 'untitled').replace(' ', '_').replace('/', '_').replace('\\', '_')
+            title = raw_data.get('title', 'untitled').replace(' ', '_').replace('/', '_').replace('\\', '_')
             project_folder = f"{title}_{time_suffix}"
             project_output_dir = os.path.join(output_dir, project_folder)
             
@@ -281,47 +280,94 @@ def main(
             
             print(f"\n📁 项目输出目录: {project_output_dir}")
             
-            # 保存口播稿JSON
-            script_path = f"{project_output_dir}/text/script.json"
-            with open(script_path, 'w', encoding='utf-8') as f:
-                json.dump(script_data, f, ensure_ascii=False, indent=2)
-            print(f"口播稿已保存到: {script_path}")
-            # 生成可阅读的DOCX（与script.json同目录）
+            # 保存原始JSON（步骤1的新产物）
+            raw_json_path = f"{project_output_dir}/text/raw.json"
+            with open(raw_json_path, 'w', encoding='utf-8') as f:
+                json.dump(raw_data, f, ensure_ascii=False, indent=2)
+            print(f"原始JSON已保存到: {raw_json_path}")
+            
+            # 生成可编辑的raw.docx（步骤1的新产物）
             try:
-                from utils import export_script_to_docx
-                docx_path = f"{project_output_dir}/text/script.docx"
-                export_script_to_docx(script_data, docx_path)
-                print(f"阅读版DOCX已保存到: {docx_path}")
+                from utils import export_raw_to_docx
+                raw_docx_path = f"{project_output_dir}/text/raw.docx"
+                export_raw_to_docx(raw_data, raw_docx_path)
+                print(f"可编辑DOCX已保存到: {raw_docx_path}")
             except Exception as e:
-                print(f"⚠️  生成DOCX失败: {e}")
+                print(f"⚠️  生成raw.docx失败: {e}")
+            
             # 若用户明确选择只重做第1步（智能缩写），则到此为止
             if locals().get('selected_step') == 1 and not goto_existing_branch:
                 # 步骤执行完成后返回到项目选择/步骤选择界面由主程序循环控制（此处返回成功信息）
-                return {"success": True, "message": "已完成第1步：智能缩写", "final_stage": "script", "script": {"file_path": script_path, "segments_count": script_data['actual_segments'], "total_length": script_data['total_length']}}
+                return {"success": True, "message": "已完成第1步：智能缩写", "final_stage": "raw", "raw": {"raw_json_path": raw_json_path, "raw_docx_path": raw_docx_path, "total_length": raw_data['total_length']}}
         else:
             # 已存在项目分支：project_output_dir、script_data、keywords_data 由上方分支准备
             project_output_dir = locals().get('project_output_dir')
+            # 如果project_output_dir为None，说明是现有项目，使用已设定的project_dir
+            if project_output_dir is None and 'project_dir' in locals():
+                project_output_dir = locals().get('project_dir')
+            elif project_output_dir is None:
+                return {"success": False, "message": "无法确定项目输出目录"}
+                
             script_data = locals().get('script_data')
             keywords_data = locals().get('keywords_data')
             script_path = os.path.join(project_output_dir, 'text', 'script.json')
             # 原始字数在现有项目中不可得，使用脚本总字数作为基准避免计算错误
-            original_length = script_data.get('total_length', 0)
+            if script_data:
+                original_length = script_data.get('total_length', 0)
+            else:
+                original_length = 0
         
-        # 分步确认：允许用户修改 script.json 后再继续
+        # 步骤1.5：处理raw数据为脚本数据（统一调用 utils.process_step_1_5）
+        if run_mode == "step" and not goto_existing_branch:
+            from utils import prompt_yes_no, load_json_file, process_step_1_5
+            if not prompt_yes_no("是否继续到步骤1.5：段落切分？(可先编辑 raw.docx 文件后再继续)"):
+                return {"success": True, "message": "已生成原始数据，用户终止于此", "final_stage": "raw"}
+            print_section("步骤 1.5/5 段落切分", "📝")
+            result_step15 = process_step_1_5(project_output_dir, num_segments, is_new_project=True, raw_data=raw_data)
+            if not result_step15.get("success"):
+                return {"success": False, "message": result_step15.get("message", "步骤1.5处理失败")}
+            script_data = result_step15.get("script_data")
+            script_path = result_step15.get("script_path")
+        elif not goto_existing_branch:
+            # 自动模式：统一调用
+            from utils import process_step_1_5
+            result_step15 = process_step_1_5(project_output_dir, num_segments, is_new_project=True, raw_data=raw_data)
+            if not result_step15.get("success"):
+                return {"success": False, "message": result_step15.get("message", "步骤1.5处理失败")}
+            script_data = result_step15.get("script_data")
+            script_path = result_step15.get("script_path")
+        
+        # 步骤1.5结束后的分步确认
         if run_mode == "step" and not goto_existing_branch:
             from utils import prompt_yes_no, load_json_file
-            if not prompt_yes_no("是否继续到关键词提取步骤？(可先在 output/text/script.json 修改后再继续)"):
+            if not prompt_yes_no("是否继续到关键词提取步骤？"):
                 return {"success": True, "message": "已生成脚本，用户终止于此", "final_stage": "script"}
             # 重新从磁盘加载最新脚本，确保捕获用户调整
             script_data = load_json_file(script_path)
         
+        # 步骤1.5处理（仅限现有项目且选择步骤1.5时）
+        if run_mode == "step" and goto_existing_branch and selected_step == 1.5:
+            from utils import prompt_yes_no, process_step_1_5
+            if not prompt_yes_no("是否开始第1.5步：段落切分？(可先编辑 raw.docx 文件)"):
+                return {"success": True, "message": "用户取消开始第1.5步：段落切分"}
+            print_section("步骤 1.5/5 段落切分", "📝")
+            result_step15_existing = process_step_1_5(project_output_dir, num_segments, is_new_project=False)
+            if not result_step15_existing.get("success"):
+                return {"success": False, "message": result_step15_existing.get("message", "步骤1.5处理失败")}
+            script_data = result_step15_existing.get("script_data")
+            script_path = result_step15_existing.get("script_path")
+            # 步骤1.5完成后，直接进入第2步的标准确认（避免重复确认）
+            print("✅ 已完成第1.5步：段落切分")
+            selected_step = 2
+            goto_existing_branch = True
+        
         # 关键词提取：新建或从关键词步骤开始重做时执行（步骤 2/5）
         # 若从现有项目直接进入第2步，先询问是否开始执行
-        if run_mode == "step" and goto_existing_branch and locals().get('step_to_rerun') == 2:
+        if run_mode == "step" and goto_existing_branch and selected_step == 2:
             from utils import prompt_yes_no
             if not prompt_yes_no("是否开始第2步：关键词提取？"):
                 return {"success": True, "message": "用户取消开始第2步：关键词提取"}
-        if not (goto_existing_branch and locals().get('step_to_rerun') > 2):
+        if not (goto_existing_branch and selected_step > 2):
             print_section("步骤 2/5 关键词提取", "🧩")
             print("正在提取关键词...")
             keywords_data = extract_keywords(
@@ -337,7 +383,7 @@ def main(
             if locals().get('selected_step') == 2 and not goto_existing_branch:
                 return {"success": True, "message": "已完成第2步：关键词提取", "final_stage": "keywords", "keywords": {"file_path": keywords_path}}
         
-        if run_mode == "step" and not (goto_existing_branch and locals().get('step_to_rerun') > 2):
+        if run_mode == "step" and not (goto_existing_branch and selected_step > 2):
             from utils import prompt_yes_no, load_json_file
             if not prompt_yes_no("是否继续到图像生成步骤？(可先在 output/text/keywords.json 修改后再继续)"):
                 return {"success": True, "message": "已生成关键词，用户终止于此", "final_stage": "keywords"}
@@ -345,11 +391,11 @@ def main(
         
         # 步骤 3/5 图像生成
         # 若从现有项目直接进入第3步，先询问是否开始执行
-        if run_mode == "step" and goto_existing_branch and locals().get('step_to_rerun') == 3:
+        if run_mode == "step" and goto_existing_branch and selected_step == 3:
             from utils import prompt_yes_no
             if not prompt_yes_no("是否开始第3步：图像生成？"):
                 return {"success": True, "message": "用户取消开始第3步：图像生成"}
-        if not (goto_existing_branch and locals().get('step_to_rerun') > 3):
+        if not (goto_existing_branch and selected_step > 3):
             print_section("步骤 3/5 图像生成", "🖼️")
             print("正在生成图像...")
             # 先尝试生成开场图像（可选）
@@ -357,16 +403,19 @@ def main(
                 image_model, opening_image_style, 
                 image_size, f"{project_output_dir}/images"
             )
-            image_paths = generate_images_for_segments(
+            image_result = generate_images_for_segments(
                 image_server, image_model, keywords_data, 
                 image_style_preset, image_size, f"{project_output_dir}/images"
             )
+            image_paths = image_result["image_paths"]
+            failed_image_segments = image_result["failed_segments"]
         else:
             from utils import collect_ordered_assets
             try:
                 # 在从第4步开始重做时，仅需收集已存在的图片，不强制要求音频
                 assets = collect_ordered_assets(project_output_dir, script_data, require_audio=False)
                 image_paths = assets['images']
+                failed_image_segments = []  # 从现有项目读取时没有失败记录
             except FileNotFoundError as e:
                 msg_text = str(e)
                 if "缺少图片" in msg_text:
@@ -378,7 +427,7 @@ def main(
         if locals().get('selected_step') == 3 and not goto_existing_branch:
             return {"success": True, "message": "已完成第3步：图像生成", "final_stage": "images", "images": image_paths}
         
-        if run_mode == "step" and not (goto_existing_branch and locals().get('step_to_rerun') >= 4):
+        if run_mode == "step" and not (goto_existing_branch and selected_step >= 4):
             from utils import prompt_yes_no
             print("图像已生成至:")
             for p in image_paths:
@@ -390,11 +439,11 @@ def main(
         
         # 步骤 4/5 语音合成
         # 若从现有项目直接进入第4步，先询问是否开始执行
-        if run_mode == "step" and goto_existing_branch and locals().get('step_to_rerun') == 4:
+        if run_mode == "step" and goto_existing_branch and selected_step == 4:
             from utils import prompt_yes_no
             if not prompt_yes_no("是否开始第4步：语音合成？"):
                 return {"success": True, "message": "用户取消开始第4步：语音合成"}
-        if not (goto_existing_branch and locals().get('step_to_rerun') > 4):
+        if not (goto_existing_branch and selected_step > 4):
             print_section("步骤 4/5 语音合成", "🔊")
             print("正在合成语音...")
             audio_paths = synthesize_voice_for_segments(
@@ -405,6 +454,9 @@ def main(
             try:
                 assets = collect_ordered_assets(project_output_dir, script_data)
                 audio_paths = assets['audio']
+                # 确保failed_image_segments在此分支也有定义
+                if 'failed_image_segments' not in locals():
+                    failed_image_segments = []
             except FileNotFoundError as e:
                 msg_text = str(e)
                 if "缺少图片" in msg_text:
@@ -416,7 +468,7 @@ def main(
         if locals().get('selected_step') == 4 and not goto_existing_branch:
             return {"success": True, "message": "已完成第4步：语音合成", "final_stage": "audio", "audio": audio_paths}
         
-        if run_mode == "step" and not (goto_existing_branch and locals().get('step_to_rerun') >= 5):
+        if run_mode == "step" and not (goto_existing_branch and selected_step >= 5):
             from utils import prompt_yes_no
             print("音频已生成至:")
             for p in audio_paths:
@@ -428,7 +480,7 @@ def main(
         
         # 步骤 5/5 视频合成
         # 若从现有项目直接进入第5步，先询问是否开始执行
-        if run_mode == "step" and goto_existing_branch and locals().get('step_to_rerun') == 5:
+        if run_mode == "step" and goto_existing_branch and selected_step == 5:
             from utils import prompt_yes_no
             if not prompt_yes_no("是否开始第5步：视频合成？"):
                 return {"success": True, "message": "用户取消开始第5步：视频合成"}
@@ -513,17 +565,22 @@ def main(
         # 计算处理统计信息
         end_time = datetime.datetime.now()
         execution_time = (end_time - start_time).total_seconds()
-        compression_ratio = (1 - script_data['total_length'] / original_length) * 100
+        compression_ratio = (1 - (script_data['total_length'] / original_length)) * 100 if original_length > 0 else 0.0
         
         # 输出完成信息
         # 不再打印“视频制作完成”总标识，避免分步模式下误解
         print("\n" + "="*60)
         print("步骤 5/5 完成：视频合成")
         print("="*60)
-        print(f"📄 口播稿段数: {script_data['actual_segments']}")
+        print(f"📄 脚本段数: {script_data['actual_segments']}")
         print(f"🖼️  生成图片数量: {len(image_paths)}")
         print(f"🔊 音频文件数量: {len(audio_paths)}")
         print(f"🎬 最终视频: {final_video_path}")
+        
+        # 显示失败的图像信息（如果有）
+        if 'failed_image_segments' in locals() and failed_image_segments:
+            print(f"⚠️  图像生成失败: 第{', '.join(map(str, failed_image_segments))}段")
+        
         # 运行时与配置双重控制，展示最终生效状态
         effective_subtitles = bool(enable_subtitles) and bool(getattr(config, 'SUBTITLE_CONFIG', {}).get('enabled', True))
         print(f"📝 字幕功能: {'启用' if effective_subtitles else '禁用'}")

@@ -476,7 +476,7 @@ def read_doc(file_path: str) -> Tuple[str, int]:
 def intelligent_summarize(server: str, model: str, content: str, target_length: int, num_segments: int) -> Dict[str, Any]:
     """
     智能缩写 - 第一次LLM处理
-    新逻辑：LLM一次性生成完整口播终稿（content），代码按重标点切分为 num_segments 段。
+    新逻辑：LLM生成完整口播终稿（content），返回原始数据，不进行分段。
     """
     try:
         user_message = f"""请将以下内容智能压缩为约{target_length}字的口播终稿，不要分段：
@@ -514,6 +514,48 @@ def intelligent_summarize(server: str, model: str, content: str, target_length: 
         if not full_text:
             raise ValueError("生成的 content 为空")
 
+        # 返回原始数据，不进行分段
+        raw_data: Dict[str, Any] = {
+            "title": title,
+            "golden_quote": golden_quote,
+            "content": full_text,
+            "total_length": len(full_text),
+            "target_segments": num_segments,
+            "created_time": datetime.datetime.now().isoformat(),
+            "model_info": {
+                "llm_server": server,
+                "llm_model": model,
+                "generation_type": "raw_generation"
+            }
+        }
+
+        return raw_data
+
+    except json.JSONDecodeError:
+        raise ValueError("解析 JSON 输出失败")
+    except Exception as e:
+        raise ValueError(f"智能缩写处理错误: {e}")
+
+def process_raw_to_script(raw_data: Dict[str, Any], num_segments: int) -> Dict[str, Any]:
+    """
+    将原始数据处理为分段脚本数据。
+    这是步骤1.5的核心功能，从raw数据生成最终的script数据。
+    
+    Args:
+        raw_data: 包含title、golden_quote、content的原始数据
+        num_segments: 目标分段数量
+        
+    Returns:
+        Dict[str, Any]: 分段后的脚本数据，格式与原来的script.json相同
+    """
+    try:
+        title = raw_data.get("title", "untitled")
+        golden_quote = raw_data.get("golden_quote", "")
+        full_text = raw_data.get("content", "").strip()
+        
+        if not full_text:
+            raise ValueError("原始数据的 content 字段为空")
+
         # 代码分段：按重标点优先，尽量均衡为 num_segments 段
         segments_text = _split_text_into_segments(full_text, num_segments)
 
@@ -526,13 +568,12 @@ def intelligent_summarize(server: str, model: str, content: str, target_length: 
             "target_segments": num_segments,
             "actual_segments": len(segments_text),
             "created_time": datetime.datetime.now().isoformat(),
-            "model_info": {
-                "llm_server": server,
-                "llm_model": model,
-                "generation_type": "script_generation"
-            },
+            "model_info": raw_data.get("model_info", {}),
             "segments": []
         }
+        
+        # 更新模型信息中的处理类型
+        enhanced_data["model_info"]["generation_type"] = "script_generation"
 
         # 估算每段时长
         wpm = int(getattr(config, "SPEECH_SPEED_WPM", 300))
@@ -548,29 +589,27 @@ def intelligent_summarize(server: str, model: str, content: str, target_length: 
 
         return enhanced_data
 
-    except json.JSONDecodeError:
-        raise ValueError("解析 JSON 输出失败")
     except Exception as e:
-        raise ValueError(f"智能缩写处理错误: {e}")
+        raise ValueError(f"处理原始数据为脚本错误: {e}")
 
 def _split_text_into_segments(full_text: str, num_segments: int) -> List[str]:
     """
-    使用重标点（。？！；.!?）先切成句子，再在句子边界上均衡聚合为 num_segments 段。
+    使用重标点（。？！；.!?\n）先切成句子，再在句子边界上均衡聚合为 num_segments 段。
     若句子不足，则字符级均分补齐，保证输出恰好 num_segments 段。
     """
     text = (full_text or "").strip()
     if num_segments <= 1 or len(text) == 0:
         return [text] if text else [""]
 
-    # 1) 句子级切分：将标点附着到前句
-    raw_parts = re.split(r'([。！？；.!?])', text)
+    # 1) 句子级切分：将标点（包括换行符）附着到前句
+    raw_parts = re.split(r'([。！？；.!?\n])', text)
     sentences: List[str] = []
     i = 0
     while i < len(raw_parts):
         token = raw_parts[i]
         if token and token.strip():
             cur = token.strip()
-            if i + 1 < len(raw_parts) and raw_parts[i + 1] and raw_parts[i + 1].strip() in '。！？；.!?':
+            if i + 1 < len(raw_parts) and raw_parts[i + 1] and raw_parts[i + 1].strip() in '。！？；.!?\n':
                 cur += raw_parts[i + 1].strip()
                 i += 2
             else:
@@ -682,13 +721,13 @@ def extract_keywords(server: str, model: str, script_data: Dict[str, Any]) -> Di
         # 鲁棒解析（先常规，失败则修复）
         keywords_data = parse_json_robust(output)
         
-        # 验证格式
-        if "segments" not in keywords_data:
-            raise ValueError("关键词数据格式错误：缺少segments字段")
-        
-        # 确保段落数量匹配
-        if len(keywords_data["segments"]) != len(script_data["segments"]):
-            raise ValueError("关键词段落数量与口播稿不匹配")
+        # 精简对齐：按脚本段数对齐（多截断、少补空），不再额外校验/告警
+        expected = len(script_data["segments"])  # 以脚本段数为准
+        segs = list(keywords_data.get("segments") or [])
+        keywords_data["segments"] = (
+            segs[:expected]
+            + [{"keywords": [], "atmosphere": []}] * max(0, expected - len(segs))
+        )
         
         # 添加模型信息
         keywords_data["model_info"] = {
@@ -750,7 +789,7 @@ def generate_opening_image(model: str, opening_style: str,
         logger.warning(f"开场图像生成失败: {e}")
         return None
 def generate_images_for_segments(server: str, model: str, keywords_data: Dict[str, Any], 
-                                image_style_preset: str, image_size: str, output_dir: str) -> List[str]:
+                                image_style_preset: str, image_size: str, output_dir: str) -> Dict[str, Any]:
     """
     为每个段落生成图像
     
@@ -763,10 +802,13 @@ def generate_images_for_segments(server: str, model: str, keywords_data: Dict[st
         output_dir: 输出目录
     
     Returns:
-        List[str]: 生成图像的文件路径列表
+        Dict[str, Any]: 包含图像路径列表和失败记录的字典
+            - "image_paths": List[str] - 成功生成的图像路径
+            - "failed_segments": List[int] - 生成失败的段落编号
     """
     try:
         image_paths = []
+        failed_segments = []
         
         # 获取图像风格字符串
         image_style = get_image_style(image_style_preset)
@@ -789,23 +831,62 @@ def generate_images_for_segments(server: str, model: str, keywords_data: Dict[st
             
             print(f"正在生成第{i}段图像...")
             
-            # 调用豆包图像生成API
-            image_url = text_to_image_doubao(
-                prompt=final_prompt,
-                size=image_size,
-                model=model
-            )
+            # 重试逻辑：最多尝试3次
+            success = False
+            for attempt in range(3):
+                try:
+                    # 调用豆包图像生成API
+                    image_url = text_to_image_doubao(
+                        prompt=final_prompt,
+                        size=image_size,
+                        model=model
+                    )
+                    
+                    if image_url:
+                        # 下载并保存图像
+                        image_path = os.path.join(output_dir, f"segment_{i}.png")
+                        download_to_path(image_url, image_path, error_msg=f"下载第{i}段图像失败")
+                        image_paths.append(image_path)
+                        print(f"第{i}段图像已保存: {image_path}")
+                        success = True
+                        break
+                    else:
+                        if attempt < 2:  # 不是最后一次尝试
+                            print(f"⚠️  第{i}段图像生成失败，正在重试 ({attempt + 2}/3)...")
+                            continue
+                        
+                except Exception as e:
+                    error_msg = str(e)
+                    # 检查是否是敏感词错误
+                    is_sensitive_error = (
+                        "OutputImageSensitiveContentDetected" in error_msg or 
+                        "sensitive" in error_msg.lower() or
+                        "content" in error_msg.lower()
+                    )
+                    
+                    if attempt < 2:  # 不是最后一次尝试
+                        if is_sensitive_error:
+                            print(f"⚠️  第{i}段图像涉及敏感内容，正在重试 ({attempt + 2}/3)...")
+                        else:
+                            print(f"⚠️  第{i}段图像生成失败: {error_msg}，正在重试 ({attempt + 2}/3)...")
+                        continue
+                    else:
+                        # 最后一次尝试也失败了
+                        if is_sensitive_error:
+                            print(f"❌ 第{i}段图像涉及敏感内容，已跳过")
+                        else:
+                            print(f"❌ 第{i}段图像生成失败: {error_msg}，已跳过")
             
-            if image_url:
-                # 下载并保存图像
-                image_path = os.path.join(output_dir, f"segment_{i}.png")
-                download_to_path(image_url, image_path, error_msg=f"下载第{i}段图像失败")
-                image_paths.append(image_path)
-                print(f"第{i}段图像已保存: {image_path}")
-            else:
-                raise ValueError(f"生成第{i}段图像失败")
+            # 如果3次尝试都失败，记录失败的段落
+            if not success:
+                failed_segments.append(i)
+                # 添加空字符串占位，保持索引对应关系
+                image_paths.append("")
         
-        return image_paths
+        return {
+            "image_paths": image_paths,
+            "failed_segments": failed_segments
+        }
     
     except Exception as e:
         raise ValueError(f"图像生成错误: {e}")
@@ -1379,8 +1460,15 @@ def split_text_for_subtitle(text: str, max_chars_per_line: int = 20, max_lines: 
     """
     def _split_by_light_punctuation(fragment: str) -> List[str]:
         """第二层：智能配对标点切分，保持引用内容完整"""
-        # 配对标点映射（仅处理中文配对标点）
-        paired_punctuation = {'"': '"', "'": "'", '《': '》'}
+        # 配对标点映射（含中文引号、书名号、日文引号）
+        paired_punctuation = {
+            '"': '"',
+            "'": "'",
+            '《': '》',
+            '“': '”',
+            '‘': '’',
+            '「': '」',
+        }
         
         # 第一步：提取配对标点内容和普通文本
         segments = []

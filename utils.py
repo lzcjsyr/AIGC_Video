@@ -721,6 +721,11 @@ def detect_project_progress(project_dir: str) -> Dict[str, Any]:
     voice_dir = os.path.join(project_dir, "voice")
     final_video_path = os.path.join(project_dir, "final_video.mp4")
 
+    # 检测raw数据（步骤1的产物）
+    raw_json = _read_json_if_exists(os.path.join(text_dir, "raw.json"))
+    raw_docx_path = os.path.join(text_dir, "raw.docx")
+    has_raw = raw_json is not None and isinstance(raw_json, dict) and 'content' in raw_json and os.path.exists(raw_docx_path)
+
     script = _read_json_if_exists(os.path.join(text_dir, "script.json"))
     has_script = script is not None and isinstance(script, dict) and 'segments' in script
 
@@ -761,27 +766,40 @@ def detect_project_progress(project_dir: str) -> Dict[str, Any]:
 
     has_final_video = os.path.exists(final_video_path) and os.path.getsize(final_video_path) > 0
 
-    # 计算 current_step（对内与对外一致：1..5）
+    # 计算 current_step（细分为：1、1.5、2、3、4、5）
     current_step = 0
-    if has_script:
+    current_step_name = ""
+    
+    if has_raw:
         current_step = 1
+        current_step_name = "1"
+    if has_script:
+        current_step = 1.5
+        current_step_name = "1.5"
     if has_keywords:
         current_step = 2
+        current_step_name = "2"
     if images_ok:
         current_step = 3
+        current_step_name = "3"
     if audio_ok:
         current_step = 4
+        current_step_name = "4"
     if has_final_video:
         current_step = 5
+        current_step_name = "5"
 
     return {
+        'has_raw': has_raw,
         'has_script': has_script,
         'has_keywords': has_keywords,
         'images_ok': images_ok,
         'audio_ok': audio_ok,
         'has_final_video': has_final_video,
         'current_step': current_step,
-        'current_step_display': max(1, min(5, current_step)),
+        'current_step_name': current_step_name,
+        'current_step_display': max(1, min(5, int(current_step))),
+        'raw_json': raw_json,
         'script': script,
         'keywords': keywords,
         'final_video_path': final_video_path,
@@ -882,10 +900,10 @@ def collect_ordered_assets(project_dir: str, script_data: Dict[str, Any], requir
         image_paths.append(image_path)
     return {"images": image_paths, "audio": audio_paths}
 
-def clear_downstream_outputs(project_dir: str, from_step: int) -> None:
+def clear_downstream_outputs(project_dir: str, from_step) -> None:
     """
     清理从指定步骤之后的产物，以便重新生成。
-    from_step: 1..5（对外/对内统一步骤编号）
+    from_step: 1, 1.5, 2, 3, 4, 5
     """
     text_dir = os.path.join(project_dir, "text")
     images_dir = os.path.join(project_dir, "images")
@@ -894,7 +912,24 @@ def clear_downstream_outputs(project_dir: str, from_step: int) -> None:
 
     try:
         if from_step <= 1:
-            # 删除 keywords
+            # 删除 script 和 keywords
+            sp = os.path.join(text_dir, "script.json")
+            if os.path.exists(sp):
+                os.remove(sp)
+            sdp = os.path.join(text_dir, "script.docx")
+            if os.path.exists(sdp):
+                os.remove(sdp)
+            kp = os.path.join(text_dir, "keywords.json")
+            if os.path.exists(kp):
+                os.remove(kp)
+        elif from_step <= 1.5:
+            # 删除 script 和 keywords，保留 raw
+            sp = os.path.join(text_dir, "script.json")
+            if os.path.exists(sp):
+                os.remove(sp)
+            sdp = os.path.join(text_dir, "script.docx")
+            if os.path.exists(sdp):
+                os.remove(sdp)
             kp = os.path.join(text_dir, "keywords.json")
             if os.path.exists(kp):
                 os.remove(kp)
@@ -1005,6 +1040,190 @@ def export_script_to_docx(script_data: Dict[str, Any], docx_path: str) -> str:
     logger.info(f"阅读版DOCX已保存: {docx_path}")
     return docx_path
 
+def export_raw_to_docx(raw_data: Dict[str, Any], docx_path: str) -> str:
+    """
+    将原始LLM输出的JSON数据导出为带标记的DOCX文档，方便用户编辑。
+    使用特殊标记来分隔title、golden_quote和content字段，确保后续可以安全解析回JSON。
+    
+    格式设计：
+    ===TITLE_START===
+    标题内容
+    ===TITLE_END===
+    
+    ===GOLDEN_QUOTE_START===
+    金句内容
+    ===GOLDEN_QUOTE_END===
+    
+    ===CONTENT_START===
+    正文内容
+    ===CONTENT_END===
+    
+    Args:
+        raw_data: 包含title、golden_quote、content的原始数据
+        docx_path: 输出的docx文件路径
+    
+    Returns:
+        str: 实际保存的docx路径
+    """
+    from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
+    from docx.oxml.ns import qn
+
+    document = Document()
+
+    # 设置默认样式
+    try:
+        normal_style = document.styles['Normal']
+        normal_style.font.name = '宋体'
+        if hasattr(normal_style, 'element') and normal_style.element is not None:
+            rPr = normal_style.element.rPr
+            if rPr is not None and rPr.rFonts is not None:
+                rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+        if normal_style.paragraph_format is not None:
+            try:
+                normal_style.paragraph_format.line_spacing_rule = WD_LINE_SPACING.ONE_POINT_FIVE
+            except Exception:
+                normal_style.paragraph_format.line_spacing = 1.5
+    except Exception:
+        pass
+
+    # 添加说明
+    instruction_para = document.add_paragraph()
+    instruction_run = instruction_para.add_run("编辑说明：请直接编辑下方内容，但请保持标记符号（===...===）不变，这些标记用于系统识别各个字段。")
+    try:
+        instruction_run.font.name = '宋体'
+        instruction_run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+        instruction_run.font.color.rgb = None  # 默认颜色
+    except Exception:
+        pass
+    
+    document.add_paragraph()  # 空行分隔
+
+    # 添加标题段落
+    title_marker_start = document.add_paragraph("===TITLE_START===")
+    title_content = document.add_paragraph(raw_data.get('title', ''))
+    title_marker_end = document.add_paragraph("===TITLE_END===")
+    
+    document.add_paragraph()  # 空行分隔
+    
+    # 添加金句段落  
+    quote_marker_start = document.add_paragraph("===GOLDEN_QUOTE_START===")
+    quote_content = document.add_paragraph(raw_data.get('golden_quote', ''))
+    quote_marker_end = document.add_paragraph("===GOLDEN_QUOTE_END===")
+    
+    document.add_paragraph()  # 空行分隔
+    
+    # 添加正文段落
+    content_marker_start = document.add_paragraph("===CONTENT_START===")
+    content_content = document.add_paragraph(raw_data.get('content', ''))
+    content_marker_end = document.add_paragraph("===CONTENT_END===")
+
+    # 设置所有段落的字体和格式
+    for para in document.paragraphs:
+        for run in para.runs:
+            try:
+                run.font.name = '宋体'
+                run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+            except Exception:
+                pass
+        try:
+            para.paragraph_format.line_spacing_rule = WD_LINE_SPACING.ONE_POINT_FIVE
+        except Exception:
+            para.paragraph_format.line_spacing = 1.5
+
+    ensure_directory_exists(os.path.dirname(docx_path))
+    document.save(docx_path)
+    logger.info(f"原始编辑版DOCX已保存: {docx_path}")
+    return docx_path
+
+def parse_raw_from_docx(docx_path: str) -> Dict[str, Any]:
+    """
+    从带标记的DOCX文档解析回原始数据格式。
+    
+    Args:
+        docx_path: 包含标记的docx文件路径
+        
+    Returns:
+        Dict[str, Any]: 解析得到的原始数据，包含title、golden_quote、content
+        
+    Raises:
+        FileProcessingError: 解析失败时抛出
+    """
+    from docx import Document
+    
+    if not os.path.exists(docx_path):
+        raise FileProcessingError(f"DOCX文件不存在: {docx_path}")
+    
+    try:
+        document = Document(docx_path)
+        
+        # 提取所有段落文本
+        paragraphs = []
+        for para in document.paragraphs:
+            text = para.text.strip()
+            if text:  # 只保留非空段落
+                paragraphs.append(text)
+        
+        # 查找标记位置
+        title_start = -1
+        title_end = -1
+        quote_start = -1
+        quote_end = -1
+        content_start = -1
+        content_end = -1
+        
+        for i, para_text in enumerate(paragraphs):
+            if para_text == "===TITLE_START===":
+                title_start = i
+            elif para_text == "===TITLE_END===":
+                title_end = i
+            elif para_text == "===GOLDEN_QUOTE_START===":
+                quote_start = i
+            elif para_text == "===GOLDEN_QUOTE_END===":
+                quote_end = i
+            elif para_text == "===CONTENT_START===":
+                content_start = i
+            elif para_text == "===CONTENT_END===":
+                content_end = i
+        
+        # 验证标记完整性
+        if title_start == -1 or title_end == -1:
+            raise ValueError("缺少TITLE标记")
+        if quote_start == -1 or quote_end == -1:
+            raise ValueError("缺少GOLDEN_QUOTE标记")
+        if content_start == -1 or content_end == -1:
+            raise ValueError("缺少CONTENT标记")
+            
+        # 提取各字段内容
+        title_parts = []
+        for i in range(title_start + 1, title_end):
+            title_parts.append(paragraphs[i])
+        title = '\n'.join(title_parts).strip()
+        
+        quote_parts = []
+        for i in range(quote_start + 1, quote_end):
+            quote_parts.append(paragraphs[i])
+        golden_quote = '\n'.join(quote_parts).strip()
+        
+        content_parts = []
+        for i in range(content_start + 1, content_end):
+            content_parts.append(paragraphs[i])
+        content = '\n'.join(content_parts).strip()
+        
+        # 构建返回数据
+        result = {
+            'title': title,
+            'golden_quote': golden_quote,
+            'content': content
+        }
+        
+        logger.info(f"从DOCX解析原始数据成功: {docx_path}")
+        return result
+        
+    except Exception as e:
+        logger.error(f"解析DOCX文件失败: {str(e)}")
+        raise FileProcessingError(f"解析DOCX文件失败: {str(e)}")
+
 # 导出主要函数和类
 __all__ = [
     'VideoProcessingError', 'APIError', 'FileProcessingError',
@@ -1016,5 +1235,112 @@ __all__ = [
     'scan_input_files', 'display_file_menu', 'get_user_file_selection', 'interactive_file_selector',
     'scan_output_projects', 'interactive_project_selector', 'detect_project_progress', 'prompt_step_to_rerun',
     'collect_ordered_assets', 'clear_downstream_outputs', 'display_project_menu', 'get_user_project_selection',
-    'export_script_to_docx',
+    'export_script_to_docx', 'export_raw_to_docx', 'parse_raw_from_docx',
+    'process_step_1_5',
 ]
+
+def process_step_1_5(project_output_dir: str, num_segments: int, is_new_project: bool = False, raw_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    统一处理步骤1.5：段落切分
+    
+    Args:
+        project_output_dir: 项目输出目录
+        num_segments: 目标分段数
+        is_new_project: 是否为新建项目
+        raw_data: 原始数据（新建项目时提供）
+        
+    Returns:
+        Dict[str, Any]: 处理结果，包含成功状态和相关信息
+    """
+    try:
+        print("正在处理原始内容为脚本...")
+        
+        # 构建文件路径
+        raw_json_path = os.path.join(project_output_dir, 'text', 'raw.json')
+        raw_docx_path = os.path.join(project_output_dir, 'text', 'raw.docx')
+        script_path = os.path.join(project_output_dir, 'text', 'script.json')
+        script_docx_path = os.path.join(project_output_dir, 'text', 'script.docx')
+        
+        # 获取原始数据
+        if is_new_project and raw_data is not None:
+            # 新建项目：使用提供的raw_data
+            logger.info(f"新建项目：使用提供的raw数据")
+            current_raw_data = raw_data
+        else:
+            # 现有项目：从文件加载
+            if not os.path.exists(raw_json_path):
+                return {"success": False, "message": f"无法找到 raw.json 文件: {raw_json_path}"}
+            
+            print(f"加载raw数据: {raw_json_path}")
+            current_raw_data = load_json_file(raw_json_path)
+            if current_raw_data is None:
+                return {"success": False, "message": f"无法加载 raw.json 文件: {raw_json_path}"}
+            
+            # 从raw.json中获取target_segments作为num_segments
+            num_segments = current_raw_data.get("target_segments", num_segments)
+            print(f"当前分段数: {num_segments}")
+        
+        # 尝试从编辑后的DOCX文件解析数据
+        updated_raw_data = current_raw_data
+        if os.path.exists(raw_docx_path):
+            try:
+                parsed_data = parse_raw_from_docx(raw_docx_path)
+                if parsed_data is not None:
+                    print("已从编辑后的DOCX文件解析内容")
+                    updated_raw_data = parsed_data
+                    
+                    # 更新元数据但保留原始信息
+                    updated_raw_data.update({
+                        "target_segments": current_raw_data.get("target_segments", num_segments),
+                        "created_time": current_raw_data.get("created_time"),
+                        "model_info": current_raw_data.get("model_info", {}),
+                        "total_length": len(updated_raw_data.get("content", ""))
+                    })
+                    
+                    # 更新raw.json文件
+                    with open(raw_json_path, 'w', encoding='utf-8') as f:
+                        json.dump(updated_raw_data, f, ensure_ascii=False, indent=2)
+                    print(f"已更新原始JSON: {raw_json_path}")
+                else:
+                    print("⚠️  DOCX解析返回None，使用原始数据")
+            except Exception as e:
+                print(f"⚠️  解析DOCX失败，使用原始数据: {e}")
+        
+        # 检查最终数据
+        if updated_raw_data is None:
+            return {"success": False, "message": "处理raw数据失败：数据为空"}
+        
+        # 处理为分段脚本数据
+        from functions import process_raw_to_script
+        target_segments = updated_raw_data.get("target_segments", num_segments)
+        script_data = process_raw_to_script(updated_raw_data, target_segments)
+        
+        # 保存script.json
+        with open(script_path, 'w', encoding='utf-8') as f:
+            json.dump(script_data, f, ensure_ascii=False, indent=2)
+        print(f"分段脚本已保存到: {script_path}")
+        
+        # 生成可阅读的script.docx
+        try:
+            export_script_to_docx(script_data, script_docx_path)
+            print(f"阅读版DOCX已保存到: {script_docx_path}")
+        except Exception as e:
+            print(f"⚠️  生成script.docx失败: {e}")
+        
+        logger.info(f"步骤1.5处理完成: {script_path}")
+        return {
+            "success": True,
+            "script_data": script_data,
+            "script_path": script_path,
+            "message": "步骤1.5处理完成"
+        }
+        
+    except Exception as e:
+        logger.error(f"步骤1.5处理失败: {str(e)}")
+        return {"success": False, "message": f"步骤1.5处理失败: {str(e)}"}
+        
+def print_section(title: str, icon: str = "📋") -> None:
+    """打印带格式的章节标题"""
+    print("\n" + "-" * 60)
+    print(f"{icon} {title}")
+    print("-" * 60)
