@@ -1,0 +1,103 @@
+{
+  "title": "人工智能的未来发展",
+  "golden_quote": "科技改变世界，智能引领未来",
+  "total_length": 298,
+  "target_segments": 15,
+  "actual_segments": 15,
+  "created_time": "2025-08-30T14:13:02.093138",
+  "model_info": {
+    "generation_type": "script_generation"
+  },
+  "segments": [
+    {
+      "index": 1,
+      "content": "人工智能正在快速改变我们的世界。从自动驾",
+      "length": 20,
+      "estimated_duration": 4.8
+    },
+    {
+      "index": 2,
+      "content": "驶汽车到智能家居系统，AI技术已经深入到",
+      "length": 20,
+      "estimated_duration": 4.8
+    },
+    {
+      "index": 3,
+      "content": "我们生活的方方面面。\n\n在医疗领域，人工",
+      "length": 20,
+      "estimated_duration": 4.8
+    },
+    {
+      "index": 4,
+      "content": "智能帮助医生进行精确诊断，提高了治疗效果",
+      "length": 20,
+      "estimated_duration": 4.8
+    },
+    {
+      "index": 5,
+      "content": "。机器学习算法能够分析大量医疗数据，发现",
+      "length": 20,
+      "estimated_duration": 4.8
+    },
+    {
+      "index": 6,
+      "content": "人类难以察觉的模式。\n\n教育行业也在经",
+      "length": 19,
+      "estimated_duration": 4.6
+    },
+    {
+      "index": 7,
+      "content": "历AI驱动的变革。个性化学习系统根据学",
+      "length": 19,
+      "estimated_duration": 4.6
+    },
+    {
+      "index": 8,
+      "content": "生的特点调整教学内容，让每个人都能获得",
+      "length": 19,
+      "estimated_duration": 4.6
+    },
+    {
+      "index": 9,
+      "content": "最适合的教育体验。\n\n然而，AI的发展",
+      "length": 19,
+      "estimated_duration": 4.6
+    },
+    {
+      "index": 10,
+      "content": "也带来了新的挑战。我们需要关注数据隐私",
+      "length": 19,
+      "estimated_duration": 4.6
+    },
+    {
+      "index": 11,
+      "content": "、算法偏见和就业影响等问题。只有在负责",
+      "length": 19,
+      "estimated_duration": 4.6
+    },
+    {
+      "index": 12,
+      "content": "任的框架下发展AI，才能确保技术真正造",
+      "length": 19,
+      "estimated_duration": 4.6
+    },
+    {
+      "index": 13,
+      "content": "福人类。\n\n展望未来，人工智能将继续推",
+      "length": 19,
+      "estimated_duration": 4.6
+    },
+    {
+      "index": 14,
+      "content": "动社会进步。我们要拥抱这个充满机遇的时",
+      "length": 19,
+      "estimated_duration": 4.6
+    },
+    {
+      "index": 15,
+      "content": "代，同时保持理性和谨慎，让AI成为人类",
+      "length": 19,
+      "estimated_duration": 4.6
+    }
+  ]
+}

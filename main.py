@@ -185,10 +185,12 @@ def main(
 
                             # 根据选择的步骤进行处理分支
                             if step_to_rerun == 1.5:
-                                # 从步骤1.5开始：需要raw.json文件
+                                # 从步骤1.5开始：需要raw.json或raw.docx文件（优先json，无json则使用docx）
                                 raw_json_path = os.path.join(project_dir, 'text', 'raw.json')
-                                if not os.path.exists(raw_json_path):
-                                    return {"success": False, "message": "当前项目缺少 raw.json，无法从第1.5步开始"}
+                                raw_docx_path = os.path.join(project_dir, 'text', 'raw.docx')
+                                
+                                if not os.path.exists(raw_json_path) and not os.path.exists(raw_docx_path):
+                                    return {"success": False, "message": "当前项目缺少 raw.json 或 raw.docx，无法从第1.5步开始"}
                                 project_output_dir = project_dir
                             elif step_to_rerun == 2:
                                 if not script_data:

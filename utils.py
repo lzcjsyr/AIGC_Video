@@ -721,10 +721,10 @@ def detect_project_progress(project_dir: str) -> Dict[str, Any]:
     voice_dir = os.path.join(project_dir, "voice")
     final_video_path = os.path.join(project_dir, "final_video.mp4")
 
-    # 检测raw数据（步骤1的产物）
+    # 检测raw数据（步骤1的产物）- 支持json或docx任一存在即可
     raw_json = _read_json_if_exists(os.path.join(text_dir, "raw.json"))
     raw_docx_path = os.path.join(text_dir, "raw.docx")
-    has_raw = raw_json is not None and isinstance(raw_json, dict) and 'content' in raw_json and os.path.exists(raw_docx_path)
+    has_raw = (raw_json is not None and isinstance(raw_json, dict) and 'content' in raw_json) or os.path.exists(raw_docx_path)
 
     script = _read_json_if_exists(os.path.join(text_dir, "script.json"))
     has_script = script is not None and isinstance(script, dict) and 'segments' in script
@@ -1269,16 +1269,15 @@ def process_step_1_5(project_output_dir: str, num_segments: int, is_new_project:
         else:
             # 现有项目：从文件加载
             if not os.path.exists(raw_json_path):
-                return {"success": False, "message": f"无法找到 raw.json 文件: {raw_json_path}"}
-            
-            print(f"加载raw数据: {raw_json_path}")
-            current_raw_data = load_json_file(raw_json_path)
-            if current_raw_data is None:
-                return {"success": False, "message": f"无法加载 raw.json 文件: {raw_json_path}"}
-            
-            # 从raw.json中获取target_segments作为num_segments
-            num_segments = current_raw_data.get("target_segments", num_segments)
-            print(f"当前分段数: {num_segments}")
+                # 没有raw.json但有raw.docx，创建一个默认的raw.json
+                current_raw_data = {"title": "手动创建项目", "golden_quote": "", "content": "", "target_segments": num_segments}
+            else:
+                print(f"加载raw数据: {raw_json_path}")
+                current_raw_data = load_json_file(raw_json_path)
+                if current_raw_data is None:
+                    return {"success": False, "message": f"无法加载 raw.json 文件: {raw_json_path}"}
+                num_segments = current_raw_data.get("target_segments", num_segments)
+                print(f"当前分段数: {num_segments}")
         
         # 尝试从编辑后的DOCX文件解析数据
         updated_raw_data = current_raw_data
