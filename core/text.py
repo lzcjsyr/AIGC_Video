@@ -4,12 +4,78 @@ Text-related logic: summarization, splitting to script, and keywords extraction.
 
 from typing import Dict, Any, List, Tuple
 import re
+import json
 import datetime
 
 from config import config
 from prompts import summarize_system_prompt, keywords_extraction_prompt
-from utils import logger, parse_json_robust
+from utils import logger
 from core.services import text_to_text
+
+
+def parse_json_robust(raw_text: str) -> Dict[str, Any]:
+    """解析AI响应中的JSON，处理```json代码块和截断的JSON"""
+    logger.info(f"尝试解析JSON，原始文本长度: {len(raw_text)}")
+    
+    # 清理代码块标记
+    text_to_parse = raw_text.strip()
+    if text_to_parse.startswith("```json"):
+        text_to_parse = text_to_parse[7:]  # 移除```json
+    if text_to_parse.endswith("```"):
+        text_to_parse = text_to_parse[:-3]  # 移除结尾的```
+    text_to_parse = text_to_parse.strip()
+    
+    # 查找JSON边界
+    start = text_to_parse.find('{')
+    end = text_to_parse.rfind('}')
+    
+    if start == -1:
+        logger.error(f"未找到JSON起始符号 - 文本: {text_to_parse[:200]}")
+        raise ValueError("未在输出中找到 JSON 对象")
+    
+    # 如果没有找到结束符，尝试修复截断的JSON
+    if end == -1 or end < start:
+        logger.warning("检测到截断的JSON，尝试修复")
+        
+        # 简单修复：寻找最后一个完整的句子，然后补充结尾
+        remaining_text = text_to_parse[start+1:]
+        
+        # 找到最后一个句号位置
+        last_sentence_end = max(
+            remaining_text.rfind('。'),
+            remaining_text.rfind('？'),
+            remaining_text.rfind('！')
+        )
+        
+        if last_sentence_end > 0:
+            # 截取到最后完整句子
+            content_part = remaining_text[:last_sentence_end + 1]
+            # 构建基本的JSON结构 - 假设是标准的三字段结构
+            if '"title"' in content_part and '"content"' in content_part:
+                # 补充可能缺失的结尾
+                text_to_parse = text_to_parse[start:start+1+last_sentence_end+1] + '"}'
+                end = text_to_parse.rfind('}')
+            
+    if end == -1 or end < start:
+        logger.error(f"修复失败，无法找到有效JSON结构")
+        raise ValueError("未在输出中找到有效的JSON对象")
+    
+    snippet = text_to_parse[start:end+1]
+    logger.debug(f"提取的JSON: {snippet[:200]}...")
+    
+    # 尝试解析
+    try:
+        return json.loads(snippet)
+    except Exception as e:
+        logger.warning(f"标准解析失败: {e}，尝试使用json-repair")
+        try:
+            from json_repair import repair_json
+            repaired = repair_json(snippet, ensure_ascii=False)
+            return json.loads(repaired)
+        except Exception as e2:
+            logger.error(f"JSON修复失败: {e2}")
+            logger.error(f"原始snippet: {snippet}")
+            raise ValueError(f"JSON解析失败: {e2}")
 
 
 def intelligent_summarize(server: str, model: str, content: str, target_length: int, num_segments: int) -> Dict[str, Any]:
@@ -217,7 +283,7 @@ def _split_text_into_segments(full_text: str, num_segments: int) -> List[str]:
 
 def extract_keywords(server: str, model: str, script_data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    关键词提取 - 第二次LLM处理
+    要点提取 - 第二次LLM处理
     为每个段落提取关键词和氛围词
     """
     try:
@@ -264,6 +330,6 @@ def extract_keywords(server: str, model: str, script_data: Dict[str, Any]) -> Di
         return keywords_data
 
     except Exception as e:
-        raise ValueError(f"关键词提取错误: {e}")
+        raise ValueError(f"要点提取错误: {e}")
 
 

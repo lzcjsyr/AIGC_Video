@@ -70,53 +70,138 @@ def get_user_project_selection(projects: List[Dict[str, Any]]) -> Optional[str]:
             return None
 
 
-def prompt_step_to_rerun(current_step) -> Optional[float]:
+def display_project_progress_and_select_step(progress) -> Optional[float]:
     """
-    询问用户要从哪一步开始重做。
-    显示完整步骤列表，标识当前进度。
-    返回内部步骤值（1.5, 2, 3, 4, 5）。
+    显示项目完整进度并允许用户选择要重新执行的步骤
+    
+    Args:
+        progress: detect_project_progress 返回的进度字典
+        
+    Returns:
+        Optional[float]: 选择的步骤编号，None表示退出
     """
-    # 定义所有步骤
-    all_steps = [1.5, 2, 3, 4, 5]
-    step_names = ["脚本分段", "关键词提取", "AI图像生成", "语音合成", "视频合成"]
+    # 步骤定义
+    steps = [
+        (1, "内容生成", progress.get('has_raw', False)),
+        (1.5, "脚本分段", progress.get('has_script', False)),
+        (2, "要点提取", progress.get('has_keywords', False)),
+        (3, "图像生成", progress.get('images_ok', False)),
+        (4, "语音合成", progress.get('audio_ok', False)),
+        (5, "视频合成", progress.get('has_final_video', False))
+    ]
     
-    print(f"\n当前项目进度：已完成到第{current_step}步")
-    print("可选择的操作步骤：")
+    current_step = progress.get('current_step', 0)
     
-    # 显示完整步骤列表
-    for step, name in zip(all_steps, step_names):
-        marker = "✓" if step <= current_step else " "
-        step_display = f"{step:.1f}" if step == 1.5 else str(int(step))
-        print(f" {marker} {step_display}. {name}")
+    print(f"\n📊 项目进度状态")
+    print("=" * 60)
     
-    # 确定默认选择
+    # 显示步骤状态
+    for step_num, step_name, is_completed in steps:
+        if is_completed:
+            status = "✅ 已完成"
+        elif step_num <= current_step:
+            status = "⏳ 进行中"
+        else:
+            status = "⭕ 未开始"
+            
+        print(f"步骤 {step_num:>3}: {step_name:<10} {status}")
+    
+    print("=" * 60)
+    
+    # 创建步骤号到步骤名的映射
+    step_names_dict = {step_num: step_name for step_num, step_name, _ in steps}
+    current_step_name = step_names_dict.get(current_step, '未知')
+    print(f"当前进度：步骤 {current_step} - {current_step_name}")
+    
+    # 确定允许的步骤：不允许第1步，允许当前步骤重做和下一步执行
+    allowed_steps = []
+    if current_step >= 1.5:
+        allowed_steps.append(1.5)  # 允许重做脚本分段
+    if current_step >= 2:
+        allowed_steps.append(2)    # 允许重做要点提取
+    if current_step >= 3:
+        allowed_steps.append(3)    # 允许重做图像生成
+    if current_step >= 4:
+        allowed_steps.append(4)    # 允许重做语音合成
+    if current_step >= 5:
+        allowed_steps.append(5)    # 允许重做视频合成
+    
+    # 添加下一步（如果存在）
     if current_step < 5:
-        next_step = 2 if current_step == 1.5 else current_step + 1
-        default_choice = f"{next_step:.1f}" if next_step == 1.5 else str(int(next_step))
-    else:
-        default_choice = "5"
+        next_steps = {1: 1.5, 1.5: 2, 2: 3, 3: 4, 4: 5}
+        next_step = next_steps.get(current_step)
+        if next_step and next_step not in allowed_steps:
+            allowed_steps.append(next_step)
     
-    valid_inputs = ["1.5", "2", "3", "4", "5"]
+    allowed_steps.sort()
+    
+    print(f"\n可执行步骤：{', '.join(map(str, allowed_steps))} (输入 q 退出)")
     
     while True:
         try:
-            raw = input(f"请输入步骤号 (1.5, 2-5) 或输入 'q' 返回上一级 (默认 {default_choice}): ").strip()
-            if raw == "":
-                choice = default_choice
-            elif raw.lower() == 'q':
+            choice = input("请输入步骤号: ").strip()
+            
+            if choice.lower() == 'q':
                 return None
-            elif raw in valid_inputs:
-                choice = raw
-                # 重做警告
-                selected_step = 1.5 if choice == "1.5" else float(choice)
-                if selected_step <= current_step and selected_step != (current_step + 1 if current_step < 5 else current_step):
-                    print("⚠️  注意：重做单个步骤可能导致与其他步骤的信息不匹配，请小心。")
+            
+            try:
+                step_num = float(choice)
+                if step_num in allowed_steps:
+                    step_name = step_names_dict.get(step_num, f"步骤{step_num}")
+                    print(f"\n✅ 您选择了：步骤 {step_num} - {step_name}")
+                    return step_num
+                else:
+                    print(f"❌ 步骤 {step_num} 不可执行。可选步骤：{', '.join(map(str, allowed_steps))}")
+            except ValueError:
+                print(f"❌ 无效输入。请输入有效步骤号：{', '.join(map(str, allowed_steps))}")
+            
+        except KeyboardInterrupt:
+            print("\n操作已取消")
+            return None
+
+
+def prompt_step_action(current_step) -> Optional[str]:
+    """
+    分步处理模式的简化选择：继续下一步、重新生成、退出
+    返回 "next", "redo", None
+    """
+    # 定义步骤名称
+    step_names = {1: "内容生成", 1.5: "脚本分段", 2: "要点提取", 3: "图像生成", 4: "语音合成", 5: "视频合成"}
+    current_name = step_names.get(current_step, f"步骤{current_step}")
+    
+    # 如果所有步骤已完成
+    if current_step >= 5:
+        options = [f"重做--{current_name}", "退出"]
+        print(f"\n🎉 所有步骤已完成！当前：{current_name}")
+    else:
+        if current_step == 1:
+            next_step = 1.5
+        elif current_step == 1.5:
+            next_step = 2
+        else:
+            next_step = current_step + 1
+        next_name = step_names.get(next_step, f"步骤{next_step}")
+        options = [f"继续--{next_name}", f"重做--{current_name}", "退出"]
+    
+    while True:
+        try:
+            print("\n请选择操作:")
+            for i, option in enumerate(options, 1):
+                print(f"  {i}. {option}")
+            
+            choice = input(f"请输入序号 (1-{len(options)}) 或 'q' 退出 (默认 1): ").strip()
+            
+            if choice == "" or choice == "1":
+                return "next" if current_step < 5 else "redo"
+            elif choice == "2":
+                return "redo" if current_step < 5 else None
+            elif choice == "3" and current_step < 5:
+                return None
+            elif choice.lower() == 'q':
+                return None
             else:
-                print(f"无效输入，请输入 1.5, 2, 3, 4, 5 中的一个。")
-                continue
-            
-            return 1.5 if choice == "1.5" else float(choice)
-            
+                print(f"❌ 无效输入，请输入 1-{len(options)} 之间的数字")
+                
         except KeyboardInterrupt:
             print("\n操作已取消")
             return None

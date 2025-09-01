@@ -99,7 +99,7 @@ class Config:
     
     # LLM 生成参数配置
     LLM_TEMPERATURE_SCRIPT = 0.7   # 智能缩写(脚本生成)的temperature参数，范围0-1，越大越随机
-    LLM_TEMPERATURE_KEYWORDS = 0.5 # 关键词提取的temperature参数，范围0-1，越大越随机
+    LLM_TEMPERATURE_KEYWORDS = 0.5 # 要点提取的temperature参数，范围0-1，越大越随机
     
     # 字幕配置
     SUBTITLE_CONFIG = {
@@ -158,7 +158,7 @@ class Config:
         "stroke_color": "black",         # 描边颜色
         "stroke_width": 4,               # 描边宽度
         "position": ("center", "center"),  # 居中
-        "max_lines": 5,                  # 最大行数（过长自动换行）
+        "max_lines": 6,                  # 最大行数（过长自动换行）
         "max_chars_per_line": 18,        # 每行最大字符数（用于开场金句换行）
         "line_spacing": 8,               # 行间距（像素，开场金句专用）
         "letter_spacing": 0,             # 字间距（以空格数量近似控制，0 表示不加）
@@ -166,6 +166,10 @@ class Config:
     
     # 片尾参数: 片尾静帧与淡出秒数
     ENDING_FADE_SECONDS = 2.5
+    
+    # 并发生成配置
+    MAX_CONCURRENT_IMAGE_GENERATION = 3  # 图片生成最大并发数
+    MAX_CONCURRENT_VOICE_SYNTHESIS = 2   # 语音合成最大并发数
     
     # ================================================================================
     # 系统配置验证方法（一般无需修改）

@@ -193,6 +193,18 @@ def detect_project_progress(project_dir: str) -> Dict[str, Any]:
         current_step = 5
         current_step_name = "5"
 
+    # 向前推导逻辑：如果后续步骤完成，则前面步骤也应该被认为完成
+    if has_final_video:
+        has_raw = has_script = has_keywords = images_ok = audio_ok = True
+    elif audio_ok:
+        has_raw = has_script = has_keywords = images_ok = True
+    elif images_ok:
+        has_raw = has_script = has_keywords = True
+    elif has_keywords:
+        has_raw = has_script = True
+    elif has_script:
+        has_raw = True
+
     return {
         'has_raw': has_raw,
         'has_script': has_script,

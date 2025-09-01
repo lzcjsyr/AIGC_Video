@@ -82,79 +82,106 @@ def _select_entry_and_context(project_root: str, output_dir: str):
             print("👋 返回上一级")
             continue
         from core.project_scanner import detect_project_progress
-        from cli.ui_helpers import prompt_step_to_rerun
+        from cli.ui_helpers import display_project_progress_and_select_step
         
         # 检测项目进度并显示步骤选项
         progress = detect_project_progress(project_dir)
-        current_step = progress.get('current_step', 1)
         
-        # 显示步骤选项并获取用户选择
-        selected_step = prompt_step_to_rerun(current_step)
+        # 显示完整进度状态并让用户选择要执行的步骤
+        selected_step = display_project_progress_and_select_step(progress)
         if selected_step is None:
             project_dir = None
             continue
-        
-        # prompt_step_to_rerun 已经返回正确的内部步骤值
+            
         step_val = selected_step
         
         return {"entry": "existing", "project_dir": project_dir, "selected_step": step_val}
 
 
-def run_existing_project_steps(
+def run_specific_step(
+    target_step, project_output_dir, llm_server, llm_model, image_model, 
+    image_size, image_style_preset, opening_image_style, tts_server, voice, 
+    num_segments, enable_subtitles, bgm_filename
+):
+    """
+    执行指定步骤并返回结果
+    """
+    print(f"\n正在执行步骤 {target_step}...")
+    
+    if target_step == 1.5:
+        result = run_step_1_5(project_output_dir, num_segments)
+    elif target_step == 2:
+        result = run_step_2(llm_server, llm_model, project_output_dir)
+    elif target_step == 3:
+        result = run_step_3(image_model, image_size, image_style_preset, project_output_dir, opening_image_style)
+    elif target_step == 4:
+        result = run_step_4(tts_server, voice, project_output_dir)
+    elif target_step == 5:
+        result = run_step_5(project_output_dir, image_size, enable_subtitles, bgm_filename, voice)
+    else:
+        result = {"success": False, "message": "无效的步骤"}
+    
+    return result
+
+
+def run_step_by_step_loop(
     project_output_dir, initial_step, llm_server, llm_model, image_model, 
     image_size, image_style_preset, opening_image_style, tts_server, voice, 
     num_segments, enable_subtitles, bgm_filename
 ):
     """
-    执行已有项目的步骤，完成后循环询问下一步
+    执行指定步骤，然后进入交互模式让用户选择下一步操作
     """
     from core.project_scanner import detect_project_progress
-    from cli.ui_helpers import prompt_step_to_rerun
+    from cli.ui_helpers import display_project_progress_and_select_step
     
-    current_step = initial_step
+    # 首先执行指定的步骤
+    if initial_step > 0:
+        result = run_specific_step(
+            initial_step, project_output_dir, llm_server, llm_model, image_model, 
+            image_size, image_style_preset, opening_image_style, tts_server, voice, 
+            num_segments, enable_subtitles, bgm_filename
+        )
+        
+        # 显示执行结果
+        if result.get("success"):
+            print(f"✅ 步骤 {initial_step} 执行成功")
+        else:
+            print(f"❌ 步骤 {initial_step} 执行失败: {result.get('message', '未知错误')}")
+            return result
     
+    # 进入交互循环
     while True:
-        # 执行当前步骤
-        print(f"\n正在执行步骤 {current_step}...")
-        
-        if current_step == 1.5:
-            result = run_step_1_5(project_output_dir, num_segments)
-        elif current_step == 2:
-            result = run_step_2(llm_server, llm_model, project_output_dir)
-        elif current_step == 3:
-            result = run_step_3(image_model, image_size, image_style_preset, project_output_dir, opening_image_style)
-        elif current_step == 4:
-            result = run_step_4(tts_server, voice, project_output_dir)
-        elif current_step == 5:
-            result = run_step_5(project_output_dir, image_size, enable_subtitles, bgm_filename, voice)
-        else:
-            return {"success": False, "message": "无效的步骤"}
-        
-        # 检查执行结果
-        if not result.get("success", False):
-            print(f"❌ 步骤 {current_step} 执行失败: {result.get('message', '未知错误')}")
-            # 继续询问下一步，给用户机会重试或跳过
-        else:
-            print(f"✅ 步骤 {current_step} 执行成功")
-        
-        # 检测当前项目进度并显示
+        # 重新检测项目进度
         progress = detect_project_progress(project_output_dir)
-        updated_current_step = progress.get('current_step', current_step)
+        current_step = progress.get('current_step', 0)
         
-        # 显示进度
-        print(f"\n📍 当前进度：已完成到第{updated_current_step}步")
+        print(f"\n📍 当前进度：已完成到第{current_step}步")
         print("💡 如需修改生成的内容，可编辑对应文件后再继续")
         
-        # 询问下一步操作
-        if updated_current_step >= 5:
-            print("🎉 所有步骤已完成！")
-        
-        # 询问用户下一步操作
-        selected_step = prompt_step_to_rerun(updated_current_step)
+        # 让用户选择下一步操作
+        selected_step = display_project_progress_and_select_step(progress)
         if selected_step is None:
-            return result
+            return {"success": True, "message": "用户退出"}
         
-        current_step = selected_step
+        # 执行选择的步骤
+        result = run_specific_step(
+            selected_step, project_output_dir, llm_server, llm_model, image_model, 
+            image_size, image_style_preset, opening_image_style, tts_server, voice, 
+            num_segments, enable_subtitles, bgm_filename
+        )
+        
+        # 显示结果
+        if result.get("success"):
+            print(f"✅ 步骤 {selected_step} 执行成功")
+            if selected_step == 5:
+                print(f"\n🎉 视频制作完成！")
+                if result.get("final_video"):
+                    print(f"最终视频: {result.get('final_video')}")
+        else:
+            print(f"❌ 步骤 {selected_step} 执行失败: {result.get('message', '未知错误')}")
+
+
 
 
 def cli_main(
@@ -192,7 +219,7 @@ def cli_main(
         else:
             # 处理已有项目的步骤执行循环
             project_output_dir = selection["project_dir"]
-            return run_existing_project_steps(
+            return run_step_by_step_loop(
                 project_output_dir, selection["selected_step"], 
                 llm_server, llm_model, image_model, image_size, image_style_preset, 
                 opening_image_style, tts_server, voice, num_segments, 
@@ -223,8 +250,18 @@ def cli_main(
         
         print("✅ 步骤1执行成功")
         project_output_dir = result.get("project_output_dir")
-        return run_existing_project_steps(
-            project_output_dir, 1,
+        
+        # 步骤1完成后，进入分步处理循环
+        from core.project_scanner import detect_project_progress
+        
+        progress = detect_project_progress(project_output_dir)
+        current_step = progress.get('current_step', 1)
+        
+        print(f"\n📍 当前进度：已完成到第{current_step}步")
+        print("💡 如需修改生成的内容，可编辑对应文件后再继续")
+        
+        return run_step_by_step_loop(
+            project_output_dir, 0,  # 不执行初始步骤，直接进入交互模式
             llm_server, llm_model, image_model, image_size, image_style_preset, 
             opening_image_style, tts_server, voice, num_segments, 
             enable_subtitles, bgm_filename
@@ -235,8 +272,8 @@ if __name__ == "__main__":
     print("🚀 智能视频制作系统启动 (CLI)")
 
     result = cli_main(
-        target_length=2000,
-        num_segments=15,
+        target_length=800,
+        num_segments=6,
         image_size="1280x720",
         llm_model="google/gemini-2.5-pro",
         image_model="doubao-seedream-3-0-t2i-250415",

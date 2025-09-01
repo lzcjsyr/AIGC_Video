@@ -6,7 +6,7 @@ Implements an auto end-to-end flow using existing core modules.
 - cli/__main__.py: 通过VideoPipeline类执行完整的视频制作流程
 - web/backend/app.py: 在后台任务中使用VideoPipeline执行视频制作
 - 作为系统的核心编排模块，协调所有其他核心模块完成5步处理流程
-- 调用core/routers.py的文档读取、智能总结、关键词提取功能
+- 调用core/routers.py的文档读取、智能总结、要点提取功能
 - 调用core/media.py的图像生成、语音合成、视频合成功能
 - 调用core/document_processor.py导出DOCX文档
 """
@@ -90,7 +90,7 @@ def run_auto(
     script_data = step15.get("script_data")
     script_path = step15.get("script_path")
 
-    # 6) 关键词提取
+    # 6) 要点提取
     keywords_data = extract_keywords(llm_server, llm_model, script_data)
     keywords_path = f"{project_output_dir}/text/keywords.json"
     with open(keywords_path, 'w', encoding='utf-8') as f:
