@@ -714,8 +714,8 @@ class VideoComposer:
         if len(text) <= max_chars_per_line:
             return [text]
         
-        # 第一层：按句号切分
-        heavy_punctuation = ['。', '！', '？', '.', '!', '?', '，', ',']
+        # 第一层：按主要标点切分
+        heavy_punctuation = ['。', '！', '？', '.', '!', '?', '，', ',', '；', ';']
         segments = []
         current_segment = ""
         

@@ -23,7 +23,59 @@ try:
 except ImportError:
     HAS_FITZ = False
 
-from utils import logger, FileProcessingError, clean_text
+from utils import logger, FileProcessingError
+
+
+def clean_text(text: str) -> str:
+    """清理PDF/EPUB解析产生的乱码文本"""
+    if not text:
+        return ""
+    
+    # 移除HTML标签
+    text = re.sub(r'<[^>]+>', '', text)
+    
+    # 清理PDF CID字符乱码：移除 (cid:数字) 格式的字符
+    text = re.sub(r'\(cid:\d+\)', '', text)
+    
+    # 清理其他常见的PDF解析问题
+    # 移除单独的数字和字母组合（可能是字体编码残留）
+    text = re.sub(r'\b[A-Z]{1,3}\d*\b', ' ', text)
+    
+    # 更强力的乱码字符清理
+    # 移除明显的非文本字符（保留中文、英文、数字、常见标点）
+    def is_valid_char(char):
+        # 中文字符
+        if '\u4e00' <= char <= '\u9fff':
+            return True
+        # 英文字母和数字
+        if char.isalnum() and ord(char) < 128:
+            return True
+        # 常见标点符号
+        if char in '，。！？；：""''（）【】《》、—…·.,:;!?()[]{}"-\'':
+            return True
+        # 空格和换行
+        if char in ' \n\t\r':
+            return True
+        return False
+    
+    # 字符级过滤
+    filtered_chars = []
+    for char in text:
+        if is_valid_char(char):
+            filtered_chars.append(char)
+        else:
+            # 用空格替换无效字符
+            if filtered_chars and filtered_chars[-1] != ' ':
+                filtered_chars.append(' ')
+    
+    text = ''.join(filtered_chars)
+    
+    # 标准化空白字符
+    text = re.sub(r'\s+', ' ', text)
+    # 移除首尾空白
+    text = text.strip()
+    
+    return text
 
 
 class DocumentReader:

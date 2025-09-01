@@ -15,39 +15,14 @@
 """
 
 import os
-import re
 import json
 import logging
 import datetime
 from pathlib import Path
 from typing import Dict, Any, List
 
-# 日志配置移到各自的交互模块中
-# 这里只定义logger对象，由具体的CLI或Web模块来配置
+# 只定义logger对象，由具体的CLI或Web模块来配置
 logger = logging.getLogger('AIGC_Video')
-
-# 如果logger没有handlers，说明还没有被配置，使用默认配置
-if not logger.handlers:
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler('aigc_video.log', encoding='utf-8'),
-            logging.StreamHandler()
-        ]
-    )
-
-# 降低第三方库 pdfminer 的噪声日志级别
-for _name in [
-    "pdfminer",
-    "pdfminer.pdffont",
-    "pdfminer.pdfinterp",
-    "pdfminer.cmapdb",
-]:
-    try:
-        logging.getLogger(_name).setLevel(logging.ERROR)
-    except Exception:
-        pass
 
 class VideoProcessingError(Exception):
     """视频处理专用异常类"""
@@ -102,56 +77,6 @@ def safe_file_operation(operation: str, file_path: str, operation_func, *args, *
         logger.error(error_msg)
         raise FileProcessingError(error_msg)
 
-def clean_text(text: str) -> str:
-    """清理文本内容"""
-    if not text:
-        return ""
-    
-    # 移除HTML标签
-    text = re.sub(r'<[^>]+>', '', text)
-    
-    # 清理PDF CID字符乱码：移除 (cid:数字) 格式的字符
-    text = re.sub(r'\(cid:\d+\)', '', text)
-    
-    # 清理其他常见的PDF解析问题
-    # 移除单独的数字和字母组合（可能是字体编码残留）
-    text = re.sub(r'\b[A-Z]{1,3}\d*\b', ' ', text)
-    
-    # 更强力的乱码字符清理
-    # 移除明显的非文本字符（保留中文、英文、数字、常见标点）
-    def is_valid_char(char):
-        # 中文字符
-        if '\u4e00' <= char <= '\u9fff':
-            return True
-        # 英文字母和数字
-        if char.isalnum() and ord(char) < 128:
-            return True
-        # 常见标点符号
-        if char in '，。！？；：""''（）【】《》、—…·.,:;!?()[]{}"-\'':
-            return True
-        # 空格和换行
-        if char in ' \n\t\r':
-            return True
-        return False
-    
-    # 字符级过滤
-    filtered_chars = []
-    for char in text:
-        if is_valid_char(char):
-            filtered_chars.append(char)
-        else:
-            # 用空格替换无效字符
-            if filtered_chars and filtered_chars[-1] != ' ':
-                filtered_chars.append(' ')
-    
-    text = ''.join(filtered_chars)
-    
-    # 标准化空白字符
-    text = re.sub(r'\s+', ' ', text)
-    # 移除首尾空白
-    text = text.strip()
-    
-    return text
 
 def validate_file_format(file_path: str, supported_formats: List[str]) -> bool:
     """验证文件格式"""
@@ -165,69 +90,6 @@ def validate_file_format(file_path: str, supported_formats: List[str]) -> bool:
     return True
 
 
-def parse_json_robust(raw_text: str) -> Dict[str, Any]:
-    """精简的JSON解析：处理```json代码块和截断的JSON"""
-    logger.info(f"尝试解析JSON，原始文本长度: {len(raw_text)}")
-    
-    # 清理代码块标记
-    text_to_parse = raw_text.strip()
-    if text_to_parse.startswith("```json"):
-        text_to_parse = text_to_parse[7:]  # 移除```json
-    if text_to_parse.endswith("```"):
-        text_to_parse = text_to_parse[:-3]  # 移除结尾的```
-    text_to_parse = text_to_parse.strip()
-    
-    # 查找JSON边界
-    start = text_to_parse.find('{')
-    end = text_to_parse.rfind('}')
-    
-    if start == -1:
-        logger.error(f"未找到JSON起始符号 - 文本: {text_to_parse[:200]}")
-        raise ValueError("未在输出中找到 JSON 对象")
-    
-    # 如果没有找到结束符，尝试修复截断的JSON
-    if end == -1 or end < start:
-        logger.warning("检测到截断的JSON，尝试修复")
-        
-        # 简单修复：寻找最后一个完整的句子，然后补充结尾
-        remaining_text = text_to_parse[start+1:]
-        
-        # 找到最后一个句号位置
-        last_sentence_end = max(
-            remaining_text.rfind('。'),
-            remaining_text.rfind('？'),
-            remaining_text.rfind('！')
-        )
-        
-        if last_sentence_end > 0:
-            # 截取到最后完整句子
-            content_part = remaining_text[:last_sentence_end + 1]
-            # 构建基本的JSON结构 - 假设是标准的三字段结构
-            if '"title"' in content_part and '"content"' in content_part:
-                # 补充可能缺失的结尾
-                text_to_parse = text_to_parse[start:start+1+last_sentence_end+1] + '"}'
-                end = text_to_parse.rfind('}')
-            
-    if end == -1 or end < start:
-        logger.error(f"修复失败，无法找到有效JSON结构")
-        raise ValueError("未在输出中找到有效的JSON对象")
-    
-    snippet = text_to_parse[start:end+1]
-    logger.debug(f"提取的JSON: {snippet[:200]}...")
-    
-    # 尝试解析
-    try:
-        return json.loads(snippet)
-    except Exception as e:
-        logger.warning(f"标准解析失败: {e}，尝试使用json-repair")
-        try:
-            from json_repair import repair_json
-            repaired = repair_json(snippet, ensure_ascii=False)
-            return json.loads(repaired)
-        except Exception as e2:
-            logger.error(f"JSON修复失败: {e2}")
-            logger.error(f"原始snippet: {snippet}")
-            raise ValueError(f"JSON解析失败: {e2}")
 
 def save_json_file(data: Dict[str, Any], file_path: str) -> None:
     """安全地保存JSON文件"""
@@ -318,8 +180,8 @@ def validate_required_fields(data: Dict[str, Any], required_fields: List[str]) -
 # 导出主要函数和类
 __all__ = [
     'VideoProcessingError', 'APIError', 'FileProcessingError',
-    'log_function_call', 'ensure_directory_exists', 'clean_text',
-    'validate_file_format', 'parse_json_robust', 'save_json_file', 'load_json_file',
+    'log_function_call', 'ensure_directory_exists',
+    'validate_file_format', 'save_json_file', 'load_json_file',
     'calculate_duration', 'format_file_size', 'get_file_info',
     'retry_on_failure', 'validate_required_fields', 'logger',
 ]
