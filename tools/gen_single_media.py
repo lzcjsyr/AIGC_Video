@@ -5,11 +5,13 @@ import requests
 from urllib.parse import urlparse
 from io import BytesIO
 from PIL import Image, UnidentifiedImageError
-import docx
-import PyPDF2
-import pdfplumber
 
-from genai_api import text_to_image_doubao, text_to_audio_bytedance
+# Ensure project root is on sys.path when running from tools/
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from core.services import text_to_image_doubao, text_to_audio_bytedance
 
 
 def ensure_temp_dir(project_root: str) -> str:
@@ -48,82 +50,13 @@ def build_filename(prompt: str, ext: str) -> str:
 
 
 def read_document(file_path: str) -> str:
-    # 验证文件路径不为空
-    if not file_path or not file_path.strip():
-        raise ValueError("文件路径不能为空")
-    
-    file_path = file_path.strip()
-    
-    # 检查文件是否存在
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"文件不存在：{file_path}")
-    
-    # 检查是否为文件（而非目录）
-    if not os.path.isfile(file_path):
-        raise ValueError(f"路径不是有效文件：{file_path}")
-    
-    _, ext = os.path.splitext(file_path)
-    ext = ext.lower()
-    
-    if ext == '.txt':
-        return read_txt(file_path)
-    elif ext == '.pdf':
-        return read_pdf(file_path)
-    elif ext == '.docx':
-        return read_docx(file_path)
-    elif ext == '.doc':
-        raise NotImplementedError("暂不支持 .doc 格式，请转换为 .docx 格式")
-    else:
-        raise ValueError(f"不支持的文件格式：{ext}")
-
-
-def read_txt(file_path: str) -> str:
-    encodings = ['utf-8', 'gbk', 'gb2312', 'utf-16']
-    for encoding in encodings:
-        try:
-            with open(file_path, 'r', encoding=encoding) as f:
-                return f.read().strip()
-        except UnicodeDecodeError:
-            continue
-    raise RuntimeError(f"无法读取文本文件：{file_path}，尝试了多种编码格式")
-
-
-def read_pdf(file_path: str) -> str:
-    text_content = ""
-    try:
-        with pdfplumber.open(file_path) as pdf:
-            for page in pdf.pages:
-                page_text = page.extract_text()
-                if page_text:
-                    text_content += page_text + "\n"
-    except Exception:
-        try:
-            with open(file_path, 'rb') as pdf_file:
-                pdf_reader = PyPDF2.PdfReader(pdf_file)
-                for page in pdf_reader.pages:
-                    page_text = page.extract_text()
-                    if page_text:
-                        text_content += page_text + "\n"
-        except Exception as e2:
-            raise RuntimeError(f"无法读取PDF文件：{file_path}，错误：{e2}")
-    
-    if not text_content.strip():
-        raise RuntimeError(f"PDF文件没有可提取的文本内容：{file_path}")
-    return text_content.strip()
-
-
-def read_docx(file_path: str) -> str:
-    try:
-        doc = docx.Document(file_path)
-        text_content = ""
-        for paragraph in doc.paragraphs:
-            text_content += paragraph.text + "\n"
-        
-        if not text_content.strip():
-            raise RuntimeError(f"DOCX文件没有文本内容：{file_path}")
-        return text_content.strip()
-    except Exception as e:
-        raise RuntimeError(f"无法读取DOCX文件：{file_path}，错误：{e}")
+    """
+    读取文档内容，使用统一的DocumentReader
+    """
+    from core.document_reader import DocumentReader
+    reader = DocumentReader()
+    content, _ = reader.read(file_path)
+    return content
 
 
 def get_text_input() -> str:
@@ -162,6 +95,7 @@ def get_text_input() -> str:
                 continue
             
             try:
+                from core.document_reader import read_document
                 text = read_document(file_path)
                 print(f"✅ 成功读取文档，文字长度：{len(text)} 字符")
                 preview = first_n_chars(text, 100)

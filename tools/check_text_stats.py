@@ -20,6 +20,10 @@
 """
 
 import os
+import sys
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 import re
 import math
 import argparse
@@ -36,10 +40,11 @@ def _read_document_any(file_path: str, encoding: str = "utf-8") -> Tuple[str, in
     ext = os.path.splitext(file_path)[1].lower()
     if ext == ".txt":
         return _read_txt(file_path, encoding=encoding)
-    # 复用现有的 EPUB/PDF 读取逻辑
+    # 使用统一的文档读取器
     try:
-        from functions import read_document
-        return read_document(file_path)
+        from core.document_reader import DocumentReader
+        reader = DocumentReader()
+        return reader.read(file_path)
     except Exception as e:
         raise RuntimeError(f"读取文件失败: {e}")
 
@@ -142,8 +147,9 @@ def main():
     if args.interactive or not file_path:
         # 复用主项目交互式文件选择器
         try:
-            from utils import interactive_file_selector
-            project_root = os.path.dirname(__file__)
+            from cli.ui_helpers import interactive_file_selector
+            # tools/ 下脚本运行时，项目根目录为上一级
+            project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
             file_path = interactive_file_selector(input_dir=os.path.join(project_root, "input"))
         except Exception as e:
             print(f"❌ 交互式选择失败: {e}")

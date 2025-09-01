@@ -1,0 +1,201 @@
+19:53:46 [CLI] INFO - CLI日志配置完成
+19:54:04 [CLI] INFO - JSON文件已加载: /Users/dielangli/Desktop/Coding/AIGC_Video/output/《利维坦》_0830_1001/text/script.json
+19:54:05 [CLI] INFO - 开始创建字幕剪辑...
+19:54:06 [CLI] INFO - 字幕创建完成，共创建 139 个字幕剪辑
+21:32:20 [CLI] INFO - CLI日志配置完成
+22:56:15 [CLI] INFO - CLI日志配置完成
+23:00:34 [CLI] INFO - 正在扫描 /Users/dielangli/Desktop/Coding/AIGC_Video/input 文件夹...
+23:00:34 [CLI] INFO - 共找到 22 个文件 (PDF: 4, EPUB: 3, MOBI: 15)
+23:00:48 [CLI] INFO - 读取MOBI文件: Jung_ A Very Short Introduction (Very Short Introductions) - Stevens, Anthony.mobi
+23:00:48 [CLI] INFO - 开始提取MOBI文本，文件大小: 1046624 bytes
+23:00:48 [CLI] INFO - 使用mobi库提取完成，文本长度: 330255 字符
+23:00:48 [CLI] INFO - MOBI读取成功，字数: 326,247
+23:00:48 [CLI] INFO - 调用openrouter的google/gemini-2.5-pro模型生成文本，提示词长度: 326357字符
+23:00:55 [CLI] INFO - HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+23:01:59 [CLI] INFO - openrouter API调用成功，返回内容长度: 2147字符
+23:01:59 [CLI] INFO - 尝试解析JSON，原始文本长度: 2147
+23:01:59 [CLI] INFO - 原始编辑版DOCX已保存: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/text/raw.docx
+23:01:59 [CLI] INFO - 新建项目：使用提供的raw数据
+23:01:59 [CLI] INFO - 从DOCX解析原始数据成功: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/text/raw.docx
+23:02:00 [CLI] INFO - 阅读版DOCX已保存: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/text/script.docx
+23:02:00 [CLI] INFO - 步骤1.5处理完成: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/text/script.json
+23:02:00 [CLI] INFO - 调用openrouter的google/gemini-2.5-pro模型生成文本，提示词长度: 2137字符
+23:02:03 [CLI] INFO - HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+23:02:32 [CLI] INFO - openrouter API调用成功，返回内容长度: 1502字符
+23:02:32 [CLI] INFO - 尝试解析JSON，原始文本长度: 1502
+23:02:32 [CLI] INFO - 使用豆包Seedream 3.0生成图像，尺寸: 1280x720，提示词长度: 6字符
+23:02:35 [CLI] INFO - HTTP Request: POST https://ark.cn-beijing.volces.com/api/v3/images/generations "HTTP/1.1 200 OK"
+23:02:35 [CLI] INFO - 豆包图像生成成功，返回URL: https://ark-content-generation-v2-cn-beijing.tos-c...
+23:02:36 [CLI] INFO - 开场图像已保存: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/images/opening.png (风格: des01)
+23:02:36 [CLI] INFO - 使用图像风格: style05 -> 概念极简摄影，隐喻旅程、孤独与希望，单色背景，单一的突出色，巨大的留白，电影般的气氛，唤起强烈的情绪和哲学思考。核心：概念极简，用最少的元素传递深远的情绪和概念。
+23:02:36 [CLI] INFO - 使用豆包Seedream 3.0生成图像，尺寸: 1280x720，提示词长度: 101字符
+23:02:39 [CLI] INFO - HTTP Request: POST https://ark.cn-beijing.volces.com/api/v3/images/generations "HTTP/1.1 200 OK"
+23:02:39 [CLI] INFO - 豆包图像生成成功，返回URL: https://ark-content-generation-v2-cn-beijing.tos-c...
+23:02:39 [CLI] INFO - 第1段图像生成成功: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/images/segment_1.png
+23:02:39 [CLI] INFO - 使用豆包Seedream 3.0生成图像，尺寸: 1280x720，提示词长度: 105字符
+23:02:45 [CLI] INFO - HTTP Request: POST https://ark.cn-beijing.volces.com/api/v3/images/generations "HTTP/1.1 200 OK"
+23:02:45 [CLI] INFO - 豆包图像生成成功，返回URL: https://ark-content-generation-v2-cn-beijing.tos-c...
+23:02:45 [CLI] INFO - 第2段图像生成成功: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/images/segment_2.png
+23:02:45 [CLI] INFO - 使用豆包Seedream 3.0生成图像，尺寸: 1280x720，提示词长度: 107字符
+23:02:48 [CLI] INFO - HTTP Request: POST https://ark.cn-beijing.volces.com/api/v3/images/generations "HTTP/1.1 200 OK"
+23:02:48 [CLI] INFO - 豆包图像生成成功，返回URL: https://ark-content-generation-v2-cn-beijing.tos-c...
+23:02:48 [CLI] INFO - 第3段图像生成成功: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/images/segment_3.png
+23:02:48 [CLI] INFO - 使用豆包Seedream 3.0生成图像，尺寸: 1280x720，提示词长度: 104字符
+23:02:51 [CLI] INFO - HTTP Request: POST https://ark.cn-beijing.volces.com/api/v3/images/generations "HTTP/1.1 200 OK"
+23:02:51 [CLI] INFO - 豆包图像生成成功，返回URL: https://ark-content-generation-v2-cn-beijing.tos-c...
+23:02:52 [CLI] INFO - 第4段图像生成成功: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/images/segment_4.png
+23:02:52 [CLI] INFO - 使用豆包Seedream 3.0生成图像，尺寸: 1280x720，提示词长度: 107字符
+23:02:57 [CLI] INFO - HTTP Request: POST https://ark.cn-beijing.volces.com/api/v3/images/generations "HTTP/1.1 200 OK"
+23:02:57 [CLI] INFO - 豆包图像生成成功，返回URL: https://ark-content-generation-v2-cn-beijing.tos-c...
+23:02:58 [CLI] INFO - 第5段图像生成成功: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/images/segment_5.png
+23:02:58 [CLI] INFO - 使用豆包Seedream 3.0生成图像，尺寸: 1280x720，提示词长度: 108字符
+23:03:01 [CLI] INFO - HTTP Request: POST https://ark.cn-beijing.volces.com/api/v3/images/generations "HTTP/1.1 200 OK"
+23:03:01 [CLI] INFO - 豆包图像生成成功，返回URL: https://ark-content-generation-v2-cn-beijing.tos-c...
+23:03:02 [CLI] INFO - 第6段图像生成成功: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/images/segment_6.png
+23:03:02 [CLI] INFO - 使用豆包Seedream 3.0生成图像，尺寸: 1280x720，提示词长度: 110字符
+23:03:05 [CLI] INFO - HTTP Request: POST https://ark.cn-beijing.volces.com/api/v3/images/generations "HTTP/1.1 200 OK"
+23:03:05 [CLI] INFO - 豆包图像生成成功，返回URL: https://ark-content-generation-v2-cn-beijing.tos-c...
+23:03:05 [CLI] INFO - 第7段图像生成成功: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/images/segment_7.png
+23:03:05 [CLI] INFO - 使用豆包Seedream 3.0生成图像，尺寸: 1280x720，提示词长度: 104字符
+23:03:10 [CLI] INFO - HTTP Request: POST https://ark.cn-beijing.volces.com/api/v3/images/generations "HTTP/1.1 200 OK"
+23:03:10 [CLI] INFO - 豆包图像生成成功，返回URL: https://ark-content-generation-v2-cn-beijing.tos-c...
+23:03:10 [CLI] INFO - 第8段图像生成成功: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/images/segment_8.png
+23:03:10 [CLI] INFO - 使用豆包Seedream 3.0生成图像，尺寸: 1280x720，提示词长度: 110字符
+23:03:16 [CLI] INFO - HTTP Request: POST https://ark.cn-beijing.volces.com/api/v3/images/generations "HTTP/1.1 200 OK"
+23:03:16 [CLI] INFO - 豆包图像生成成功，返回URL: https://ark-content-generation-v2-cn-beijing.tos-c...
+23:03:16 [CLI] INFO - 第9段图像生成成功: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/images/segment_9.png
+23:03:16 [CLI] INFO - 使用豆包Seedream 3.0生成图像，尺寸: 1280x720，提示词长度: 112字符
+23:03:22 [CLI] INFO - HTTP Request: POST https://ark.cn-beijing.volces.com/api/v3/images/generations "HTTP/1.1 200 OK"
+23:03:22 [CLI] INFO - 豆包图像生成成功，返回URL: https://ark-content-generation-v2-cn-beijing.tos-c...
+23:03:22 [CLI] INFO - 第10段图像生成成功: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/images/segment_10.png
+23:03:22 [CLI] INFO - 使用豆包Seedream 3.0生成图像，尺寸: 1280x720，提示词长度: 110字符
+23:03:25 [CLI] INFO - HTTP Request: POST https://ark.cn-beijing.volces.com/api/v3/images/generations "HTTP/1.1 200 OK"
+23:03:25 [CLI] INFO - 豆包图像生成成功，返回URL: https://ark-content-generation-v2-cn-beijing.tos-c...
+23:03:25 [CLI] INFO - 第11段图像生成成功: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/images/segment_11.png
+23:03:25 [CLI] INFO - 使用豆包Seedream 3.0生成图像，尺寸: 1280x720，提示词长度: 114字符
+23:03:28 [CLI] INFO - HTTP Request: POST https://ark.cn-beijing.volces.com/api/v3/images/generations "HTTP/1.1 200 OK"
+23:03:28 [CLI] INFO - 豆包图像生成成功，返回URL: https://ark-content-generation-v2-cn-beijing.tos-c...
+23:03:28 [CLI] INFO - 第12段图像生成成功: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/images/segment_12.png
+23:03:28 [CLI] INFO - 使用豆包Seedream 3.0生成图像，尺寸: 1280x720，提示词长度: 111字符
+23:03:31 [CLI] INFO - HTTP Request: POST https://ark.cn-beijing.volces.com/api/v3/images/generations "HTTP/1.1 200 OK"
+23:03:31 [CLI] INFO - 豆包图像生成成功，返回URL: https://ark-content-generation-v2-cn-beijing.tos-c...
+23:03:31 [CLI] INFO - 第13段图像生成成功: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/images/segment_13.png
+23:03:31 [CLI] INFO - 使用豆包Seedream 3.0生成图像，尺寸: 1280x720，提示词长度: 114字符
+23:03:34 [CLI] INFO - HTTP Request: POST https://ark.cn-beijing.volces.com/api/v3/images/generations "HTTP/1.1 200 OK"
+23:03:34 [CLI] INFO - 豆包图像生成成功，返回URL: https://ark-content-generation-v2-cn-beijing.tos-c...
+23:03:34 [CLI] INFO - 第14段图像生成成功: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/images/segment_14.png
+23:03:34 [CLI] INFO - 使用豆包Seedream 3.0生成图像，尺寸: 1280x720，提示词长度: 112字符
+23:03:38 [CLI] INFO - HTTP Request: POST https://ark.cn-beijing.volces.com/api/v3/images/generations "HTTP/1.1 200 OK"
+23:03:38 [CLI] INFO - 豆包图像生成成功，返回URL: https://ark-content-generation-v2-cn-beijing.tos-c...
+23:03:39 [CLI] INFO - 第15段图像生成成功: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/images/segment_15.png
+23:03:39 [CLI] INFO - 使用字节语音合成大模型WebSocket，音色: zh_male_yuanboxiaoshu_moon_bigtts，文本长度: 141字符
+23:03:39 [CLI] INFO - 连接到 wss://openspeech.bytedance.com/api/v1/tts/ws_binary
+23:03:39 [CLI] INFO - WebSocket连接成功，Logid: unknown
+23:03:44 [CLI] INFO - 语音合成成功，音频大小: 1503196 bytes，已保存: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/voice/voice_1.wav
+23:03:44 [CLI] INFO - WebSocket连接已关闭
+23:03:44 [CLI] INFO - 使用字节语音合成大模型WebSocket，音色: zh_male_yuanboxiaoshu_moon_bigtts，文本长度: 154字符
+23:03:44 [CLI] INFO - 连接到 wss://openspeech.bytedance.com/api/v1/tts/ws_binary
+23:03:44 [CLI] INFO - WebSocket连接成功，Logid: unknown
+23:03:48 [CLI] INFO - 语音合成成功，音频大小: 1597414 bytes，已保存: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/voice/voice_2.wav
+23:03:48 [CLI] INFO - WebSocket连接已关闭
+23:03:48 [CLI] INFO - 使用字节语音合成大模型WebSocket，音色: zh_male_yuanboxiaoshu_moon_bigtts，文本长度: 106字符
+23:03:48 [CLI] INFO - 连接到 wss://openspeech.bytedance.com/api/v1/tts/ws_binary
+23:03:49 [CLI] INFO - WebSocket连接成功，Logid: unknown
+23:03:52 [CLI] INFO - 语音合成成功，音频大小: 1076272 bytes，已保存: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/voice/voice_3.wav
+23:03:52 [CLI] INFO - WebSocket连接已关闭
+23:03:52 [CLI] INFO - 使用字节语音合成大模型WebSocket，音色: zh_male_yuanboxiaoshu_moon_bigtts，文本长度: 131字符
+23:03:52 [CLI] INFO - 连接到 wss://openspeech.bytedance.com/api/v1/tts/ws_binary
+23:03:53 [CLI] INFO - WebSocket连接成功，Logid: unknown
+23:03:57 [CLI] INFO - 语音合成成功，音频大小: 1367820 bytes，已保存: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/voice/voice_4.wav
+23:03:58 [CLI] INFO - WebSocket连接已关闭
+23:03:58 [CLI] INFO - 使用字节语音合成大模型WebSocket，音色: zh_male_yuanboxiaoshu_moon_bigtts，文本长度: 131字符
+23:03:58 [CLI] INFO - 连接到 wss://openspeech.bytedance.com/api/v1/tts/ws_binary
+23:03:58 [CLI] INFO - WebSocket连接成功，Logid: unknown
+23:04:02 [CLI] INFO - 语音合成成功，音频大小: 1359718 bytes，已保存: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/voice/voice_5.wav
+23:04:02 [CLI] INFO - WebSocket连接已关闭
+23:04:02 [CLI] INFO - 使用字节语音合成大模型WebSocket，音色: zh_male_yuanboxiaoshu_moon_bigtts，文本长度: 154字符
+23:04:02 [CLI] INFO - 连接到 wss://openspeech.bytedance.com/api/v1/tts/ws_binary
+23:04:02 [CLI] INFO - WebSocket连接成功，Logid: unknown
+23:04:07 [CLI] INFO - 语音合成成功，音频大小: 1553500 bytes，已保存: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/voice/voice_6.wav
+23:04:07 [CLI] INFO - WebSocket连接已关闭
+23:04:07 [CLI] INFO - 使用字节语音合成大模型WebSocket，音色: zh_male_yuanboxiaoshu_moon_bigtts，文本长度: 114字符
+23:04:07 [CLI] INFO - 连接到 wss://openspeech.bytedance.com/api/v1/tts/ws_binary
+23:04:07 [CLI] INFO - WebSocket连接成功，Logid: unknown
+23:04:11 [CLI] INFO - 语音合成成功，音频大小: 1203154 bytes，已保存: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/voice/voice_7.wav
+23:04:12 [CLI] INFO - WebSocket连接已关闭
+23:04:12 [CLI] INFO - 使用字节语音合成大模型WebSocket，音色: zh_male_yuanboxiaoshu_moon_bigtts，文本长度: 129字符
+23:04:12 [CLI] INFO - 连接到 wss://openspeech.bytedance.com/api/v1/tts/ws_binary
+23:04:12 [CLI] INFO - WebSocket连接成功，Logid: unknown
+23:04:17 [CLI] INFO - 语音合成成功，音频大小: 1367286 bytes，已保存: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/voice/voice_8.wav
+23:04:17 [CLI] INFO - WebSocket连接已关闭
+23:04:17 [CLI] INFO - 使用字节语音合成大模型WebSocket，音色: zh_male_yuanboxiaoshu_moon_bigtts，文本长度: 140字符
+23:04:17 [CLI] INFO - 连接到 wss://openspeech.bytedance.com/api/v1/tts/ws_binary
+23:04:17 [CLI] INFO - WebSocket连接成功，Logid: unknown
+23:04:21 [CLI] INFO - 语音合成成功，音频大小: 1297080 bytes，已保存: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/voice/voice_9.wav
+23:04:21 [CLI] INFO - WebSocket连接已关闭
+23:04:21 [CLI] INFO - 使用字节语音合成大模型WebSocket，音色: zh_male_yuanboxiaoshu_moon_bigtts，文本长度: 170字符
+23:04:21 [CLI] INFO - 连接到 wss://openspeech.bytedance.com/api/v1/tts/ws_binary
+23:04:21 [CLI] INFO - WebSocket连接成功，Logid: unknown
+23:04:26 [CLI] INFO - 语音合成成功，音频大小: 1682612 bytes，已保存: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/voice/voice_10.wav
+23:04:26 [CLI] INFO - WebSocket连接已关闭
+23:04:26 [CLI] INFO - 使用字节语音合成大模型WebSocket，音色: zh_male_yuanboxiaoshu_moon_bigtts，文本长度: 101字符
+23:04:26 [CLI] INFO - 连接到 wss://openspeech.bytedance.com/api/v1/tts/ws_binary
+23:04:26 [CLI] INFO - WebSocket连接成功，Logid: unknown
+23:04:30 [CLI] INFO - 语音合成成功，音频大小: 976104 bytes，已保存: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/voice/voice_11.wav
+23:04:30 [CLI] INFO - WebSocket连接已关闭
+23:04:30 [CLI] INFO - 使用字节语音合成大模型WebSocket，音色: zh_male_yuanboxiaoshu_moon_bigtts，文本长度: 144字符
+23:04:30 [CLI] INFO - 连接到 wss://openspeech.bytedance.com/api/v1/tts/ws_binary
+23:04:30 [CLI] INFO - WebSocket连接成功，Logid: unknown
+23:04:34 [CLI] INFO - 语音合成成功，音频大小: 1366660 bytes，已保存: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/voice/voice_12.wav
+23:04:34 [CLI] INFO - WebSocket连接已关闭
+23:04:34 [CLI] INFO - 使用字节语音合成大模型WebSocket，音色: zh_male_yuanboxiaoshu_moon_bigtts，文本长度: 162字符
+23:04:34 [CLI] INFO - 连接到 wss://openspeech.bytedance.com/api/v1/tts/ws_binary
+23:04:34 [CLI] INFO - WebSocket连接成功，Logid: unknown
+23:04:39 [CLI] INFO - 语音合成成功，音频大小: 1712512 bytes，已保存: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/voice/voice_13.wav
+23:04:39 [CLI] INFO - WebSocket连接已关闭
+23:04:39 [CLI] INFO - 使用字节语音合成大模型WebSocket，音色: zh_male_yuanboxiaoshu_moon_bigtts，文本长度: 99字符
+23:04:39 [CLI] INFO - 连接到 wss://openspeech.bytedance.com/api/v1/tts/ws_binary
+23:04:39 [CLI] INFO - WebSocket连接成功，Logid: unknown
+23:04:43 [CLI] INFO - 语音合成成功，音频大小: 956782 bytes，已保存: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/voice/voice_14.wav
+23:04:43 [CLI] INFO - WebSocket连接已关闭
+23:04:43 [CLI] INFO - 使用字节语音合成大模型WebSocket，音色: zh_male_yuanboxiaoshu_moon_bigtts，文本长度: 138字符
+23:04:43 [CLI] INFO - 连接到 wss://openspeech.bytedance.com/api/v1/tts/ws_binary
+23:04:43 [CLI] INFO - WebSocket连接成功，Logid: unknown
+23:04:48 [CLI] INFO - 语音合成成功，音频大小: 1445500 bytes，已保存: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/voice/voice_15.wav
+23:04:48 [CLI] INFO - WebSocket连接已关闭
+23:04:48 [CLI] INFO - 使用字节语音合成大模型WebSocket，音色: zh_male_yuanboxiaoshu_moon_bigtts，文本长度: 49字符
+23:04:48 [CLI] INFO - 连接到 wss://openspeech.bytedance.com/api/v1/tts/ws_binary
+23:04:48 [CLI] INFO - WebSocket连接成功，Logid: unknown
+23:04:51 [CLI] INFO - 语音合成成功，音频大小: 502878 bytes，已保存: /Users/dielangli/Desktop/Coding/AIGC_Video/output/荣格：一部心灵的地图_0831_2301/voice/opening.wav
+23:04:51 [CLI] INFO - WebSocket连接已关闭
+23:04:52 [CLI] INFO - 开始创建字幕剪辑...
+23:04:53 [CLI] INFO - 字幕创建完成，共创建 170 个字幕剪辑
+23:27:15 [CLI] INFO - CLI日志配置完成
+23:28:18 [CLI] INFO - CLI日志配置完成
+23:31:17 [CLI] INFO - CLI日志配置完成
+23:31:21 [CLI] INFO - 正在扫描 /Users/dielangli/Desktop/Coding/AIGC_Video/input 文件夹...
+23:31:21 [CLI] INFO - 共找到 22 个文件 (PDF: 4, EPUB: 3, MOBI: 15)
+23:32:18 [CLI] INFO - CLI日志配置完成
+23:32:22 [CLI] INFO - 正在扫描 /Users/dielangli/Desktop/Coding/AIGC_Video/input 文件夹...
+23:32:22 [CLI] INFO - 共找到 22 个文件 (PDF: 4, EPUB: 3, MOBI: 15)
+23:32:27 [CLI] INFO - 读取MOBI文件: Psychology_ A Very Short Introduction (Very Short Introductions) - Butler, Gillian & McManus, Freda.mobi
+23:32:27 [CLI] INFO - 开始提取MOBI文本，文件大小: 1013036 bytes
+23:32:28 [CLI] INFO - 使用mobi库提取完成，文本长度: 280218 字符
+23:32:28 [CLI] INFO - MOBI读取成功，字数: 277,425
+23:32:28 [CLI] INFO - 调用openrouter的google/gemini-2.5-pro模型生成文本，提示词长度: 277535字符
+23:32:34 [CLI] INFO - HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+23:33:12 [CLI] INFO - openrouter API调用成功，返回内容长度: 1984字符
+23:33:12 [CLI] INFO - 尝试解析JSON，原始文本长度: 1984
+23:33:12 [CLI] WARNING - 检测到截断的JSON，尝试修复
+23:33:12 [CLI] INFO - 原始编辑版DOCX已保存: /Users/dielangli/Desktop/Coding/AIGC_Video/output/《牛津通识读本：心理学》_0831_2333/text/raw.docx
+23:33:12 [CLI] ERROR - 步骤1.5处理失败: expected str, bytes or os.PathLike object, not NoneType
+23:35:23 [CLI] INFO - CLI日志配置完成
+23:35:35 [CLI] INFO - JSON文件已加载: /Users/dielangli/Desktop/Coding/AIGC_Video/output/《牛津通识读本：心理学》_0831_2333/text/raw.json
+23:35:35 [CLI] INFO - 从DOCX解析原始数据成功: /Users/dielangli/Desktop/Coding/AIGC_Video/output/《牛津通识读本：心理学》_0831_2333/text/raw.docx
+23:35:35 [CLI] INFO - 阅读版DOCX已保存: /Users/dielangli/Desktop/Coding/AIGC_Video/output/《牛津通识读本：心理学》_0831_2333/text/script.docx
+23:35:35 [CLI] INFO - 步骤1.5处理完成: /Users/dielangli/Desktop/Coding/AIGC_Video/output/《牛津通识读本：心理学》_0831_2333/text/script.json
+23:36:31 [CLI] INFO - JSON文件已加载: /Users/dielangli/Desktop/Coding/AIGC_Video/output/《牛津通识读本：心理学》_0831_2333/text/script.json
+23:36:31 [CLI] INFO - 调用openrouter的google/gemini-2.5-pro模型生成文本，提示词长度: 1956字符
+23:36:34 [CLI] INFO - HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+23:36:59 [CLI] INFO - openrouter API调用成功，返回内容长度: 1484字符
+23:36:59 [CLI] INFO - 尝试解析JSON，原始文本长度: 1484

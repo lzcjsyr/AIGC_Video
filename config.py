@@ -158,7 +158,7 @@ class Config:
         "stroke_color": "black",         # 描边颜色
         "stroke_width": 4,               # 描边宽度
         "position": ("center", "center"),  # 居中
-        "max_lines": 4,                  # 最大行数（过长自动换行）
+        "max_lines": 5,                  # 最大行数（过长自动换行）
         "max_chars_per_line": 18,        # 每行最大字符数（用于开场金句换行）
         "line_spacing": 8,               # 行间距（像素，开场金句专用）
         "letter_spacing": 0,             # 字间距（以空格数量近似控制，0 表示不加）
