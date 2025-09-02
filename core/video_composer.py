@@ -21,8 +21,7 @@ from moviepy import (
 )
 
 from config import config
-from utils import logger, FileProcessingError
-from prompts import IMAGE_STYLE_PRESETS as IMAGE_STYLE_PRESETS_PROMPTS
+from utils import logger, FileProcessingError, VideoProcessingError, handle_video_operation
 
 
 class VideoComposer:
@@ -103,6 +102,7 @@ class VideoComposer:
         except Exception as e:
             raise ValueError(f"视频合成错误: {e}")
     
+    @handle_video_operation("开场片段生成", critical=False, fallback_value=0.0)
     def _create_opening_segment(self, opening_image_path: Optional[str], 
                               opening_golden_quote: Optional[str],
                               opening_narration_audio_path: Optional[str], 
@@ -112,40 +112,29 @@ class VideoComposer:
         opening_voice_clip = None
         
         # 计算开场时长
-        try:
-            if opening_narration_audio_path and os.path.exists(opening_narration_audio_path):
-                opening_voice_clip = AudioFileClip(opening_narration_audio_path)
-                hold_after = float(getattr(config, "OPENING_HOLD_AFTER_NARRATION_SECONDS", 2.0))
-                opening_seconds = float(opening_voice_clip.duration) + max(0.0, hold_after)
-        except Exception as e:
-            logger.warning(f"开场口播音频加载失败: {e}，将退回固定时长开场")
-            opening_voice_clip = None
+        if opening_narration_audio_path and os.path.exists(opening_narration_audio_path):
+            opening_voice_clip = AudioFileClip(opening_narration_audio_path)
+            hold_after = float(getattr(config, "OPENING_HOLD_AFTER_NARRATION_SECONDS", 2.0))
+            opening_seconds = float(opening_voice_clip.duration) + max(0.0, hold_after)
         
         if opening_image_path and os.path.exists(opening_image_path) and opening_seconds > 1e-3:
-            try:
-                print("正在创建开场片段…")
-                opening_base = ImageClip(opening_image_path).with_duration(opening_seconds)
-                
-                # 添加开场金句
-                if opening_golden_quote and opening_golden_quote.strip():
-                    opening_clip = self._add_opening_quote(opening_base, opening_golden_quote, opening_seconds)
-                else:
-                    opening_clip = opening_base
-                
-                # 绑定开场音频
-                if opening_voice_clip is not None:
-                    try:
-                        opening_clip = opening_clip.with_audio(opening_voice_clip)
-                    except Exception as e:
-                        logger.warning(f"为开场片段绑定音频失败: {e}")
-                
-                # 添加渐隐效果
-                opening_clip = self._add_opening_fade_effect(opening_clip, opening_voice_clip, opening_seconds)
-                
-                video_clips.append(opening_clip)
-                
-            except Exception as e:
-                logger.warning(f"开场片段生成失败: {e}，将跳过开场")
+            print("正在创建开场片段…")
+            opening_base = ImageClip(opening_image_path).with_duration(opening_seconds)
+            
+            # 添加开场金句
+            if opening_golden_quote and opening_golden_quote.strip():
+                opening_clip = self._add_opening_quote(opening_base, opening_golden_quote, opening_seconds)
+            else:
+                opening_clip = opening_base
+            
+            # 绑定开场音频
+            if opening_voice_clip is not None:
+                opening_clip = opening_clip.with_audio(opening_voice_clip)
+            
+            # 添加渐隐效果
+            opening_clip = self._add_opening_fade_effect(opening_clip, opening_voice_clip, opening_seconds)
+            
+            video_clips.append(opening_clip)
         
         return opening_seconds
     
@@ -168,21 +157,33 @@ class VideoComposer:
             max_chars = int(quote_style.get("max_chars_per_line", 18))
             max_q_lines = int(quote_style.get("max_lines", 4))
             candidate_lines = self.split_text_for_subtitle(opening_golden_quote, max_chars, max_q_lines)
-            wrapped_quote = "\n".join(candidate_lines[:max_q_lines]) if candidate_lines else opening_golden_quote
+            lines = candidate_lines[:max_q_lines] if candidate_lines else [opening_golden_quote]
         except Exception:
-            wrapped_quote = opening_golden_quote
+            lines = [opening_golden_quote]
         
-        # 创建文字剪辑
-        text_clip = TextClip(
-            text=wrapped_quote,
-            font_size=font_size,
-            color=text_color,
-            font=resolved_font or config.SUBTITLE_CONFIG.get("font_family"),
-            stroke_color=stroke_color,
-            stroke_width=stroke_width
-        ).with_position(pos).with_duration(opening_seconds)
+        # 创建多行文字剪辑实现行间距控制
+        line_spacing = int(quote_style.get("line_spacing", 8))
+        text_clips = []
         
-        return CompositeVideoClip([opening_base, text_clip])
+        # 计算总高度以实现居中（绝对像素基准）
+        total_height = len(lines) * font_size + (len(lines) - 1) * line_spacing
+        video_height = opening_base.h
+        top_y = max(0, (int(video_height) - int(total_height)) // 2)
+        
+        for i, line in enumerate(lines):
+            if line.strip():
+                y_abs = int(top_y + i * (font_size + line_spacing))
+                line_clip = TextClip(
+                    text=line,
+                    font_size=font_size,
+                    color=text_color,
+                    font=resolved_font or config.SUBTITLE_CONFIG.get("font_family"),
+                    stroke_color=stroke_color,
+                    stroke_width=stroke_width
+                ).with_start(0).with_duration(opening_seconds).with_position(("center", y_abs))
+                text_clips.append(line_clip)
+        
+        return CompositeVideoClip([opening_base] + text_clips)
     
     def _add_opening_fade_effect(self, opening_clip, opening_voice_clip, opening_seconds: float):
         """添加开场渐隐效果"""
@@ -232,26 +233,24 @@ class VideoComposer:
             video_clips.append(video_clip)
             audio_clips.append(audio_clip)
     
+    @handle_video_operation("字幕添加", critical=False, fallback_value=lambda self, final_video, *args: final_video)
     def _add_subtitles(self, final_video, script_data: Dict[str, Any], enable_subtitles: bool, 
                       audio_clips: List, opening_seconds: float):
         """添加字幕"""
         effective_subtitles = bool(enable_subtitles) and bool(getattr(config, "SUBTITLE_CONFIG", {}).get("enabled", True))
         if effective_subtitles and script_data:
             print("正在添加字幕...")
-            try:
-                subtitle_config = config.SUBTITLE_CONFIG.copy()
-                subtitle_config["video_size"] = final_video.size
-                subtitle_config["segment_durations"] = [ac.duration for ac in audio_clips]
-                subtitle_config["offset_seconds"] = opening_seconds
-                subtitle_clips = self.create_subtitle_clips(script_data, subtitle_config)
-                
-                if subtitle_clips:
-                    final_video = CompositeVideoClip([final_video] + subtitle_clips)
-                    print(f"已添加 {len(subtitle_clips)} 个字幕剪辑")
-                else:
-                    print("未生成任何字幕剪辑")
-            except Exception as e:
-                logger.warning(f"添加字幕失败: {str(e)}，继续生成无字幕视频")
+            subtitle_config = config.SUBTITLE_CONFIG.copy()
+            subtitle_config["video_size"] = final_video.size
+            subtitle_config["segment_durations"] = [ac.duration for ac in audio_clips]
+            subtitle_config["offset_seconds"] = opening_seconds
+            subtitle_clips = self.create_subtitle_clips(script_data, subtitle_config)
+            
+            if subtitle_clips:
+                final_video = CompositeVideoClip([final_video] + subtitle_clips)
+                print(f"已添加 {len(subtitle_clips)} 个字幕剪辑")
+            else:
+                print("未生成任何字幕剪辑")
         
         return final_video
     
@@ -261,15 +260,7 @@ class VideoComposer:
             if final_video.audio is not None and narration_volume is not None:
                 narration_audio = final_video.audio
                 if isinstance(narration_volume, (int, float)) and abs(float(narration_volume) - 1.0) > 1e-9:
-                    try:
-                        # MoviePy 1.x
-                        narration_audio = narration_audio.volumex(float(narration_volume))
-                    except Exception:
-                        try:
-                            # MoviePy 2.x unified transform
-                            narration_audio = narration_audio.transform(lambda gf, t: float(narration_volume) * gf(t), keep_duration=True)
-                        except Exception:
-                            pass
+                    narration_audio = narration_audio.with_volume_scaled(float(narration_volume))
                     final_video = final_video.with_audio(narration_audio)
                     print(f"🔊 口播音量调整为: {float(narration_volume)}")
         except Exception as e:
@@ -277,46 +268,36 @@ class VideoComposer:
         
         return final_video
     
+    @handle_video_operation("视觉效果添加", critical=False, fallback_value=lambda self, final_video, *args: final_video)
     def _add_visual_effects(self, final_video, image_paths: List[str]):
         """添加视觉效果（开场渐显和片尾渐隐）"""
         # 开场渐显
-        try:
-            fade_in_seconds = float(getattr(config, "OPENING_FADEIN_SECONDS", 0.0))
-            if fade_in_seconds > 1e-3:
-                def _fade_in_frame(gf, t):
-                    try:
-                        alpha = min(1.0, max(0.0, float(t) / float(fade_in_seconds)))
-                    except Exception:
-                        alpha = 1.0
-                    return alpha * gf(t)
-                
-                final_video = final_video.transform(_fade_in_frame, keep_duration=True)
-                print(f"🎬 已添加开场渐显 {fade_in_seconds}s")
-        except Exception as e:
-            logger.warning(f"开场渐显效果添加失败: {e}")
+        fade_in_seconds = float(getattr(config, "OPENING_FADEIN_SECONDS", 0.0))
+        if fade_in_seconds > 1e-3:
+            def _fade_in_frame(gf, t):
+                alpha = min(1.0, max(0.0, float(t) / float(fade_in_seconds)))
+                return alpha * gf(t)
+            
+            final_video = final_video.transform(_fade_in_frame, keep_duration=True)
+            print(f"🎬 已添加开场渐显 {fade_in_seconds}s")
         
         # 片尾渐隐
-        try:
-            tail_seconds = float(getattr(config, "ENDING_FADE_SECONDS", 2.5))
-            if isinstance(image_paths, list) and len(image_paths) > 0 and tail_seconds > 1e-3:
-                last_image_path = image_paths[-1]
-                tail_clip = ImageClip(last_image_path).with_duration(tail_seconds)
-                
-                def _fade_frame(gf, t):
-                    try:
-                        alpha = max(0.0, 1.0 - float(t) / float(tail_seconds))
-                    except Exception:
-                        alpha = 0.0
-                    return alpha * gf(t)
-                
-                tail_clip = tail_clip.transform(_fade_frame, keep_duration=True)
-                final_video = concatenate_videoclips([final_video, tail_clip], method="compose")
-                print(f"🎬 已添加片尾静帧 {tail_seconds}s 并渐隐")
-        except Exception as e:
-            logger.warning(f"片尾静帧添加失败: {e}")
+        tail_seconds = float(getattr(config, "ENDING_FADE_SECONDS", 2.5))
+        if isinstance(image_paths, list) and len(image_paths) > 0 and tail_seconds > 1e-3:
+            last_image_path = image_paths[-1]
+            tail_clip = ImageClip(last_image_path).with_duration(tail_seconds)
+            
+            def _fade_frame(gf, t):
+                alpha = max(0.0, 1.0 - float(t) / float(tail_seconds))
+                return alpha * gf(t)
+            
+            tail_clip = tail_clip.transform(_fade_frame, keep_duration=True)
+            final_video = concatenate_videoclips([final_video, tail_clip], method="compose")
+            print(f"🎬 已添加片尾静帧 {tail_seconds}s 并渐隐")
         
         return final_video
     
+    @handle_video_operation("背景音乐添加", critical=False, fallback_value=lambda self, final_video, *args: final_video)
     def _add_background_music(self, final_video, bgm_audio_path: Optional[str], bgm_volume: float):
         """添加背景音乐"""
         if not bgm_audio_path or not os.path.exists(bgm_audio_path):
@@ -325,44 +306,33 @@ class VideoComposer:
             else:
                 print("ℹ️ 未指定背景音乐文件")
             return final_video
+            
+        print(f"🎵 开始处理背景音乐: {bgm_audio_path}")
+        bgm_clip = AudioFileClip(bgm_audio_path)
+        print(f"🎵 BGM加载成功，时长: {bgm_clip.duration:.2f}秒")
         
-        try:
-            print(f"🎵 开始处理背景音乐: {bgm_audio_path}")
-            bgm_clip = AudioFileClip(bgm_audio_path)
-            print(f"🎵 BGM加载成功，时长: {bgm_clip.duration:.2f}秒")
-            
-            # 调整BGM音量
-            if isinstance(bgm_volume, (int, float)) and abs(float(bgm_volume) - 1.0) > 1e-9:
-                try:
-                    bgm_clip = bgm_clip.volumex(float(bgm_volume))
-                except Exception:
-                    try:
-                        bgm_clip = bgm_clip.transform(lambda gf, t: float(bgm_volume) * gf(t), keep_duration=True)
-                    except Exception:
-                        pass
-                print(f"🎵 BGM音量调整为: {float(bgm_volume)}")
-            
-            # 调整BGM长度
-            bgm_clip = self._adjust_bgm_duration(bgm_clip, final_video.duration)
-            
-            if bgm_clip is not None:
-                # 应用音频效果
-                bgm_clip = self._apply_audio_effects(bgm_clip, final_video)
-                
-                # 合成音频
-                if final_video.audio is not None:
-                    mixed_audio = CompositeAudioClip([final_video.audio, bgm_clip])
-                    print("🎵 BGM与口播音频合成完成")
-                else:
-                    mixed_audio = CompositeAudioClip([bgm_clip])
-                    print("🎵 仅添加BGM音频（无口播音频）")
-                
-                final_video = final_video.with_audio(mixed_audio)
-                print("🎵 背景音乐添加成功！")
+        # 调整BGM音量
+        if isinstance(bgm_volume, (int, float)) and abs(float(bgm_volume) - 1.0) > 1e-9:
+            bgm_clip = bgm_clip.with_volume_scaled(float(bgm_volume))
+            print(f"🎵 BGM音量调整为: {float(bgm_volume)}")
         
-        except Exception as e:
-            print(f"❌ 背景音乐处理异常: {str(e)}")
-            logger.warning(f"背景音乐处理失败: {str(e)}，将继续生成无背景音乐的视频")
+        # 调整BGM长度
+        bgm_clip = self._adjust_bgm_duration(bgm_clip, final_video.duration)
+        
+        if bgm_clip is not None:
+            # 应用音频效果
+            bgm_clip = self._apply_audio_effects(bgm_clip, final_video)
+            
+            # 合成音频
+            if final_video.audio is not None:
+                mixed_audio = CompositeAudioClip([final_video.audio, bgm_clip])
+                print("🎵 BGM与口播音频合成完成")
+            else:
+                mixed_audio = CompositeAudioClip([bgm_clip])
+                print("🎵 仅添加BGM音频（无口播音频）")
+            
+            final_video = final_video.with_audio(mixed_audio)
+            print("🎵 背景音乐添加成功！")
         
         return final_video
     
@@ -384,19 +354,19 @@ class VideoComposer:
                     return bgm_clip.with_duration(target_duration)
                 except Exception:
                     # 兜底：子片段裁剪
-                    return bgm_clip.subclip(0, target_duration)
+                    return bgm_clip.subclipped(0, target_duration)
 
             # 手动平铺：重复拼接 + 末段精确裁剪
             clips = []
             accumulated = 0.0
             # 先整段重复
             while accumulated + unit_duration <= target_duration - 1e-6:
-                clips.append(bgm_clip.subclip(0, unit_duration))
+                clips.append(bgm_clip.subclipped(0, unit_duration))
                 accumulated += unit_duration
             # 末段裁剪
             remaining = max(0.0, target_duration - accumulated)
             if remaining > 1e-6:
-                clips.append(bgm_clip.subclip(0, remaining))
+                clips.append(bgm_clip.subclipped(0, remaining))
 
             looped = concatenate_audioclips(clips)
             print(f"🎵 BGM长度适配完成（manual loop），最终时长: {looped.duration:.2f}秒")
@@ -466,24 +436,23 @@ class VideoComposer:
         gains = np.clip(gains, 0.0, 1.0)
         
         # 构建时间变增益函数
-        def _gain_lookup(t_any):
-            def _lookup_scalar(ts: float) -> float:
+        def ducking_gain_lookup(t_any):
+            def lookup_single(ts: float) -> float:
                 if ts <= 0.0:
                     return float(gains[0])
                 if ts >= total_dur:
                     return float(gains[-1])
-                idx = int(ts * env_fps)
-                idx = max(0, min(idx, gains.shape[0] - 1))
+                idx = max(0, min(int(ts * env_fps), gains.shape[0] - 1))
                 return float(gains[idx])
             
             if hasattr(t_any, "__len__"):
-                return np.array([_lookup_scalar(float(ts)) for ts in t_any])
-            return _lookup_scalar(float(t_any))
+                return np.array([lookup_single(float(ts)) for ts in t_any])
+            return lookup_single(float(t_any))
         
         # 应用时间变增益
         bgm_clip = bgm_clip.transform(
             lambda gf, t: (
-                (_gain_lookup(t)[:, None] if hasattr(t, "__len__") else _gain_lookup(t))
+                (ducking_gain_lookup(t)[:, None] if hasattr(t, "__len__") else ducking_gain_lookup(t))
                 * gf(t)
             ),
             keep_duration=True,
@@ -496,8 +465,8 @@ class VideoComposer:
         """创建线性淡出增益函数"""
         cutoff = max(0.0, total - tail)
         
-        def _gain_any(t_any):
-            def _scalar(ts: float) -> float:
+        def linear_fade_gain(t_any):
+            def calc_single_gain(ts: float) -> float:
                 if ts <= cutoff:
                     return 1.0
                 if ts >= total:
@@ -505,10 +474,10 @@ class VideoComposer:
                 return max(0.0, 1.0 - (ts - cutoff) / tail)
             
             if hasattr(t_any, "__len__"):
-                return np.array([_scalar(float(ts)) for ts in t_any])
-            return _scalar(float(t_any))
+                return np.array([calc_single_gain(float(ts)) for ts in t_any])
+            return calc_single_gain(float(t_any))
         
-        return _gain_any
+        return linear_fade_gain
     
     def _export_video(self, final_video, output_path: str):
         """导出视频"""
@@ -564,7 +533,7 @@ class VideoComposer:
             logger.warning("未能解析到可用中文字体")
         
         # 读取视频尺寸
-        video_size = subtitle_config.get("video_size", (1280, 720))
+        video_size = subtitle_config["video_size"]
         video_width, video_height = video_size
         
         segment_durations = subtitle_config.get("segment_durations", [])
@@ -575,12 +544,10 @@ class VideoComposer:
         for i, segment in enumerate(script_data["segments"], 1):
             content = segment["content"]
             
-            # 获取时长
-            duration = None
+            # 获取时长 - 优先使用实际音频时长
+            duration = float(segment.get("estimated_duration", 0))
             if isinstance(segment_durations, list) and len(segment_durations) >= i:
-                duration = float(segment_durations[i-1])
-            if duration is None:
-                duration = float(segment.get("estimated_duration", 0))
+                duration = float(segment_durations[i-1])  # 实际音频时长覆盖估算值
             
             logger.debug(f"处理第{i}段字幕，时长: {duration}秒")
             
@@ -620,12 +587,20 @@ class VideoComposer:
         logger.info(f"字幕创建完成，共创建 {len(subtitle_clips)} 个字幕剪辑")
         return subtitle_clips
     
+    def _calculate_mixed_length(self, text: str) -> float:
+        """计算混合中英文本的等效长度"""
+        import re
+        chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', text))
+        english_chars = len(re.findall(r'[a-zA-Z]', text))  
+        numbers = len(re.findall(r'\d', text))
+        return chinese_chars * 1.0 + english_chars * 0.4 + numbers * 1.0
+    
     def _calculate_subtitle_durations(self, subtitle_texts: List[str], total_duration: float) -> List[float]:
         """计算每行字幕的显示时长"""
         if len(subtitle_texts) == 0:
             return [total_duration]
         
-        lengths = [max(1, len(t)) for t in subtitle_texts]
+        lengths = [max(1.0, self._calculate_mixed_length(t)) for t in subtitle_texts]
         total_len = sum(lengths)
         line_durations = []
         acc = 0.0
@@ -665,18 +640,22 @@ class VideoComposer:
         if bg_color and bg_opacity > 0.0:
             bg_height = int(
                 subtitle_config["font_size"] * subtitle_config.get("max_lines", 2)
-                + subtitle_config.get("line_spacing", 10) + 4
+                + subtitle_config.get("line_spacing", 10) 
+                + subtitle_config.get("background_vertical_padding", 10)
             )
             text_width = main_clip.w
-            bg_padding = int(subtitle_config.get("background_padding", 20))
-            bg_width = text_width + bg_padding
+            bg_padding = int(subtitle_config.get("background_horizontal_padding", 20))
+            # 限制背景宽度不超过视频宽度的90%
+            max_bg_width = int(video_width * 0.9)
+            bg_width = min(text_width + bg_padding, max_bg_width)
             
             # 背景位置
             y_bg = max(0, video_height - margin_bottom - bg_height)
             bg_clip = ColorClip(size=(bg_width, bg_height), color=bg_color)
             if hasattr(bg_clip, "with_opacity"):
                 bg_clip = bg_clip.with_opacity(bg_opacity)
-            bg_clip = bg_clip.with_position(("center", y_bg)).with_start(start_time).with_duration(duration)
+            # 先设定时间，再设定位置，避免时间轴属性被覆盖
+            bg_clip = bg_clip.with_start(start_time).with_duration(duration).with_position(("center", y_bg))
             
             # 文字在背景中垂直居中
             y_text_centered = y_bg + (bg_height - main_clip.h) // 2
@@ -691,7 +670,8 @@ class VideoComposer:
             else:
                 main_pos = position
         
-        main_clip = main_clip.with_position(main_pos).with_start(start_time).with_duration(duration)
+        # 先设定时间，再设定位置，避免时间轴属性被覆盖
+        main_clip = main_clip.with_start(start_time).with_duration(duration).with_position(main_pos)
         
         # 添加阴影
         if subtitle_config.get("shadow_enabled", False):
@@ -710,7 +690,7 @@ class VideoComposer:
                 font_size=subtitle_config["font_size"],
                 color=shadow_color,
                 font=resolved_font or subtitle_config["font_family"]
-            ).with_position(shadow_pos).with_start(start_time).with_duration(duration)
+            ).with_start(start_time).with_duration(duration).with_position(shadow_pos)
             
             clips_to_add.extend([shadow_clip, main_clip])
         else:
@@ -764,6 +744,7 @@ class VideoComposer:
                     else:
                         final_parts.extend(self._split_text_evenly(part, max_chars_per_line))
         
+        # 返回完整的行序列（显示层面仍按 max_lines 控制“同时显示”的行数）
         return final_parts
     
     def _split_text_evenly(self, text: str, max_chars_per_line: int) -> List[str]:
@@ -807,13 +788,3 @@ class VideoComposer:
         
         return None
     
-    def get_image_style(self, style_name: str = "style05") -> str:
-        """获取图像风格字符串（来源于 prompts.IMAGE_STYLE_PRESETS）"""
-        try:
-            return IMAGE_STYLE_PRESETS_PROMPTS.get(
-                style_name,
-                next(iter(IMAGE_STYLE_PRESETS_PROMPTS.values()))
-            )
-        except Exception:
-            # 兜底，返回空字符串避免崩溃
-            return ""

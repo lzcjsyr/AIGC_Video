@@ -2,6 +2,7 @@
 Core services: unified entry points for model calls (migrated from genai_api).
 """
 
+import os
 import random
 import asyncio
 import json
@@ -256,6 +257,8 @@ async def _async_text_to_audio(text, output_filename, voice, encoding, appid, ac
                 logger.warning(f"收到未预期的消息类型: {msg.type}")
         if not audio_data:
             raise APIError("未收到音频数据")
+        from utils import ensure_directory_exists
+        ensure_directory_exists(os.path.dirname(output_filename))
         with open(output_filename, "wb") as f:
             f.write(audio_data)
         logger.info(f"语音合成成功，音频大小: {len(audio_data)} bytes，已保存: {output_filename}")

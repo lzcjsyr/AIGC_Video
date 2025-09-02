@@ -166,6 +166,40 @@ def retry_on_failure(max_retries: int = 3, delay: float = 1.0):
         return wrapper
     return decorator
 
+def handle_video_operation(operation_name: str, critical: bool = False, fallback_value=None):
+    """
+    视频操作统一错误处理装饰器
+    
+    Args:
+        operation_name: 操作描述，如"开场片段生成"、"字幕添加"
+        critical: True=关键操作失败时抛出VideoProcessingError
+                 False=可选操作失败时记录警告并返回fallback_value
+        fallback_value: 非关键操作失败时的默认返回值
+    """
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            try:
+                result = func(*args, **kwargs)
+                logger.debug(f"{operation_name}完成")
+                return result
+            except Exception as e:
+                if critical:
+                    logger.error(f"{operation_name}失败: {str(e)}")
+                    raise VideoProcessingError(f"{operation_name}失败: {str(e)}")
+                else:
+                    logger.warning(f"{operation_name}失败: {str(e)}，使用降级处理")
+                    try:
+                        # 若提供的是可调用的回退函数，则用相同参数调用以生成回退结果
+                        if callable(fallback_value):
+                            return fallback_value(*args, **kwargs)
+                        # 否则直接返回静态回退值
+                        return fallback_value
+                    except Exception as fallback_error:
+                        logger.warning(f"降级处理函数执行失败: {fallback_error}")
+                        return fallback_value
+        return wrapper
+    return decorator
+
 def validate_required_fields(data: Dict[str, Any], required_fields: List[str]) -> None:
     """验证必需字段"""
     missing_fields = []
@@ -183,6 +217,6 @@ __all__ = [
     'log_function_call', 'ensure_directory_exists',
     'validate_file_format', 'save_json_file', 'load_json_file',
     'calculate_duration', 'format_file_size', 'get_file_info',
-    'retry_on_failure', 'validate_required_fields', 'logger',
+    'retry_on_failure', 'validate_required_fields', 'handle_video_operation', 'logger',
 ]
 

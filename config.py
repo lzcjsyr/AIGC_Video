@@ -122,11 +122,12 @@ class Config:
         "position": ("center", "bottom"),      # 字幕位置
         "margin_bottom": 50,                   # 底部边距
         "max_chars_per_line": 25,              # 每行最大字符数
-        "max_lines": 1,                        # 最大行数
+        "max_lines": 1,                        # 最大行数（提高以允许每段多行字幕）
         "line_spacing": 15,                    # 行间距
         "background_color": (0, 0, 0),         # 背景色（RGB元组，None为透明）
         "background_opacity": 0.8,             # 背景透明度
-        "background_padding": 20,              # 背景内边距（像素）
+        "background_horizontal_padding": 20,   # 背景水平内边距（像素）
+        "background_vertical_padding": 10,     # 背景垂直内边距（像素）
         "shadow_enabled": False,               # 是否启用阴影效果（暂时禁用以解决位置问题）
         "shadow_color": "black",               # 阴影颜色
         "shadow_offset": (2, 2)                # 阴影偏移(x, y)，单位像素
@@ -161,7 +162,7 @@ class Config:
         "position": ("center", "center"),  # 居中
         "max_lines": 6,                  # 最大行数（过长自动换行）
         "max_chars_per_line": 18,        # 每行最大字符数（用于开场金句换行）
-        "line_spacing": 8,               # 行间距（像素，开场金句专用）
+        "line_spacing": 20,               # 行间距（像素，开场金句专用）
         "letter_spacing": 0,             # 字间距（以空格数量近似控制，0 表示不加）
     }
     
