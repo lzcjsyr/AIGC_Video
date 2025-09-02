@@ -12,7 +12,7 @@ import threading
 from pathlib import Path
 
 def start_backend():
-    """启动Flask后端服务器"""
+    """启动FastAPI后端服务器"""
     print("🚀 启动后端服务器...")
     backend_dir = Path(__file__).parent / 'backend'
     
@@ -20,7 +20,7 @@ def start_backend():
         # 切换到后端目录
         os.chdir(backend_dir)
         
-        # 启动Flask应用
+        # 启动FastAPI应用
         subprocess.run([sys.executable, 'app.py'], check=True)
         
     except subprocess.CalledProcessError as e:

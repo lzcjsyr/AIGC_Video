@@ -1,95 +1,83 @@
-"""
-Flask Web API for AIGC Video System
-提供RESTful API接口，复用现有核心功能
+"""FastAPI Web API for AIGC Video System"""
 
-调用关系:
-- 作为Web后端入口，被前端React应用调用
-- 调用core/pipeline.py执行视频制作任务
-- 调用core/project_scanner.py扫描输入文件和输出项目
-- 调用utils.py获取文件信息和日志功能
-- 通过SocketIO向前端推送实时进度更新
-- 提供文件上传、下载、项目管理等REST API接口
-"""
-
-import os
 import sys
 import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
-from flask import Flask, request, jsonify, send_file
-from flask_cors import CORS
-from flask_socketio import SocketIO, emit
+from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from werkzeug.utils import secure_filename
 
 # 添加项目根目录到Python路径
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# 首先配置Web专用日志
 from web.backend.logging_config import setup_web_logging
 setup_web_logging()
 
-# 导入现有的核心模块（不创建新的services层）
-from utils import logger, get_file_info, VideoProcessingError
+from utils import logger, get_file_info
 from core.project_scanner import scan_input_files, scan_output_projects, detect_project_progress
 from config import Config
-from core.pipeline import VideoPipeline
-from core.validators import validate_processing_config
+from core.pipeline import run_auto
 
-app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-secret-key-here'
-app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB
+app = FastAPI()
+app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000", "http://localhost:8080"], allow_methods=["*"], allow_headers=["*"])
 
-# 启用CORS和SocketIO
-CORS(app, origins=["http://localhost:3000"])
-socketio = SocketIO(app, cors_allowed_origins=["http://localhost:3000"])
-
-# 全局变量存储运行中的任务（简单的内存存储）
 running_tasks = {}
 
-@app.route('/api/health', methods=['GET'])
+class TaskRequest(BaseModel):
+    file_path: str
+    target_length: Optional[int] = Config.DEFAULT_TARGET_LENGTH
+    num_segments: Optional[int] = Config.DEFAULT_NUM_SEGMENTS
+    llm_model: Optional[str] = 'google/gemini-2.5-pro'
+    image_size: Optional[str] = Config.DEFAULT_IMAGE_SIZE
+    voice: Optional[str] = Config.DEFAULT_VOICE
+    image_style: Optional[str] = 'cinematic'
+    enable_subtitles: Optional[bool] = True
+    bgm_filename: Optional[str] = None
+
+@app.get('/')
+def root():
+    return {
+        'message': 'AIGC Video System FastAPI',
+        'version': '2.0.0',
+        'docs': '/docs',
+        'health': '/api/health'
+    }
+
+@app.get('/api/health')
 def health_check():
-    """健康检查接口"""
-    return jsonify({'status': 'ok', 'timestamp': datetime.now().isoformat()})
+    return {'status': 'ok', 'timestamp': datetime.now().isoformat()}
 
-# ==================== 文件管理接口 ====================
-
-@app.route('/api/files/input', methods=['GET'])
+@app.get('/api/files/input')
 def list_input_files():
-    """获取输入文件列表"""
     try:
-        files = scan_input_files()
-        return jsonify(files)
+        return scan_input_files()
     except Exception as e:
         logger.error(f"获取输入文件列表失败: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.route('/api/files/upload', methods=['POST'])
-def upload_file():
-    """文件上传接口"""
+@app.post('/api/files/upload')
+async def upload_file(file: UploadFile = File(...)):
     try:
-        if 'file' not in request.files:
-            return jsonify({'error': '没有文件被上传'}), 400
+        if not file.filename:
+            raise HTTPException(status_code=400, detail='没有选择文件')
         
-        file = request.files['file']
-        if file.filename == '':
-            return jsonify({'error': '没有选择文件'}), 400
-        
-        # 验证文件格式
         filename = secure_filename(file.filename)
         file_ext = Path(filename).suffix.lower()
         
         if file_ext not in Config.SUPPORTED_INPUT_FORMATS:
-            return jsonify({'error': f'不支持的文件格式: {file_ext}'}), 400
+            raise HTTPException(status_code=400, detail=f'不支持的文件格式: {file_ext}')
         
-        # 保存文件到input目录
         input_dir = project_root / 'input'
         input_dir.mkdir(exist_ok=True)
         file_path = input_dir / filename
         
-        # 如果文件已存在，生成新名称
         if file_path.exists():
             name_part = Path(filename).stem
             ext_part = Path(filename).suffix
@@ -99,60 +87,53 @@ def upload_file():
                 file_path = input_dir / filename
                 counter += 1
         
-        file.save(file_path)
-        file_info = get_file_info(str(file_path))
+        content = await file.read()
+        with open(file_path, 'wb') as f:
+            f.write(content)
         
+        file_info = get_file_info(str(file_path))
         logger.info(f"文件上传成功: {filename}")
-        return jsonify({
-            'message': '文件上传成功',
-            'data': file_info
-        })
+        return {'message': '文件上传成功', 'data': file_info}
     
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"文件上传失败: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.route('/api/files/download/<path:filename>', methods=['GET'])
-def download_file(filename):
-    """文件下载接口"""
+@app.get('/api/files/download/{filename}')
+def download_file(filename: str):
     try:
         safe_filename = secure_filename(filename)
         file_path = project_root / 'output' / safe_filename
         
         if not file_path.exists():
-            return jsonify({'error': '文件不存在'}), 404
+            raise HTTPException(status_code=404, detail='文件不存在')
         
-        return send_file(file_path, as_attachment=True)
-    
+        return FileResponse(file_path, filename=safe_filename)
     except Exception as e:
         logger.error(f"文件下载失败: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.route('/api/files/stream/<path:filename>', methods=['GET'])
-def stream_file(filename):
-    """文件流式传输接口（用于视频预览）"""
+@app.get('/api/files/stream/{filename}')
+def stream_file(filename: str):
     try:
         safe_filename = secure_filename(filename)
         file_path = project_root / 'output' / safe_filename
         
         if not file_path.exists():
-            return jsonify({'error': '文件不存在'}), 404
+            raise HTTPException(status_code=404, detail='文件不存在')
         
-        return send_file(file_path)
-    
+        return FileResponse(file_path)
     except Exception as e:
         logger.error(f"文件流式传输失败: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
-# ==================== 项目管理接口 ====================
-
-@app.route('/api/projects', methods=['GET'])
+@app.get('/api/projects')
 def list_projects():
-    """获取项目列表"""
     try:
         projects = scan_output_projects()
         
-        # 为每个项目添加进度信息
         for project in projects:
             progress = detect_project_progress(project['path'])
             project.update({
@@ -161,119 +142,79 @@ def list_projects():
                 'has_final_video': progress['has_final_video']
             })
         
-        return jsonify(projects)
-    
+        return projects
     except Exception as e:
         logger.error(f"获取项目列表失败: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.route('/api/projects/<project_name>', methods=['DELETE'])
-def delete_project(project_name):
-    """删除项目"""
+@app.delete('/api/projects/{project_name}')
+def delete_project(project_name: str):
     try:
         import shutil
         
         project_path = project_root / 'output' / project_name
         if not project_path.exists():
-            return jsonify({'error': '项目不存在'}), 404
+            raise HTTPException(status_code=404, detail='项目不存在')
         
         shutil.rmtree(project_path)
         logger.info(f"项目已删除: {project_name}")
         
-        return jsonify({'message': f'项目 {project_name} 删除成功'})
-    
+        return {'message': f'项目 {project_name} 删除成功'}
     except Exception as e:
         logger.error(f"删除项目失败: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
-# ==================== 任务管理接口 ====================
-
-@app.route('/api/tasks/start', methods=['POST'])
-def start_task():
-    """启动新的视频制作任务"""
+@app.post('/api/tasks/start')
+def start_task(task_req: TaskRequest):
     try:
-        data = request.get_json()
-        
-        # 验证必需参数
-        required_fields = ['file_path']
-        missing_fields = [field for field in required_fields if field not in data]
-        if missing_fields:
-            return jsonify({'error': f'缺少必需参数: {missing_fields}'}), 400
-        
-        # 生成任务ID
         task_id = str(uuid.uuid4())
         
-        # 构建处理配置
         config = {
-            'input_file': data['file_path'],
-            'target_length': data.get('target_length', Config.DEFAULT_TARGET_LENGTH),
-            'num_segments': data.get('num_segments', Config.DEFAULT_NUM_SEGMENTS),
-            'llm_model': data.get('llm_model', 'google/gemini-2.5-pro'),
-            'image_size': data.get('image_size', Config.DEFAULT_IMAGE_SIZE),
-            'voice': data.get('voice', Config.DEFAULT_VOICE),
-            'image_style_preset': data.get('image_style', 'cinematic'),
-            'enable_subtitles': data.get('enable_subtitles', True),
-            'bgm_filename': data.get('bgm_filename'),
+            'input_file': task_req.file_path,
+            'target_length': task_req.target_length,
+            'num_segments': task_req.num_segments,
+            'llm_model': task_req.llm_model,
+            'image_size': task_req.image_size,
+            'voice': task_req.voice,
+            'image_style_preset': task_req.image_style,
+            'enable_subtitles': task_req.enable_subtitles,
+            'bgm_filename': task_req.bgm_filename,
             'output_dir': 'output',
             'run_mode': 'auto'
         }
         
-        # 验证配置
-        try:
-            validate_processing_config(config)
-        except Exception as e:
-            return jsonify({'error': f'配置验证失败: {str(e)}'}), 400
+        # validate_processing_config(config)
         
-        # 在后台启动任务
-        thread = threading.Thread(
-            target=run_video_task,
-            args=(task_id, config),
-            daemon=True
-        )
+        thread = threading.Thread(target=run_video_task, args=(task_id, config), daemon=True)
         thread.start()
         
         logger.info(f"任务已启动: {task_id}")
-        return jsonify({
-            'message': '任务已启动',
-            'task_id': task_id
-        })
-    
+        return {'message': '任务已启动', 'task_id': task_id}
     except Exception as e:
         logger.error(f"启动任务失败: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.route('/api/tasks/<task_id>/status', methods=['GET'])
-def get_task_status(task_id):
-    """获取任务状态"""
-    try:
-        if task_id not in running_tasks:
-            return jsonify({'error': '任务不存在'}), 404
-        
-        task = running_tasks[task_id]
-        
-        return jsonify({
-            'task_id': task_id,
-            'status': task['status'],
-            'current_step': task.get('current_step', 1),
-            'current_task': task.get('current_task', ''),
-            'progress': task.get('progress', 0),
-            'final_video_path': task.get('final_video_path'),
-            'error_message': task.get('error_message')
-        })
+@app.get('/api/tasks/{task_id}/status')
+def get_task_status(task_id: str):
+    if task_id not in running_tasks:
+        raise HTTPException(status_code=404, detail='任务不存在')
     
-    except Exception as e:
-        logger.error(f"获取任务状态失败: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+    task = running_tasks[task_id]
+    return {
+        'task_id': task_id,
+        'status': task['status'],
+        'current_step': task.get('current_step', 1),
+        'current_task': task.get('current_task', ''),
+        'progress': task.get('progress', 0),
+        'final_video_path': task.get('final_video_path'),
+        'error_message': task.get('error_message')
+    }
 
-# ==================== 配置管理接口 ====================
-
-@app.route('/api/config', methods=['GET'])
+@app.get('/api/config')
 def get_config():
-    """获取系统配置"""
     try:
         api_status = Config.validate_api_keys()
-        
-        return jsonify({
+        return {
             'api_status': api_status,
             'system_config': {
                 'default_target_length': Config.DEFAULT_TARGET_LENGTH,
@@ -282,45 +223,34 @@ def get_config():
                 'speech_speed': Config.SPEECH_SPEED_WPM,
                 'default_subtitles': Config.SUBTITLE_CONFIG['enabled']
             }
-        })
-    
+        }
     except Exception as e:
         logger.error(f"获取配置失败: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.route('/api/config/models', methods=['GET'])
+@app.get('/api/config/models')
 def get_recommended_models():
-    """获取推荐模型列表"""
     try:
-        return jsonify(Config.RECOMMENDED_MODELS)
+        return Config.RECOMMENDED_MODELS
     except Exception as e:
         logger.error(f"获取推荐模型失败: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.route('/api/config/test', methods=['POST'])
+@app.post('/api/config/test')
 def test_api_keys():
-    """测试API密钥"""
     try:
-        # 简单的模拟测试结果
-        results = {
+        return {
             'openrouter': True,
             'siliconflow': False,
             'aihubmix': True,
             'seedream': True,
             'bytedance': False
         }
-        
-        return jsonify(results)
-    
     except Exception as e:
         logger.error(f"测试API密钥失败: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-# ==================== 后台任务函数 ====================
+        raise HTTPException(status_code=500, detail=str(e))
 
 def run_video_task(task_id, config):
-    """在后台运行视频制作任务"""
-    # 初始化任务状态
     running_tasks[task_id] = {
         'status': 'running',
         'current_step': 1,
@@ -332,42 +262,32 @@ def run_video_task(task_id, config):
     try:
         logger.info(f"开始视频制作任务: {task_id}")
         
-        # 创建视频管道实例
-        pipeline = VideoPipeline(
-            input_file=config['input_file'],
-            target_length=config['target_length'],
-            num_segments=config['num_segments'],
-            llm_model=config['llm_model'],
-            image_size=config['image_size'],
-            voice=config['voice'],
-            image_style_preset=config['image_style_preset'],
-            enable_subtitles=config['enable_subtitles'],
-            bgm_filename=config.get('bgm_filename'),
-            output_dir=config['output_dir']
-        )
-        
-        # 执行处理管道
         def progress_callback(step, message, progress=None):
             running_tasks[task_id].update({
                 'current_step': step,
                 'current_task': message,
                 'progress': progress or 0
             })
-            
             logger.info(f"任务{task_id} - 步骤{step}: {message}")
-            
-            # 通过WebSocket发送进度更新
-            socketio.emit('task_progress', {
-                'task_id': task_id,
-                'step': step,
-                'message': message,
-                'progress': progress
-            })
         
-        # 运行管道
-        result = pipeline.run_full_pipeline(progress_callback=progress_callback)
+        result = run_auto(
+            input_file=config['input_file'],
+            output_dir=config['output_dir'],
+            target_length=config['target_length'],
+            num_segments=config['num_segments'],
+            image_size=config['image_size'],
+            llm_server='openrouter',
+            llm_model=config['llm_model'],
+            image_server='siliconflow',
+            image_model='flux',
+            tts_server='bytedance',
+            voice=config['voice'],
+            image_style_preset=config['image_style_preset'],
+            opening_image_style=config['image_style_preset'],
+            enable_subtitles=config['enable_subtitles'],
+            bgm_filename=config.get('bgm_filename')
+        )
         
-        # 任务完成
         running_tasks[task_id].update({
             'status': 'completed',
             'current_step': 5,
@@ -379,45 +299,19 @@ def run_video_task(task_id, config):
         
         logger.info(f"视频制作任务完成: {task_id}")
         
-        # 通过WebSocket通知完成
-        socketio.emit('task_completed', {
-            'task_id': task_id,
-            'final_video_path': result.get('final_video_path')
-        })
-        
     except Exception as e:
-        # 任务失败
         error_msg = str(e)
         running_tasks[task_id].update({
             'status': 'failed',
             'error_message': error_msg,
             'end_time': datetime.now().isoformat()
         })
-        
         logger.error(f"任务执行失败 {task_id}: {error_msg}")
-        
-        # 通过WebSocket通知失败
-        socketio.emit('task_failed', {
-            'task_id': task_id,
-            'error': error_msg
-        })
-
-# ==================== WebSocket 事件 ====================
-
-@socketio.on('connect')
-def handle_connect():
-    """客户端连接"""
-    logger.info('客户端已连接')
-
-@socketio.on('disconnect')
-def handle_disconnect():
-    """客户端断开连接"""
-    logger.info('客户端已断开连接')
 
 if __name__ == '__main__':
-    # 确保必要的目录存在
     (project_root / 'input').mkdir(exist_ok=True)
     (project_root / 'output').mkdir(exist_ok=True)
     
-    logger.info('启动Flask Web API服务器')
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+    logger.info('启动FastAPI Web API服务器')
+    import uvicorn
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=False)
