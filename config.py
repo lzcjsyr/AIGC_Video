@@ -124,8 +124,9 @@ class Config:
         "max_chars_per_line": 25,              # 每行最大字符数
         "max_lines": 1,                        # 最大行数
         "line_spacing": 15,                    # 行间距
-        "background_color": None,              # 背景色（None为透明）
+        "background_color": (0, 0, 0),         # 背景色（RGB元组，None为透明）
         "background_opacity": 0.8,             # 背景透明度
+        "background_padding": 20,              # 背景内边距（像素）
         "shadow_enabled": False,               # 是否启用阴影效果（暂时禁用以解决位置问题）
         "shadow_color": "black",               # 阴影颜色
         "shadow_offset": (2, 2)                # 阴影偏移(x, y)，单位像素
@@ -168,8 +169,8 @@ class Config:
     ENDING_FADE_SECONDS = 2.5
     
     # 并发生成配置
-    MAX_CONCURRENT_IMAGE_GENERATION = 3  # 图片生成最大并发数
-    MAX_CONCURRENT_VOICE_SYNTHESIS = 2   # 语音合成最大并发数
+    MAX_CONCURRENT_IMAGE_GENERATION = 4  # 图片生成最大并发数
+    MAX_CONCURRENT_VOICE_SYNTHESIS = 4   # 语音合成最大并发数
     
     # ================================================================================
     # 系统配置验证方法（一般无需修改）

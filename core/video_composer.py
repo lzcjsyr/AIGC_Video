@@ -599,7 +599,7 @@ class VideoComposer:
                 try:
                     # 处理标点
                     display_text = re.sub(punctuation_pattern, "  ", subtitle_text)
-                    display_text = re.sub(r" {3,}", "  ", display_text)
+                    display_text = re.sub(r" {3,}", "  ", display_text).rstrip()
                     
                     # 创建字幕剪辑
                     clips_to_add = self._create_subtitle_clips_internal(
@@ -659,13 +659,37 @@ class VideoComposer:
             stroke_width=subtitle_config["stroke_width"]
         )
         
-        # 计算位置
-        if isinstance(position, tuple) and len(position) == 2 and position[1] == "bottom":
-            baseline_safe_padding = int(subtitle_config.get("baseline_safe_padding", 4))
-            y_text = max(0, video_height - margin_bottom - main_clip.h - baseline_safe_padding)
-            main_pos = (anchor_x, y_text)
+        # 添加背景条（需要先计算，确定文字位置）
+        bg_color = subtitle_config.get("background_color")
+        bg_opacity = float(subtitle_config.get("background_opacity", 0))
+        if bg_color and bg_opacity > 0.0:
+            bg_height = int(
+                subtitle_config["font_size"] * subtitle_config.get("max_lines", 2)
+                + subtitle_config.get("line_spacing", 10) + 4
+            )
+            text_width = main_clip.w
+            bg_padding = int(subtitle_config.get("background_padding", 20))
+            bg_width = text_width + bg_padding
+            
+            # 背景位置
+            y_bg = max(0, video_height - margin_bottom - bg_height)
+            bg_clip = ColorClip(size=(bg_width, bg_height), color=bg_color)
+            if hasattr(bg_clip, "with_opacity"):
+                bg_clip = bg_clip.with_opacity(bg_opacity)
+            bg_clip = bg_clip.with_position(("center", y_bg)).with_start(start_time).with_duration(duration)
+            
+            # 文字在背景中垂直居中
+            y_text_centered = y_bg + (bg_height - main_clip.h) // 2
+            main_pos = (anchor_x, y_text_centered)
+            clips_to_add.append(bg_clip)
         else:
-            main_pos = position
+            # 无背景时使用原来的位置计算
+            if isinstance(position, tuple) and len(position) == 2 and position[1] == "bottom":
+                baseline_safe_padding = int(subtitle_config.get("baseline_safe_padding", 4))
+                y_text = max(0, video_height - margin_bottom - main_clip.h - baseline_safe_padding)
+                main_pos = (anchor_x, y_text)
+            else:
+                main_pos = position
         
         main_clip = main_clip.with_position(main_pos).with_start(start_time).with_duration(duration)
         
@@ -691,21 +715,6 @@ class VideoComposer:
             clips_to_add.extend([shadow_clip, main_clip])
         else:
             clips_to_add.append(main_clip)
-        
-        # 添加背景条
-        bg_color = subtitle_config.get("background_color")
-        bg_opacity = float(subtitle_config.get("background_opacity", 0))
-        if bg_color and bg_opacity > 0.0:
-            bg_height = int(
-                subtitle_config["font_size"] * subtitle_config.get("max_lines", 2)
-                + subtitle_config.get("line_spacing", 10) + 4
-            )
-            bg_clip = ColorClip(size=(video_width, bg_height), color=bg_color)
-            if hasattr(bg_clip, "with_opacity"):
-                bg_clip = bg_clip.with_opacity(bg_opacity)
-            y_bg = max(0, video_height - margin_bottom - bg_height)
-            bg_clip = bg_clip.with_position(("center", y_bg)).with_start(start_time).with_duration(duration)
-            clips_to_add.insert(0, bg_clip)
         
         return clips_to_add
     

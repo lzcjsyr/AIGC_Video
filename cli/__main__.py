@@ -10,7 +10,7 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 # 首先配置CLI专用日志
-from cli.logging_config import setup_cli_logging
+from cli.ui_helpers import setup_cli_logging
 setup_cli_logging()
 
 from config import config
@@ -180,8 +180,6 @@ def run_step_by_step_loop(
                     print(f"最终视频: {result.get('final_video')}")
         else:
             print(f"❌ 步骤 {selected_step} 执行失败: {result.get('message', '未知错误')}")
-
-
 
 
 def cli_main(

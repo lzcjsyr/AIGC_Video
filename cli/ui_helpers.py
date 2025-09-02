@@ -10,7 +10,46 @@ CLI界面特定的交互函数
 """
 
 import os
+import logging
+from pathlib import Path
 from typing import Dict, Any, List, Optional
+
+
+def setup_cli_logging(log_level=logging.INFO):
+    """配置CLI专用的日志设置"""
+    
+    # 清除可能存在的旧配置
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+    
+    # CLI日志保存到cli目录下
+    cli_dir = Path(__file__).parent
+    log_file = cli_dir / 'cli.log'
+    
+    # 配置日志格式（CLI友好的简洁格式）
+    logging.basicConfig(
+        level=log_level,
+        format='%(asctime)s [CLI] %(levelname)s - %(message)s',
+        datefmt='%H:%M:%S',
+        handlers=[
+            logging.FileHandler(log_file, encoding='utf-8'),
+            logging.StreamHandler()  # 控制台输出
+        ]
+    )
+    
+    # 设置AIGC_Video logger
+    logger = logging.getLogger('AIGC_Video')
+    logger.setLevel(log_level)
+    
+    # 降低第三方库的噪声日志
+    for lib_name in [
+        "pdfminer", "pdfminer.pdffont", "pdfminer.pdfinterp", "pdfminer.cmapdb",
+        "urllib3", "requests", "PIL"
+    ]:
+        logging.getLogger(lib_name).setLevel(logging.ERROR)
+    
+    logger.info("CLI日志配置完成")
+    return logger
 
 
 def interactive_project_selector(output_dir: str = "output") -> Optional[str]:
@@ -158,82 +197,6 @@ def display_project_progress_and_select_step(progress) -> Optional[float]:
         except KeyboardInterrupt:
             print("\n操作已取消")
             return None
-
-
-def prompt_step_action(current_step) -> Optional[str]:
-    """
-    分步处理模式的简化选择：继续下一步、重新生成、退出
-    返回 "next", "redo", None
-    """
-    # 定义步骤名称
-    step_names = {1: "内容生成", 1.5: "脚本分段", 2: "要点提取", 3: "图像生成", 4: "语音合成", 5: "视频合成"}
-    current_name = step_names.get(current_step, f"步骤{current_step}")
-    
-    # 如果所有步骤已完成
-    if current_step >= 5:
-        options = [f"重做--{current_name}", "退出"]
-        print(f"\n🎉 所有步骤已完成！当前：{current_name}")
-    else:
-        if current_step == 1:
-            next_step = 1.5
-        elif current_step == 1.5:
-            next_step = 2
-        else:
-            next_step = current_step + 1
-        next_name = step_names.get(next_step, f"步骤{next_step}")
-        options = [f"继续--{next_name}", f"重做--{current_name}", "退出"]
-    
-    while True:
-        try:
-            print("\n请选择操作:")
-            for i, option in enumerate(options, 1):
-                print(f"  {i}. {option}")
-            
-            choice = input(f"请输入序号 (1-{len(options)}) 或 'q' 退出 (默认 1): ").strip()
-            
-            if choice == "" or choice == "1":
-                return "next" if current_step < 5 else "redo"
-            elif choice == "2":
-                return "redo" if current_step < 5 else None
-            elif choice == "3" and current_step < 5:
-                return None
-            elif choice.lower() == 'q':
-                return None
-            else:
-                print(f"❌ 无效输入，请输入 1-{len(options)} 之间的数字")
-                
-        except KeyboardInterrupt:
-            print("\n操作已取消")
-            return None
-
-
-# ============================================================================
-# 以下函数从 utils.py 移动过来，专用于CLI用户交互
-# ============================================================================
-
-def prompt_yes_no(message: str, default: bool = True) -> bool:
-    """命令行确认提示，返回布尔。
-    
-    Args:
-        message: 提示消息
-        default: 默认选择（回车时采用）
-    """
-    try:
-        suffix = "[Y/n]" if default else "[y/N]"
-        # 统一在提示前输出一个空行，避免在调用点散落打印
-        print()
-        while True:
-            choice = input(f"{message} {suffix}: ").strip().lower()
-            if choice == '' and default is not None:
-                return default
-            if choice in ['y', 'yes', '是']:
-                return True
-            if choice in ['n', 'no', '否']:
-                return False
-            print("请输入 y 或 n")
-    except KeyboardInterrupt:
-        print("\n操作已取消")
-        return False
 
 
 def prompt_choice(message: str, options: List[str], default_index: int = 0) -> Optional[str]:
