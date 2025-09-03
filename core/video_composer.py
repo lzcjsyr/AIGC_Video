@@ -75,7 +75,7 @@ class VideoComposer:
             
             # 连接所有视频片段
             print("正在合成最终视频...")
-            final_video = concatenate_videoclips(video_clips, method="compose")
+            final_video = concatenate_videoclips(video_clips, method="chain")
             
             # 添加字幕
             final_video = self._add_subtitles(final_video, script_data, enable_subtitles, 
@@ -186,7 +186,7 @@ class VideoComposer:
         return CompositeVideoClip([opening_base] + text_clips)
     
     def _add_opening_fade_effect(self, opening_clip, opening_voice_clip, opening_seconds: float):
-        """添加开场渐隐效果"""
+        """为开场片段添加渐隐效果（仅限开场，时长较短，对性能影响可忽略）"""
         try:
             if opening_voice_clip is not None:
                 hold_after = float(getattr(config, "OPENING_HOLD_AFTER_NARRATION_SECONDS", 2.0))
@@ -194,7 +194,7 @@ class VideoComposer:
                     voice_duration = float(opening_voice_clip.duration)
                     fade_start_time = voice_duration
                     fade_duration = hold_after
-                    
+
                     def _opening_fade_out(gf, t):
                         try:
                             if t < fade_start_time:
@@ -207,12 +207,10 @@ class VideoComposer:
                                 return alpha * gf(t)
                         except Exception:
                             return gf(t)
-                    
+
                     opening_clip = opening_clip.transform(_opening_fade_out, keep_duration=True)
-                    print(f"🎬 已为开场片段添加{hold_after}s渐隐效果")
         except Exception as e:
             logger.warning(f"开场片段渐隐效果添加失败: {e}")
-        
         return opening_clip
     
     def _create_main_segments(self, image_paths: List[str], audio_paths: List[str], 
@@ -271,29 +269,15 @@ class VideoComposer:
     @handle_video_operation("视觉效果添加", critical=False, fallback_value=lambda self, final_video, *args: final_video)
     def _add_visual_effects(self, final_video, image_paths: List[str]):
         """添加视觉效果（开场渐显和片尾渐隐）"""
-        # 开场渐显
-        fade_in_seconds = float(getattr(config, "OPENING_FADEIN_SECONDS", 0.0))
-        if fade_in_seconds > 1e-3:
-            def _fade_in_frame(gf, t):
-                alpha = min(1.0, max(0.0, float(t) / float(fade_in_seconds)))
-                return alpha * gf(t)
-            
-            final_video = final_video.transform(_fade_in_frame, keep_duration=True)
-            print(f"🎬 已添加开场渐显 {fade_in_seconds}s")
+        # 性能优化：跳过逐帧开场渐显
         
-        # 片尾渐隐
+        # 性能优化：仅添加片尾静帧，不做逐帧渐隐
         tail_seconds = float(getattr(config, "ENDING_FADE_SECONDS", 2.5))
         if isinstance(image_paths, list) and len(image_paths) > 0 and tail_seconds > 1e-3:
             last_image_path = image_paths[-1]
             tail_clip = ImageClip(last_image_path).with_duration(tail_seconds)
-            
-            def _fade_frame(gf, t):
-                alpha = max(0.0, 1.0 - float(t) / float(tail_seconds))
-                return alpha * gf(t)
-            
-            tail_clip = tail_clip.transform(_fade_frame, keep_duration=True)
-            final_video = concatenate_videoclips([final_video, tail_clip], method="compose")
-            print(f"🎬 已添加片尾静帧 {tail_seconds}s 并渐隐")
+            final_video = concatenate_videoclips([final_video, tail_clip], method="chain")
+            print(f"🎬 已添加片尾静帧 {tail_seconds}s")
         
         return final_video
     
@@ -379,26 +363,7 @@ class VideoComposer:
     
     def _apply_audio_effects(self, bgm_clip, final_video):
         """应用音频效果（Ducking和淡出）"""
-        # 自动Ducking
-        if getattr(config, "AUDIO_DUCKING_ENABLED", False) and final_video.audio is not None:
-            try:
-                bgm_clip = self._apply_ducking_effect(bgm_clip, final_video)
-            except Exception as e:
-                logger.warning(f"自动Ducking失败: {e}，将使用恒定音量BGM")
-        
-        # 片尾淡出
-        try:
-            total_dur = float(final_video.duration)
-            fade_tail = float(getattr(config, "ENDING_FADE_SECONDS", 2.5))
-            fade_gain = self._create_linear_fade_out_gain(total_dur, fade_tail)
-            bgm_clip = bgm_clip.transform(
-                lambda gf, t: ((fade_gain(t)[:, None]) if hasattr(t, "__len__") else fade_gain(t)) * gf(t),
-                keep_duration=True,
-            )
-            print(f"🎚️ 已添加BGM片尾{fade_tail}s淡出")
-        except Exception as e:
-            logger.warning(f"BGM淡出应用失败: {e}")
-        
+        # 性能优化：跳过逐采样Ducking与淡出，直接返回
         return bgm_clip
     
     def _apply_ducking_effect(self, bgm_clip, final_video):
@@ -484,14 +449,30 @@ class VideoComposer:
         moviepy_logger = 'bar'
         
         try:
+            # 使用ffmpeg视频滤镜实现淡入/淡出（仅视频，不处理音频，避免与stream copy冲突）
+            fade_in_seconds = float(getattr(config, "OPENING_FADEIN_SECONDS", 0.0))
+            tail_seconds = float(getattr(config, "ENDING_FADE_SECONDS", 0.0))
+            total_duration = float(getattr(final_video, "duration", 0.0) or 0.0)
+            vf_parts = []
+            if fade_in_seconds > 1e-3:
+                vf_parts.append(f"fade=t=in:st=0:d={fade_in_seconds}")
+            if tail_seconds > 1e-3 and total_duration > 0.0:
+                fade_out_start = max(0.0, total_duration - tail_seconds)
+                vf_parts.append(f"fade=t=out:st={fade_out_start}:d={tail_seconds}")
+            vf_filter = ",".join(vf_parts) if vf_parts else None
+
             # 优先尝试macOS硬件编码
             final_video.write_videofile(
                 output_path,
                 fps=15,
                 codec='h264_videotoolbox',
                 audio_codec='aac',
-                bitrate='5M',
-                ffmpeg_params=['-pix_fmt', 'yuv420p', '-movflags', '+faststart'],
+                audio_bitrate='96k',
+                bitrate='3M',
+                ffmpeg_params=(
+                    ['-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-maxrate', '3M', '-bufsize', '6M', '-profile:v', 'main', '-level', '3.1']
+                    + (['-vf', vf_filter] if vf_filter else [])
+                ),
                 logger=moviepy_logger
             )
         except Exception as e:
@@ -502,9 +483,13 @@ class VideoComposer:
                 fps=15,
                 codec='libx264',
                 audio_codec='aac',
+                audio_bitrate='96k',
                 preset='veryfast',
                 threads=os.cpu_count() or 4,
-                ffmpeg_params=['-crf', '23', '-pix_fmt', 'yuv420p', '-movflags', '+faststart'],
+                ffmpeg_params=(
+                    ['-crf', '25', '-pix_fmt', 'yuv420p', '-movflags', '+faststart']
+                    + (['-vf', vf_filter] if vf_filter else [])
+                ),
                 logger=moviepy_logger
             )
     
@@ -590,10 +575,26 @@ class VideoComposer:
     def _calculate_mixed_length(self, text: str) -> float:
         """计算混合中英文本的等效长度"""
         import re
+        import unicodedata
+        # 中文按字计数（CJK统一表意文字）
         chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', text))
-        english_chars = len(re.findall(r'[a-zA-Z]', text))  
+        # 英文按词计数（允许 don't / co-op 等带撇号或连字符）
+        english_words = len(re.findall(r"[A-Za-z]+(?:['-][A-Za-z]+)*", text))
+        # 数字按位计数
         numbers = len(re.findall(r'\d', text))
-        return chinese_chars * 1.0 + english_chars * 0.4 + numbers * 1.0
+        # 其他外文字符（非ASCII字母、非CJK）作为字母按1计数
+        ascii_alpha = re.compile(r"[A-Za-z]")
+        cjk_pattern = re.compile(r"[\u4e00-\u9fff]")
+        other_letters = 0
+        for ch in text:
+            if cjk_pattern.match(ch):
+                continue
+            if ascii_alpha.match(ch):
+                continue
+            if unicodedata.category(ch).startswith('L'):
+                other_letters += 1
+        # 标点不计入
+        return chinese_chars * 1.0 + english_words * 1.5 + numbers * 1.0 + other_letters * 1.0
     
     def _calculate_subtitle_durations(self, subtitle_texts: List[str], total_duration: float) -> List[float]:
         """计算每行字幕的显示时长"""
