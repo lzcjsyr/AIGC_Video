@@ -379,8 +379,20 @@ def run_step_5(project_output_dir: str, image_size: str, enable_subtitles: bool,
     script_path = os.path.join(project_output_dir, 'text', 'script.json')
     script_data = load_json_file(script_path)
 
-    # Resolve ordered assets (without hard validation here)
-    image_paths = [os.path.join(images_dir, f"segment_{i}.png") for i in range(1, script_data.get('actual_segments', 0) + 1) if os.path.exists(os.path.join(images_dir, f"segment_{i}.png"))]
+    # Resolve ordered assets (支持图片和视频文件)
+    image_paths = []
+    for i in range(1, script_data.get('actual_segments', 0) + 1):
+        # 检查图片文件
+        img_path = os.path.join(images_dir, f"segment_{i}.png")
+        if os.path.exists(img_path):
+            image_paths.append(img_path)
+            continue
+        # 检查视频文件
+        for ext in ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.m4v']:
+            vid_path = os.path.join(images_dir, f"segment_{i}{ext}")
+            if os.path.exists(vid_path):
+                image_paths.append(vid_path)
+                break
     audio_paths = [os.path.join(voice_dir, f"voice_{i}.wav") for i in range(1, script_data.get('actual_segments', 0) + 1) if os.path.exists(os.path.join(voice_dir, f"voice_{i}.wav"))]
 
     # BGM

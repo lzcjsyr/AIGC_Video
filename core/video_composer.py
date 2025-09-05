@@ -11,6 +11,7 @@ from typing import List, Dict, Any, Optional, Tuple
 # MoviePy 2.x imports (no editor module)
 from moviepy import (
     ImageClip,
+    VideoFileClip,
     TextClip,
     ColorClip,
     CompositeVideoClip,
@@ -61,6 +62,11 @@ class VideoComposer:
             if len(image_paths) != len(audio_paths):
                 raise ValueError("图像文件数量与音频文件数量不匹配")
             
+            # 检测是否包含视频素材，决定输出帧率
+            has_videos = self._has_video_materials(image_paths)
+            target_fps = 30 if has_videos else 15
+            print(f"检测到{'视频' if has_videos else '图片'}素材，使用{target_fps}fps输出")
+            
             video_clips = []
             audio_clips = []
             
@@ -91,7 +97,7 @@ class VideoComposer:
             final_video = self._add_background_music(final_video, bgm_audio_path, bgm_volume)
             
             # 输出视频
-            self._export_video(final_video, output_path)
+            self._export_video(final_video, output_path, target_fps)
             
             # 释放资源
             self._cleanup_resources(video_clips, audio_clips, final_video)
@@ -215,19 +221,20 @@ class VideoComposer:
     
     def _create_main_segments(self, image_paths: List[str], audio_paths: List[str], 
                             video_clips: List, audio_clips: List):
-        """创建主要视频片段"""
-        for i, (image_path, audio_path) in enumerate(zip(image_paths, audio_paths)):
-            print(f"正在处理第{i+1}段视频...")
+        """创建主要视频片段（支持图片和视频混合）"""
+        for i, (media_path, audio_path) in enumerate(zip(image_paths, audio_paths)):
+            print(f"正在处理第{i+1}段素材...")
             
-            # 加载音频获取时长
             audio_clip = AudioFileClip(audio_path)
-            duration = audio_clip.duration
             
-            # 创建图像剪辑
-            image_clip = ImageClip(image_path).with_duration(duration)
+            if self._is_video_file(media_path):
+                # 视频素材处理
+                video_clip = self._create_video_segment(media_path, audio_clip)
+            else:
+                # 图片素材处理
+                image_clip = ImageClip(media_path).with_duration(audio_clip.duration)
+                video_clip = image_clip.with_audio(audio_clip)
             
-            # 组合图像和音频
-            video_clip = image_clip.with_audio(audio_clip)
             video_clips.append(video_clip)
             audio_clips.append(audio_clip)
     
@@ -444,7 +451,7 @@ class VideoComposer:
         
         return linear_fade_gain
     
-    def _export_video(self, final_video, output_path: str):
+    def _export_video(self, final_video, output_path: str, fps: int = 15):
         """导出视频"""
         moviepy_logger = 'bar'
         
@@ -462,15 +469,16 @@ class VideoComposer:
             vf_filter = ",".join(vf_parts) if vf_parts else None
 
             # 优先尝试macOS硬件编码
+            bitrate = '5M' if fps == 30 else '3M'
             final_video.write_videofile(
                 output_path,
-                fps=15,
+                fps=fps,
                 codec='h264_videotoolbox',
                 audio_codec='aac',
                 audio_bitrate='96k',
-                bitrate='3M',
+                bitrate=bitrate,
                 ffmpeg_params=(
-                    ['-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-maxrate', '3M', '-bufsize', '6M', '-profile:v', 'main', '-level', '3.1']
+                    ['-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-maxrate', bitrate, '-bufsize', '10M' if fps == 30 else '6M', '-profile:v', 'main', '-level', '3.1']
                     + (['-vf', vf_filter] if vf_filter else [])
                 ),
                 logger=moviepy_logger
@@ -480,14 +488,14 @@ class VideoComposer:
             # 回退到软件编码
             final_video.write_videofile(
                 output_path,
-                fps=15,
+                fps=fps,
                 codec='libx264',
                 audio_codec='aac',
                 audio_bitrate='96k',
-                preset='veryfast',
+                preset='medium' if fps == 30 else 'veryfast',
                 threads=os.cpu_count() or 4,
                 ffmpeg_params=(
-                    ['-crf', '25', '-pix_fmt', 'yuv420p', '-movflags', '+faststart']
+                    ['-crf', '23' if fps == 30 else '25', '-pix_fmt', 'yuv420p', '-movflags', '+faststart']
                     + (['-vf', vf_filter] if vf_filter else [])
                 ),
                 logger=moviepy_logger
@@ -788,4 +796,57 @@ class VideoComposer:
                 return font_path
         
         return None
+    
+    def _is_video_file(self, file_path: str) -> bool:
+        """检测是否为视频文件"""
+        file_extension = os.path.splitext(file_path)[1].lower()
+        return file_extension in config.VIDEO_MATERIAL_CONFIG["supported_formats"]
+    
+    def _has_video_materials(self, media_paths: List[str]) -> bool:
+        """检测是否包含视频素材"""
+        return any(self._is_video_file(path) for path in media_paths)
+    
+    def _create_video_segment(self, video_path: str, audio_clip) -> Any:
+        """创建视频片段"""
+        print(f"处理视频素材: {os.path.basename(video_path)}")
+        
+        # 加载视频文件
+        video_clip = VideoFileClip(video_path)
+        original_duration = video_clip.duration
+        target_duration = audio_clip.duration
+        
+        print(f"  原视频时长: {original_duration:.2f}s，目标时长: {target_duration:.2f}s")
+        
+        # 移除原音频，调整尺寸，拉伸时长
+        video_clip = video_clip.without_audio()
+        video_clip = self._resize_video(video_clip)
+        
+        if abs(original_duration - target_duration) > 0.1:
+            speed_factor = original_duration / target_duration
+            print(f"  拉伸系数: {speed_factor:.3f}")
+            video_clip = video_clip.with_duration(target_duration)
+        
+        return video_clip.with_audio(audio_clip)
+    
+    def _resize_video(self, video_clip) -> Any:
+        """调整视频尺寸到1280x720"""
+        target_w, target_h = 1280, 720
+        original_w, original_h = video_clip.size
+        
+        # 按比例缩放并裁剪
+        scale_w = target_w / original_w
+        scale_h = target_h / original_h
+        
+        if scale_w > scale_h:
+            video_clip = video_clip.resized(width=target_w)
+            if video_clip.h > target_h:
+                y_start = (video_clip.h - target_h) // 2
+                video_clip = video_clip.cropped(y1=y_start, y2=y_start + target_h)
+        else:
+            video_clip = video_clip.resized(height=target_h)
+            if video_clip.w > target_w:
+                x_start = (video_clip.w - target_w) // 2
+                video_clip = video_clip.cropped(x1=x_start, x2=x_start + target_w)
+        
+        return video_clip
     

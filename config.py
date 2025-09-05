@@ -173,6 +173,21 @@ class Config:
     MAX_CONCURRENT_IMAGE_GENERATION = 4  # 图片生成最大并发数
     MAX_CONCURRENT_VOICE_SYNTHESIS = 4   # 语音合成最大并发数
     
+    # 视频素材处理配置
+    VIDEO_MATERIAL_CONFIG = {
+        "supported_formats": [".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv", ".m4v"],
+        "target_size": (1280, 720),
+        "target_fps": 30,  # 有视频素材时使用30fps
+        "remove_original_audio": True,
+        "duration_adjustment": "stretch",  # 拉伸匹配音频长度
+        "resize_method": "crop"  # 裁剪保持比例
+    }
+    
+    # 图片素材处理配置
+    IMAGE_MATERIAL_CONFIG = {
+        "target_fps": 15  # 纯图片素材时保持15fps
+    }
+    
     # ================================================================================
     # 系统配置验证方法（一般无需修改）
     # ================================================================================
