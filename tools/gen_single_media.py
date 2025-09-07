@@ -95,8 +95,7 @@ def get_text_input() -> str:
                 continue
             
             try:
-                from core.document_reader import read_document
-                text = read_document(file_path)
+                text = read_document(file_path)  # 使用本地定义的函数
                 print(f"✅ 成功读取文档，文字长度：{len(text)} 字符")
                 preview = first_n_chars(text, 100)
                 print(f"内容预览：{preview}{'...' if len(text) > 100 else ''}")
