@@ -106,7 +106,7 @@ def run_auto(
     image_paths: List[str] = image_result["image_paths"]
     failed_image_segments: List[int] = image_result["failed_segments"]
 
-    # 8) 语音合成
+    # 8) 语音合成（含SRT导出）
     audio_paths = synthesize_voice_for_segments(tts_server, voice, script_data, f"{project_output_dir}/voice")
 
     # 9) BGM路径解析

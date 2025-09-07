@@ -231,9 +231,125 @@ def synthesize_voice_for_segments(server: str, voice: str, script_data: Dict[str
                     error_msg = result.get("error", f"生成第{segment_index}段语音失败")
                     raise ValueError(error_msg)
 
+        # 语音合成完成后，立即导出SRT字幕文件
+        print("🎬 开始导出SRT字幕文件...")
+        try:
+            srt_path = export_srt_subtitles(script_data, audio_paths, output_dir)
+            print(f"✅ SRT字幕已保存: {srt_path}")
+        except Exception as e:
+            print(f"⚠️ SRT字幕导出失败: {e}")  # 非关键功能，失败不中断流程
+
         return audio_paths
 
     except Exception as e:
         raise ValueError(f"语音合成错误: {e}")
+
+
+def export_srt_subtitles(script_data: Dict[str, Any], audio_paths: List[str], voice_dir: str) -> str:
+    """
+    导出SRT字幕文件到voice文件夹
+    
+    Args:
+        script_data: 脚本数据
+        audio_paths: 音频文件路径列表
+        voice_dir: voice文件夹路径
+    
+    Returns:
+        str: SRT文件路径
+    """
+    from moviepy import AudioFileClip
+    from core.video_composer import VideoComposer
+    
+    try:
+        # 获取实际音频时长
+        segment_durations = []
+        for audio_path in audio_paths:
+            if os.path.exists(audio_path):
+                clip = AudioFileClip(audio_path)
+                segment_durations.append(float(clip.duration))
+                clip.close()
+            else:
+                segment_durations.append(0.0)
+        
+        # 复用VideoComposer的字幕分割逻辑
+        composer = VideoComposer()
+        subtitle_config = config.SUBTITLE_CONFIG.copy()
+        
+        # 生成SRT内容
+        srt_lines = []
+        subtitle_index = 1
+        current_time = 0.0
+        
+        for i, segment in enumerate(script_data["segments"]):
+            content = segment["content"]
+            duration = segment_durations[i] if i < len(segment_durations) else 0.0
+            
+            # 分割文本
+            subtitle_texts = composer.split_text_for_subtitle(
+                content,
+                subtitle_config["max_chars_per_line"],
+                subtitle_config["max_lines"]
+            )
+            
+            # 计算每行时长
+            if len(subtitle_texts) == 0:
+                continue
+                
+            line_durations = []
+            if len(subtitle_texts) == 1:
+                line_durations = [duration]
+            else:
+                lengths = [max(1.0, len(t)) for t in subtitle_texts]
+                total_len = sum(lengths)
+                acc = 0.0
+                for idx, length in enumerate(lengths):
+                    if idx < len(lengths) - 1:
+                        d = duration * (length / total_len)
+                        line_durations.append(d)
+                        acc += d
+                    else:
+                        line_durations.append(max(0.0, duration - acc))
+            
+            # 生成SRT条目
+            for subtitle_text, subtitle_duration in zip(subtitle_texts, line_durations):
+                start_time = current_time
+                end_time = current_time + subtitle_duration
+                
+                # SRT时间格式
+                start_srt = _format_srt_time(start_time)
+                end_srt = _format_srt_time(end_time)
+                
+                srt_lines.append(f"{subtitle_index}")
+                srt_lines.append(f"{start_srt} --> {end_srt}")
+                srt_lines.append(subtitle_text.strip())
+                srt_lines.append("")
+                
+                subtitle_index += 1
+                current_time = end_time
+        
+        # 写入SRT文件
+        project_name = os.path.basename(voice_dir.rstrip('/').rstrip('\\'))
+        if project_name == "voice":
+            project_name = os.path.basename(os.path.dirname(voice_dir.rstrip('/').rstrip('\\')))
+        
+        srt_filename = f"{project_name}_subtitles.srt"
+        srt_path = os.path.join(voice_dir, srt_filename)
+        
+        with open(srt_path, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(srt_lines))
+        
+        return srt_path
+        
+    except Exception as e:
+        raise ValueError(f"SRT字幕导出错误: {e}")
+
+
+def _format_srt_time(seconds: float) -> str:
+    """格式化时间为SRT格式 (HH:MM:SS,mmm)"""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    millisecs = int((seconds % 1) * 1000)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d},{millisecs:03d}"
 
 

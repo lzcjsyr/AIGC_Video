@@ -469,16 +469,18 @@ class VideoComposer:
             vf_filter = ",".join(vf_parts) if vf_parts else None
 
             # 优先尝试macOS硬件编码
-            bitrate = '5M' if fps == 30 else '3M'
+            bitrate = '8M' if fps == 30 else '3M'
+            audio_bitrate = '128k' if fps == 30 else '96k'
+            bufsize = '12M' if fps == 30 else '6M'
             final_video.write_videofile(
                 output_path,
                 fps=fps,
                 codec='h264_videotoolbox',
                 audio_codec='aac',
-                audio_bitrate='96k',
+                audio_bitrate=audio_bitrate,
                 bitrate=bitrate,
                 ffmpeg_params=(
-                    ['-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-maxrate', bitrate, '-bufsize', '10M' if fps == 30 else '6M', '-profile:v', 'main', '-level', '3.1']
+                    ['-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-maxrate', bitrate, '-bufsize', bufsize, '-profile:v', 'main', '-level', '3.1']
                     + (['-vf', vf_filter] if vf_filter else [])
                 ),
                 logger=moviepy_logger
@@ -486,16 +488,19 @@ class VideoComposer:
         except Exception as e:
             print(f"⚠️ 硬件编码不可用或失败，回退到软件编码: {e}")
             # 回退到软件编码
+            audio_bitrate = '128k' if fps == 30 else '96k'
+            crf = '20' if fps == 30 else '25'
+            preset = 'medium'
             final_video.write_videofile(
                 output_path,
                 fps=fps,
                 codec='libx264',
                 audio_codec='aac',
-                audio_bitrate='96k',
-                preset='medium' if fps == 30 else 'veryfast',
+                audio_bitrate=audio_bitrate,
+                preset=preset,
                 threads=os.cpu_count() or 4,
                 ffmpeg_params=(
-                    ['-crf', '23' if fps == 30 else '25', '-pix_fmt', 'yuv420p', '-movflags', '+faststart']
+                    ['-crf', crf, '-pix_fmt', 'yuv420p', '-movflags', '+faststart']
                     + (['-vf', vf_filter] if vf_filter else [])
                 ),
                 logger=moviepy_logger
