@@ -38,7 +38,8 @@ class VideoComposer:
                      narration_volume: float = 1.0,
                      opening_image_path: Optional[str] = None,
                      opening_golden_quote: Optional[str] = None,
-                     opening_narration_audio_path: Optional[str] = None) -> str:
+                     opening_narration_audio_path: Optional[str] = None,
+                     image_size: str = "1280x720") -> str:
         """
         合成最终视频
         
@@ -54,6 +55,7 @@ class VideoComposer:
             opening_image_path: 开场图片路径
             opening_golden_quote: 开场金句
             opening_narration_audio_path: 开场口播音频路径
+            image_size: 目标图像尺寸，如"1280x720"
         
         Returns:
             str: 输出视频路径
@@ -61,6 +63,10 @@ class VideoComposer:
         try:
             if len(image_paths) != len(audio_paths):
                 raise ValueError("图像文件数量与音频文件数量不匹配")
+            
+            # 解析目标尺寸
+            target_size = self._parse_image_size(image_size)
+            print(f"目标视频尺寸: {target_size[0]}x{target_size[1]}")
             
             # 检测是否包含视频素材，决定输出帧率
             has_videos = self._has_video_materials(image_paths)
@@ -73,11 +79,11 @@ class VideoComposer:
             # 创建开场片段
             opening_seconds = self._create_opening_segment(
                 opening_image_path, opening_golden_quote, 
-                opening_narration_audio_path, video_clips
+                opening_narration_audio_path, video_clips, target_size
             )
             
             # 创建主要视频片段
-            self._create_main_segments(image_paths, audio_paths, video_clips, audio_clips)
+            self._create_main_segments(image_paths, audio_paths, video_clips, audio_clips, target_size)
             
             # 连接所有视频片段
             print("正在合成最终视频...")
@@ -91,7 +97,7 @@ class VideoComposer:
             final_video = self._adjust_narration_volume(final_video, narration_volume)
             
             # 添加视觉效果
-            final_video = self._add_visual_effects(final_video, image_paths)
+            final_video = self._add_visual_effects(final_video, image_paths, target_size)
             
             # 添加背景音乐
             final_video = self._add_background_music(final_video, bgm_audio_path, bgm_volume)
@@ -112,7 +118,7 @@ class VideoComposer:
     def _create_opening_segment(self, opening_image_path: Optional[str], 
                               opening_golden_quote: Optional[str],
                               opening_narration_audio_path: Optional[str], 
-                              video_clips: List) -> float:
+                              video_clips: List, target_size: Tuple[int, int]) -> float:
         """创建开场片段"""
         opening_seconds = 0.0
         opening_voice_clip = None
@@ -126,6 +132,8 @@ class VideoComposer:
         if opening_image_path and os.path.exists(opening_image_path) and opening_seconds > 1e-3:
             print("正在创建开场片段…")
             opening_base = ImageClip(opening_image_path).with_duration(opening_seconds)
+            # 调整开场图片尺寸到目标尺寸
+            opening_base = self._resize_image(opening_base, target_size)
             
             # 添加开场金句
             if opening_golden_quote and opening_golden_quote.strip():
@@ -220,7 +228,7 @@ class VideoComposer:
         return opening_clip
     
     def _create_main_segments(self, image_paths: List[str], audio_paths: List[str], 
-                            video_clips: List, audio_clips: List):
+                            video_clips: List, audio_clips: List, target_size: Tuple[int, int]):
         """创建主要视频片段（支持图片和视频混合）"""
         for i, (media_path, audio_path) in enumerate(zip(image_paths, audio_paths)):
             print(f"正在处理第{i+1}段素材...")
@@ -229,10 +237,12 @@ class VideoComposer:
             
             if self._is_video_file(media_path):
                 # 视频素材处理
-                video_clip = self._create_video_segment(media_path, audio_clip)
+                video_clip = self._create_video_segment(media_path, audio_clip, target_size)
             else:
                 # 图片素材处理
                 image_clip = ImageClip(media_path).with_duration(audio_clip.duration)
+                # 调整图片尺寸到目标尺寸
+                image_clip = self._resize_image(image_clip, target_size)
                 video_clip = image_clip.with_audio(audio_clip)
             
             video_clips.append(video_clip)
@@ -274,7 +284,7 @@ class VideoComposer:
         return final_video
     
     @handle_video_operation("视觉效果添加", critical=False, fallback_value=lambda self, final_video, *args: final_video)
-    def _add_visual_effects(self, final_video, image_paths: List[str]):
+    def _add_visual_effects(self, final_video, image_paths: List[str], target_size: Tuple[int, int]):
         """添加视觉效果（开场渐显和片尾渐隐）"""
         # 性能优化：跳过逐帧开场渐显
         
@@ -283,6 +293,8 @@ class VideoComposer:
         if isinstance(image_paths, list) and len(image_paths) > 0 and tail_seconds > 1e-3:
             last_image_path = image_paths[-1]
             tail_clip = ImageClip(last_image_path).with_duration(tail_seconds)
+            # 调整片尾图片尺寸到目标尺寸
+            tail_clip = self._resize_image(tail_clip, target_size)
             final_video = concatenate_videoclips([final_video, tail_clip], method="chain")
             print(f"🎬 已添加片尾静帧 {tail_seconds}s")
         
@@ -811,7 +823,7 @@ class VideoComposer:
         """检测是否包含视频素材"""
         return any(self._is_video_file(path) for path in media_paths)
     
-    def _create_video_segment(self, video_path: str, audio_clip) -> Any:
+    def _create_video_segment(self, video_path: str, audio_clip, target_size: Tuple[int, int]) -> Any:
         """创建视频片段"""
         print(f"处理视频素材: {os.path.basename(video_path)}")
         
@@ -824,7 +836,7 @@ class VideoComposer:
         
         # 移除原音频，调整尺寸
         video_clip = video_clip.without_audio()
-        video_clip = self._resize_video(video_clip)
+        video_clip = self._resize_video(video_clip, target_size)
         
         if original_duration < target_duration:
             # 视频比音频短：拉伸到目标长度（保持现有逻辑）
@@ -841,9 +853,9 @@ class VideoComposer:
         
         return video_clip.with_audio(audio_clip)
     
-    def _resize_video(self, video_clip) -> Any:
-        """调整视频尺寸到1280x720"""
-        target_w, target_h = 1280, 720
+    def _resize_video(self, video_clip, target_size: Tuple[int, int]) -> Any:
+        """调整视频尺寸到指定尺寸"""
+        target_w, target_h = target_size
         original_w, original_h = video_clip.size
         
         # 按比例缩放并裁剪
@@ -862,4 +874,41 @@ class VideoComposer:
                 video_clip = video_clip.cropped(x1=x_start, x2=x_start + target_w)
         
         return video_clip
+    
+    def _parse_image_size(self, image_size: str) -> Tuple[int, int]:
+        """解析图像尺寸字符串，如 "1024x1024" -> (1024, 1024)"""
+        try:
+            width_str, height_str = image_size.lower().split('x')
+            width = int(width_str.strip())
+            height = int(height_str.strip())
+            return (width, height)
+        except (ValueError, AttributeError) as e:
+            logger.warning(f"无法解析图像尺寸 '{image_size}'，使用默认1280x720: {e}")
+            return (1280, 720)
+    
+    def _resize_image(self, image_clip, target_size: Tuple[int, int]) -> Any:
+        """调整图片尺寸到指定尺寸"""
+        target_w, target_h = target_size
+        original_w, original_h = image_clip.size
+        
+        # 如果原图尺寸已经匹配，直接返回
+        if original_w == target_w and original_h == target_h:
+            return image_clip
+        
+        # 按比例缩放并裁剪（与视频处理逻辑一致）
+        scale_w = target_w / original_w
+        scale_h = target_h / original_h
+        
+        if scale_w > scale_h:
+            image_clip = image_clip.resized(width=target_w)
+            if image_clip.h > target_h:
+                y_start = (image_clip.h - target_h) // 2
+                image_clip = image_clip.cropped(y1=y_start, y2=y_start + target_h)
+        else:
+            image_clip = image_clip.resized(height=target_h)
+            if image_clip.w > target_w:
+                x_start = (image_clip.w - target_w) // 2
+                image_clip = image_clip.cropped(x1=x_start, x2=x_start + target_w)
+        
+        return image_clip
     

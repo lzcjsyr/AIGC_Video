@@ -142,6 +142,7 @@ def run_auto(
         opening_narration_audio_path=opening_narration_audio_path,
         bgm_volume=float(getattr(config, "BGM_DEFAULT_VOLUME", 0.2)),
         narration_volume=float(getattr(config, "NARRATION_DEFAULT_VOLUME", 1.0)),
+        image_size=image_size,
     )
 
     # 12) 汇总结果
@@ -427,6 +428,7 @@ def run_step_5(project_output_dir: str, image_size: str, enable_subtitles: bool,
         opening_narration_audio_path=opening_narration_audio_path,
         bgm_volume=float(getattr(config, "BGM_DEFAULT_VOLUME", 0.2)),
         narration_volume=float(getattr(config, "NARRATION_DEFAULT_VOLUME", 1.0)),
+        image_size=image_size,
     )
 
     return {"success": True, "final_video": final_video_path}
