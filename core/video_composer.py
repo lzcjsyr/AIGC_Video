@@ -822,14 +822,22 @@ class VideoComposer:
         
         print(f"  原视频时长: {original_duration:.2f}s，目标时长: {target_duration:.2f}s")
         
-        # 移除原音频，调整尺寸，拉伸时长
+        # 移除原音频，调整尺寸
         video_clip = video_clip.without_audio()
         video_clip = self._resize_video(video_clip)
         
-        if abs(original_duration - target_duration) > 0.1:
+        if original_duration < target_duration:
+            # 视频比音频短：拉伸到目标长度（保持现有逻辑）
             speed_factor = original_duration / target_duration
-            print(f"  拉伸系数: {speed_factor:.3f}")
+            print(f"  视频较短，拉伸系数: {speed_factor:.3f}")
             video_clip = video_clip.with_duration(target_duration)
+        elif original_duration > target_duration:
+            # 视频比音频长：从头开始裁剪到目标长度
+            print(f"  视频较长，从头裁剪到 {target_duration:.2f}s")
+            video_clip = video_clip.subclipped(0, target_duration)
+        else:
+            # 时长相等或极其接近，无需处理
+            print(f"  视频时长与音频匹配，无需调整")
         
         return video_clip.with_audio(audio_clip)
     
