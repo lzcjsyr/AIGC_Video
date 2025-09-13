@@ -13,7 +13,98 @@ load_dotenv()
 class Config:
     """系统配置类，统一管理所有配置项"""
     
-    # API 配置
+    # ████████████████████████████████████████████████████████████████████████████████
+    # ██                            用户常调参数区域                                ██
+    # ██                     (经常需要调整的参数放在这里)                             ██
+    # ████████████████████████████████████████████████████████████████████████████████
+    
+    # ==================== 视频生成核心参数 ====================
+    DEFAULT_TARGET_LENGTH = 1000  # 默认目标字数 (范围: 500-3000)
+    DEFAULT_NUM_SEGMENTS = 10     # 默认分段数 (范围: 5-20)
+    
+    # ==================== LLM 模型生成参数 ====================
+    LLM_TEMPERATURE_SCRIPT = 0.7   # 脚本生成随机性 (0-1，越大越随机)
+    LLM_TEMPERATURE_KEYWORDS = 0.5 # 要点提取随机性 (0-1，越大越随机)
+    
+    # ==================== 音频控制参数 ====================
+    BGM_DEFAULT_VOLUME = 0.2                # 背景音乐音量 (0=静音, 1=原音, >1放大, 推荐0.03-0.20)
+    NARRATION_DEFAULT_VOLUME = 2.0          # 口播音量 (0.5-3.0, 推荐0.8-1.5, >2.0有削波风险)
+    AUDIO_DUCKING_ENABLED = False           # 口播时是否压低BGM
+    AUDIO_DUCKING_STRENGTH = 0.3            # BGM压低强度 (0-1)
+    AUDIO_DUCKING_SMOOTH_SECONDS = 0.12     # 音量过渡平滑时间 (秒)
+
+    # ==================== 视觉效果时间参数 ====================
+    OPENING_FADEIN_SECONDS = 2.0                    # 开场渐显时长 (秒)
+    OPENING_HOLD_AFTER_NARRATION_SECONDS = 2.0     # 开场口播后停留时长 (秒)
+    ENDING_FADE_SECONDS = 2.5                      # 片尾淡出时长 (秒)
+    
+    # ==================== 字幕样式配置 ====================
+    SUBTITLE_CONFIG = {
+        "enabled": True,                       # 是否启用字幕
+        "font_size": 36,                       # 字体大小
+        # 字体路径建议：
+        # macOS 苹方字体: /System/Library/Fonts/PingFang.ttc
+        # macOS 宋体: /System/Library/Fonts/Supplemental/Songti.ttc
+        # Windows 微软雅黑: C:/Windows/Fonts/msyh.ttc
+        "font_family": "/System/Library/Fonts/PingFang.ttc",
+        "color": "white",                      # 文字颜色
+        "stroke_color": "black",               # 描边颜色
+        "stroke_width": 3,                     # 描边粗细
+        "position": ("center", "bottom"),      # 位置 (水平, 垂直)
+        "margin_bottom": 50,                   # 距底部距离 (像素)
+        "max_chars_per_line": 25,              # 每行最大字符数
+        "max_lines": 1,                        # 最大行数
+        "line_spacing": 15,                    # 行间距 (像素)
+        "background_color": (0, 0, 0),         # 背景色 (RGB, None=透明)
+        "background_opacity": 0.8,             # 背景不透明度 (0-1)
+        "background_horizontal_padding": 20,   # 背景水平内边距 (像素)
+        "background_vertical_padding": 10,     # 背景垂直内边距 (像素)
+        "shadow_enabled": False,               # 是否启用文字阴影
+        "shadow_color": "black",               # 阴影颜色
+        "shadow_offset": (2, 2)                # 阴影偏移 (x, y)
+    }
+    
+    # ==================== 开场金句样式配置 ====================
+    OPENING_QUOTE_STYLE = {
+        "enabled": True,                              # 是否显示开场金句
+        "font_family": "/System/Library/Fonts/PingFang.ttc",  # 字体路径
+        "font_size": 48,                              # 基础字体大小
+        "font_scale": 1.3,                            # 相对字幕字体的缩放倍数
+        "color": "white",                             # 文字颜色
+        "stroke_color": "black",                      # 描边颜色
+        "stroke_width": 4,                            # 描边粗细
+        "position": ("center", "center"),             # 位置 (居中显示)
+        "max_lines": 6,                               # 最大行数
+        "max_chars_per_line": 10,                     # 每行最大字符数
+        "line_spacing": 20,                           # 行间距 (像素)
+        "letter_spacing": 0,                          # 字间距 (0=正常)
+    }
+    
+    # ==================== 性能控制参数 ====================
+    MAX_CONCURRENT_IMAGE_GENERATION = 4  # 图片生成最大并发数
+    MAX_CONCURRENT_VOICE_SYNTHESIS = 4   # 语音合成最大并发数
+    
+    # ==================== 视频素材处理配置 ====================
+    VIDEO_MATERIAL_CONFIG = {
+        "supported_formats": [".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv", ".m4v"],
+        "target_size": (1280, 720),           # 目标分辨率
+        "target_fps": 30,                     # 目标帧率 (有视频素材时)
+        "remove_original_audio": True,        # 是否移除原音频
+        "duration_adjustment": "stretch",     # 时长调整方式: stretch/crop
+        "resize_method": "crop"               # 尺寸调整方式: crop/stretch
+    }
+    
+    # ==================== 图片素材处理配置 ====================
+    IMAGE_MATERIAL_CONFIG = {
+        "target_fps": 15  # 纯图片素材时的帧率
+    }
+    
+    # ████████████████████████████████████████████████████████████████████████████████
+    # ██                            系统配置区域                                    ██
+    # ██                     (一般无需修改的系统参数)                                 ██
+    # ████████████████████████████████████████████████████████████████████████████████
+    
+    # ==================== API 密钥配置 ====================
     OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
     SEEDREAM_API_KEY = os.getenv('SEEDREAM_API_KEY')
     SILICONFLOW_KEY = os.getenv('SILICONFLOW_KEY')
@@ -24,24 +115,22 @@ class Config:
     BYTEDANCE_TTS_ACCESS_TOKEN = os.getenv('BYTEDANCE_TTS_ACCESS_TOKEN')
     BYTEDANCE_TTS_SECRET_KEY = os.getenv('BYTEDANCE_TTS_SECRET_KEY')
     
-    # API 端点配置
+    # ==================== API 端点配置 ====================
     OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
     SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1"
     ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
     AIHUBMIX_URL = "https://aihubmix.com/v1"
     
-    # 默认参数配置
-    DEFAULT_TARGET_LENGTH = 1000  # 默认目标字数
-    DEFAULT_NUM_SEGMENTS = 10    # 默认分段数
+    # ==================== 默认模型配置 ====================
     DEFAULT_IMAGE_SIZE = "1024x1024"  # 默认图像尺寸
-    DEFAULT_VOICE = "zh_male_yuanboxiaoshu_moon_bigtts"  # 默认语音（字节语音合成大模型）
+    DEFAULT_VOICE = "zh_male_yuanboxiaoshu_moon_bigtts"  # 默认语音
     
-    # 支持的服务商和模型
-    SUPPORTED_LLM_SERVERS = ["openrouter", "siliconflow", "aihubmix"]  # 都使用OpenAI兼容接口
-    SUPPORTED_IMAGE_SERVERS = ["doubao"]  # 只支持火山引擎豆包
-    SUPPORTED_TTS_SERVERS = ["bytedance"]    # 只支持字节语音合成大模型
+    # ==================== 支持的服务商配置 ====================
+    SUPPORTED_LLM_SERVERS = ["openrouter", "siliconflow", "aihubmix"]
+    SUPPORTED_IMAGE_SERVERS = ["doubao"]
+    SUPPORTED_TTS_SERVERS = ["bytedance"]
     
-    # 推荐的模型配置
+    # ==================== 推荐模型列表 ====================
     RECOMMENDED_MODELS = {
         "llm": {
             "openrouter": [
@@ -54,33 +143,32 @@ class Config:
                 "moonshotai/Kimi-K2-Instruct",
                 "Qwen/Qwen3-235B-A22B-Thinking-2507"
             ],
-            "aihubmix": ["gpt-5"]  # aihubmix代理仅支持gpt-5模型
+            "aihubmix": ["gpt-5"]
         },
         "image": {
             "doubao": ["doubao-seedream-3-0-t2i-250415"]
         },
         "tts": {
-            "bytedance": ["bytedance-bigtts"]  # 字节语音合成大模型
+            "bytedance": ["bytedance-bigtts"]
         }
     }
     
-    
-    # 文件格式支持
+    # ==================== 文件格式支持 ====================
     SUPPORTED_INPUT_FORMATS = [".epub", ".pdf", ".mobi", ".azw3", ".docx", ".doc"]
+    
     # 豆包Seedream 3.0支持的图像尺寸
     SUPPORTED_IMAGE_SIZES = [
-        "1024x1024",  # 1:1 - 方形，适合头像、产品图
-        "864x1152",   # 3:4 - 竖屏，适合手机竖屏内容
-        "1152x864",   # 4:3 - 横屏，适合传统屏幕比例
-        "1280x720",   # 16:9 - 宽屏，适合视频横屏内容
-        "720x1280",   # 9:16 - 竖屏视频，适合抖音、快手等
-        "832x1248",   # 2:3 - 竖屏，适合海报、书籍封面
-        "1248x832",   # 3:2 - 横屏，适合摄影作品
-        "1512x648"    # 21:9 - 超宽屏，适合横幅、封面图
+        "1024x1024",  # 1:1 - 方形
+        "864x1152",   # 3:4 - 竖屏
+        "1152x864",   # 4:3 - 横屏
+        "1280x720",   # 16:9 - 宽屏
+        "720x1280",   # 9:16 - 竖屏视频
+        "832x1248",   # 2:3 - 竖屏海报
+        "1248x832",   # 3:2 - 横屏摄影
+        "1512x648"    # 21:9 - 超宽屏
     ]
     
-    
-    # 输出路径配置
+    # ==================== 输出路径配置 ====================
     DEFAULT_OUTPUT_DIR = "output"
     OUTPUT_STRUCTURE = {
         "images": "images",
@@ -88,105 +176,14 @@ class Config:
         "text": "text"
     }
     
-    # 处理限制
+    # ==================== 参数范围限制 ====================
     MIN_TARGET_LENGTH = 500
     MAX_TARGET_LENGTH = 3000
     MIN_NUM_SEGMENTS = 5
     MAX_NUM_SEGMENTS = 20
     
-    # 语音时长估算 (每分钟字数)
-    SPEECH_SPEED_WPM = 250  # 中文普通话正常语速
-    
-    # LLM 生成参数配置
-    LLM_TEMPERATURE_SCRIPT = 0.7   # 智能缩写(脚本生成)的temperature参数，范围0-1，越大越随机
-    LLM_TEMPERATURE_KEYWORDS = 0.5 # 要点提取的temperature参数，范围0-1，越大越随机
-    
-    # 字幕配置
-    SUBTITLE_CONFIG = {
-        "enabled": True,                       # 是否启用字幕
-        "font_size": 36,                       # 字体大小
-        # 字体设置：
-        # - 建议填写“绝对路径”最稳妥，能确保在不同环境下渲染一致（以下为常见的 macOS 路径示例）：
-        #     1) 宋体风格（接近思源宋体 Source Han Serif）：
-        #        /System/Library/Fonts/Supplemental/Songti.ttc
-        #     2) 黑体风格（接近思源黑体 Source Han Sans）：
-        #        /System/Library/Fonts/PingFang.ttc
-        #        /System/Library/Fonts/Hiragino Sans GB.ttc
-        # - 也可以直接写字体名（稳定性略差，依赖 Pillow 的字体解析）：
-        #     "Songti SC"、"PingFang SC"、"Hiragino Sans GB"
-        # - 留空(None) 时使用系统默认字体，可能导致中文显示/风格不如预期。
-        "font_family": "/System/Library/Fonts/PingFang.ttc",
-        "color": "white",                      # 字体颜色
-        "stroke_color": "black",               # 描边颜色
-        "stroke_width": 3,                     # 描边宽度
-        "position": ("center", "bottom"),      # 字幕位置
-        "margin_bottom": 50,                   # 底部边距
-        "max_chars_per_line": 25,              # 每行最大字符数
-        "max_lines": 1,                        # 最大行数（提高以允许每段多行字幕）
-        "line_spacing": 15,                    # 行间距
-        "background_color": (0, 0, 0),         # 背景色（RGB元组，None为透明）
-        "background_opacity": 0.8,             # 背景透明度
-        "background_horizontal_padding": 20,   # 背景水平内边距（像素）
-        "background_vertical_padding": 10,     # 背景垂直内边距（像素）
-        "shadow_enabled": False,               # 是否启用阴影效果（暂时禁用以解决位置问题）
-        "shadow_color": "black",               # 阴影颜色
-        "shadow_offset": (2, 2)                # 阴影偏移(x, y)，单位像素
-    }
-    
-    # 背景音乐增益（0=静音, 1=原始, >1放大；推荐0.03~0.20）
-    BGM_DEFAULT_VOLUME = 0.2
-
-    # 口播增益（可用0.5~3.0，推荐0.8~1.5；>2.0有削波风险）
-    NARRATION_DEFAULT_VOLUME = 2.0
-
-    # 口播期间压低BGM（强度0~1；平滑秒数避免突兀）
-    AUDIO_DUCKING_ENABLED = False
-    AUDIO_DUCKING_STRENGTH = 0.3
-    AUDIO_DUCKING_SMOOTH_SECONDS = 0.12   
-
-    # 开场渐显秒数（对首帧/开场片段从黑到正常）
-    OPENING_FADEIN_SECONDS = 2.0
-
-    # 开场口播结束后画面停留秒数
-    OPENING_HOLD_AFTER_NARRATION_SECONDS = 2.0
-
-    # 开场金句样式参数
-    OPENING_QUOTE_STYLE = {
-        "enabled": True,                 # 是否显示开场金句
-        "font_family": "/System/Library/Fonts/PingFang.ttc",  # 字体（建议绝对路径）
-        "font_size": 48,                 # 字体大小（将基于字幕字号的放大系数补正）
-        "font_scale": 1.3,               # 在字幕基础字号上的缩放系数
-        "color": "white",                # 文字颜色
-        "stroke_color": "black",         # 描边颜色
-        "stroke_width": 4,               # 描边宽度
-        "position": ("center", "center"),  # 居中
-        "max_lines": 6,                  # 最大行数（过长自动换行）
-        "max_chars_per_line": 18,        # 每行最大字符数（用于开场金句换行）
-        "line_spacing": 20,               # 行间距（像素，开场金句专用）
-        "letter_spacing": 0,             # 字间距（以空格数量近似控制，0 表示不加）
-    }
-    
-    # 片尾参数: 片尾静帧与淡出秒数
-    ENDING_FADE_SECONDS = 2.5
-    
-    # 并发生成配置
-    MAX_CONCURRENT_IMAGE_GENERATION = 4  # 图片生成最大并发数
-    MAX_CONCURRENT_VOICE_SYNTHESIS = 4   # 语音合成最大并发数
-    
-    # 视频素材处理配置
-    VIDEO_MATERIAL_CONFIG = {
-        "supported_formats": [".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv", ".m4v"],
-        "target_size": (1280, 720),
-        "target_fps": 30,  # 有视频素材时使用30fps
-        "remove_original_audio": True,
-        "duration_adjustment": "stretch",  # 拉伸匹配音频长度
-        "resize_method": "crop"  # 裁剪保持比例
-    }
-    
-    # 图片素材处理配置
-    IMAGE_MATERIAL_CONFIG = {
-        "target_fps": 15  # 纯图片素材时保持15fps
-    }
+    # 内部计算参数
+    SPEECH_SPEED_WPM = 250  # 中文语速估算 (每分钟字数)
     
     # ================================================================================
     # 系统配置验证方法（一般无需修改）
