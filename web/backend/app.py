@@ -32,8 +32,8 @@ running_tasks = {}
 
 class TaskRequest(BaseModel):
     file_path: str
-    target_length: Optional[int] = Config.DEFAULT_TARGET_LENGTH
-    num_segments: Optional[int] = Config.DEFAULT_NUM_SEGMENTS
+    target_length: Optional[int] = 1000
+    num_segments: Optional[int] = 10
     llm_model: Optional[str] = 'google/gemini-2.5-pro'
     image_size: Optional[str] = Config.DEFAULT_IMAGE_SIZE
     voice: Optional[str] = Config.DEFAULT_VOICE
@@ -217,8 +217,8 @@ def get_config():
         return {
             'api_status': api_status,
             'system_config': {
-                'default_target_length': Config.DEFAULT_TARGET_LENGTH,
-                'default_num_segments': Config.DEFAULT_NUM_SEGMENTS,
+                'default_target_length': 1000,
+                'default_num_segments': 10,
                 'default_image_size': Config.DEFAULT_IMAGE_SIZE,
                 'speech_speed': Config.SPEECH_SPEED_WPM,
                 'default_subtitles': Config.SUBTITLE_CONFIG['enabled']

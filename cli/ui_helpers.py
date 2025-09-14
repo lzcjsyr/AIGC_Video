@@ -464,8 +464,8 @@ def _run_step_by_step_loop(
 
 def run_cli_main(
     input_file=None,
-    target_length: int = None,
-    num_segments: int = None,
+    target_length: int = 1000,
+    num_segments: int = 10,
     image_size: str = None,
     llm_model: str = "google/gemini-2.5-pro",
     image_model: str = "doubao-seedream-3-0-t2i-250415",
@@ -492,8 +492,6 @@ def run_cli_main(
         from core.pipeline import run_auto, run_step_1
         
         # 使用配置默认值填充None参数
-        target_length = target_length or config.DEFAULT_TARGET_LENGTH
-        num_segments = num_segments or config.DEFAULT_NUM_SEGMENTS
         image_size = image_size or config.DEFAULT_IMAGE_SIZE
         voice = voice or config.DEFAULT_VOICE
         output_dir = output_dir or config.DEFAULT_OUTPUT_DIR

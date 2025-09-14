@@ -13,7 +13,7 @@ PARAMS = {
     # 媒体参数
     "image_size": "1280x720",                           # 图像尺寸 (推荐横屏)
     "llm_model": "google/gemini-2.5-pro",               # LLM模型
-    "image_model": "doubao-seedream-3-0-t2i-250415",    # 图像模型 (固定)
+    "image_model": "doubao-seedream-4-0-250828",        # 图像模型 (见下方说明)
     "voice": "zh_male_yuanboxiaoshu_moon_bigtts",       # 语音音色
     
     # 风格参数
@@ -31,12 +31,17 @@ PARAMS = {
 - num_segments: 分段数量 (5-20，影响内容结构)
 - image_size: 图像尺寸 (见下方完整列表)
 - llm_model: LLM模型 (推荐 google/gemini-2.5-pro)
+- image_model: 图像生成模型 (见下方可选模型)
 - voice: 语音音色 (字节大模型音色)
 - image_style_preset: 图像风格 (style01-style10)，具体风格请查看 prompts.py
 - opening_image_style: 开场图像风格 (des01-des10)，开场图像风格请查看 prompts.py
 
 - enable_subtitles: 是否启用字幕
 - bgm_filename: 背景音乐文件名 (放在项目根目录 music/ 下，不填则无BGM)
+
+🤖 可选图像模型：
+- doubao-seedream-3-0-t2i-250415: V3模型，支持guidance_scale参数，单价0.275
+- doubao-seedream-4-0-250828: V4模型，新版API，单价0.2
 
 🎨 图像风格配置：
 - image_style_preset: 可选 style01-style10

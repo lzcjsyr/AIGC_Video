@@ -68,20 +68,36 @@ def text_to_text(server, model, prompt, system_message="", max_tokens=4000, temp
 def text_to_image_doubao(prompt, size="1024x1024", model="doubao-seedream-3-0-t2i-250415"):
     if not config.SEEDREAM_API_KEY:
         raise APIError("SEEDREAM_API_KEY未配置，无法使用豆包图像生成服务")
-    logger.info(f"使用豆包Seedream 3.0生成图像，尺寸: {size}，提示词长度: {len(prompt)}字符")
+    logger.info(f"使用豆包Seedream生成图像，模型: {model}，尺寸: {size}，提示词长度: {len(prompt)}字符")
     try:
         from volcenginesdkarkruntime import Ark
         client = Ark(
             base_url=config.ARK_BASE_URL,
             api_key=config.SEEDREAM_API_KEY,
         )
-        response = client.images.generate(
-            model=model,
-            prompt=prompt,
-            size=size,
-            guidance_scale=7.5,
-            watermark=False
-        )
+
+        # 根据模型名称判断API版本
+        is_v4_model = "seedream-4" in model
+
+        if is_v4_model:
+            # V4模型：移除guidance_scale，添加新参数支持
+            response = client.images.generate(
+                model=model,
+                prompt=prompt,
+                size=size,
+                response_format="url",
+                watermark=False
+            )
+        else:
+            # V3模型：保持原有参数
+            response = client.images.generate(
+                model=model,
+                prompt=prompt,
+                size=size,
+                guidance_scale=7.5,
+                watermark=False
+            )
+
         if response and response.data:
             image_url = response.data[0].url
             logger.info(f"豆包图像生成成功，返回URL: {image_url[:50]}...")

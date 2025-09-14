@@ -5,104 +5,118 @@
 
 import os
 from dotenv import load_dotenv
-from typing import Dict, Any
+from typing import Dict
 
 # 加载环境变量
 load_dotenv()
 
+# ████████████████████████████████████████████████████████████████████████████████
+# ██                            用户常调参数区域                                  ██
+# ██                     (经常需要调整的参数放在这里)                               ██
+# ████████████████████████████████████████████████████████████████████████████████
+
+# ==================== LLM 模型生成参数 ====================
+LLM_TEMPERATURE_SCRIPT = 0.7            # 脚本生成随机性 (0-1，越大越随机)
+LLM_TEMPERATURE_KEYWORDS = 0.5          # 要点提取随机性 (0-1，越大越随机)
+
+# ==================== 音频控制参数 ====================
+BGM_DEFAULT_VOLUME = 0.2                # 背景音乐音量 (0=静音, 1=原音, >1放大, 推荐0.03-0.20)
+NARRATION_DEFAULT_VOLUME = 2.0          # 口播音量 (0.5-3.0, 推荐0.8-1.5, >2.0有削波风险)
+AUDIO_DUCKING_ENABLED = False           # 口播时是否压低BGM
+AUDIO_DUCKING_STRENGTH = 0.3            # BGM压低强度 (0-1)
+AUDIO_DUCKING_SMOOTH_SECONDS = 0.12     # 音量过渡平滑时间 (秒)
+
+# ==================== 视觉效果时间参数 ====================
+OPENING_FADEIN_SECONDS = 2.0                    # 开场渐显时长 (秒)
+OPENING_HOLD_AFTER_NARRATION_SECONDS = 2.0      # 开场口播后停留时长 (秒)
+ENDING_FADE_SECONDS = 2.5                       # 片尾淡出时长 (秒)
+
+# ==================== 字幕样式配置 ====================
+SUBTITLE_CONFIG = {
+    "enabled": True,                       # 是否启用字幕
+    "font_size": 36,                       # 字体大小
+    # 字体路径建议：
+    # macOS 苹方字体: /System/Library/Fonts/PingFang.ttc
+    # macOS 宋体: /System/Library/Fonts/Supplemental/Songti.ttc
+    # Windows 微软雅黑: C:/Windows/Fonts/msyh.ttc
+    "font_family": "/System/Library/Fonts/PingFang.ttc",
+    "color": "white",                      # 文字颜色
+    "stroke_color": "black",               # 描边颜色
+    "stroke_width": 3,                     # 描边粗细
+    "position": ("center", "bottom"),      # 位置 (水平, 垂直)
+    "margin_bottom": 50,                   # 距底部距离 (像素)
+    "max_chars_per_line": 25,              # 每行最大字符数
+    "max_lines": 1,                        # 最大行数
+    "line_spacing": 15,                    # 行间距 (像素)
+    "background_color": (0, 0, 0),         # 背景色 (RGB, None=透明)
+    "background_opacity": 0.8,             # 背景不透明度 (0-1)
+    "background_horizontal_padding": 20,   # 背景水平内边距 (像素)
+    "background_vertical_padding": 10,     # 背景垂直内边距 (像素)
+    "shadow_enabled": False,               # 是否启用文字阴影
+    "shadow_color": "black",               # 阴影颜色
+    "shadow_offset": (2, 2)                # 阴影偏移 (x, y)
+}
+
+# ==================== 开场金句样式配置 ====================
+OPENING_QUOTE_STYLE = {
+    "enabled": True,                              # 是否显示开场金句
+    "font_family": "/System/Library/Fonts/PingFang.ttc",  # 字体路径
+    "font_size": 48,                              # 基础字体大小
+    "font_scale": 1.3,                            # 相对字幕字体的缩放倍数
+    "color": "white",                             # 文字颜色
+    "stroke_color": "black",                      # 描边颜色
+    "stroke_width": 4,                            # 描边粗细
+    "position": ("center", "center"),             # 位置 (居中显示)
+    "max_lines": 6,                               # 最大行数
+    "max_chars_per_line": 10,                     # 每行最大字符数
+    "line_spacing": 20,                           # 行间距 (像素)
+    "letter_spacing": 0,                          # 字间距 (0=正常)
+}
+
+# ==================== 性能控制参数 ====================
+MAX_CONCURRENT_IMAGE_GENERATION = 4  # 图片生成最大并发数
+MAX_CONCURRENT_VOICE_SYNTHESIS = 4   # 语音合成最大并发数
+
+# ==================== 视频素材处理配置 ====================
+VIDEO_MATERIAL_CONFIG = {
+    "supported_formats": [".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv", ".m4v"],
+    "target_size": (1280, 720),           # 目标分辨率
+    "target_fps": 30,                     # 目标帧率 (有视频素材时)
+    "remove_original_audio": True,        # 是否移除原音频
+    "duration_adjustment": "stretch",     # 时长调整方式: stretch/crop
+    "resize_method": "crop"               # 尺寸调整方式: crop/stretch
+}
+
+# ==================== 图片素材处理配置 ====================
+IMAGE_MATERIAL_CONFIG = {
+    "target_fps": 15  # 纯图片素材时的帧率
+}
+
+# ████████████████████████████████████████████████████████████████████████████████
+# ██                            系统配置区域                                     ██
+# ██                     (一般无需修改的系统参数)                                  ██
+# ████████████████████████████████████████████████████████████████████████████████
+
 class Config:
     """系统配置类，统一管理所有配置项"""
-    
-    # ████████████████████████████████████████████████████████████████████████████████
-    # ██                            用户常调参数区域                                ██
-    # ██                     (经常需要调整的参数放在这里)                             ██
-    # ████████████████████████████████████████████████████████████████████████████████
-    
-    # ==================== 视频生成核心参数 ====================
-    DEFAULT_TARGET_LENGTH = 1000  # 默认目标字数 (范围: 500-3000)
-    DEFAULT_NUM_SEGMENTS = 10     # 默认分段数 (范围: 5-20)
-    
-    # ==================== LLM 模型生成参数 ====================
-    LLM_TEMPERATURE_SCRIPT = 0.7   # 脚本生成随机性 (0-1，越大越随机)
-    LLM_TEMPERATURE_KEYWORDS = 0.5 # 要点提取随机性 (0-1，越大越随机)
-    
-    # ==================== 音频控制参数 ====================
-    BGM_DEFAULT_VOLUME = 0.2                # 背景音乐音量 (0=静音, 1=原音, >1放大, 推荐0.03-0.20)
-    NARRATION_DEFAULT_VOLUME = 2.0          # 口播音量 (0.5-3.0, 推荐0.8-1.5, >2.0有削波风险)
-    AUDIO_DUCKING_ENABLED = False           # 口播时是否压低BGM
-    AUDIO_DUCKING_STRENGTH = 0.3            # BGM压低强度 (0-1)
-    AUDIO_DUCKING_SMOOTH_SECONDS = 0.12     # 音量过渡平滑时间 (秒)
 
-    # ==================== 视觉效果时间参数 ====================
-    OPENING_FADEIN_SECONDS = 2.0                    # 开场渐显时长 (秒)
-    OPENING_HOLD_AFTER_NARRATION_SECONDS = 2.0     # 开场口播后停留时长 (秒)
-    ENDING_FADE_SECONDS = 2.5                      # 片尾淡出时长 (秒)
-    
-    # ==================== 字幕样式配置 ====================
-    SUBTITLE_CONFIG = {
-        "enabled": True,                       # 是否启用字幕
-        "font_size": 36,                       # 字体大小
-        # 字体路径建议：
-        # macOS 苹方字体: /System/Library/Fonts/PingFang.ttc
-        # macOS 宋体: /System/Library/Fonts/Supplemental/Songti.ttc
-        # Windows 微软雅黑: C:/Windows/Fonts/msyh.ttc
-        "font_family": "/System/Library/Fonts/PingFang.ttc",
-        "color": "white",                      # 文字颜色
-        "stroke_color": "black",               # 描边颜色
-        "stroke_width": 3,                     # 描边粗细
-        "position": ("center", "bottom"),      # 位置 (水平, 垂直)
-        "margin_bottom": 50,                   # 距底部距离 (像素)
-        "max_chars_per_line": 25,              # 每行最大字符数
-        "max_lines": 1,                        # 最大行数
-        "line_spacing": 15,                    # 行间距 (像素)
-        "background_color": (0, 0, 0),         # 背景色 (RGB, None=透明)
-        "background_opacity": 0.8,             # 背景不透明度 (0-1)
-        "background_horizontal_padding": 20,   # 背景水平内边距 (像素)
-        "background_vertical_padding": 10,     # 背景垂直内边距 (像素)
-        "shadow_enabled": False,               # 是否启用文字阴影
-        "shadow_color": "black",               # 阴影颜色
-        "shadow_offset": (2, 2)                # 阴影偏移 (x, y)
-    }
-    
-    # ==================== 开场金句样式配置 ====================
-    OPENING_QUOTE_STYLE = {
-        "enabled": True,                              # 是否显示开场金句
-        "font_family": "/System/Library/Fonts/PingFang.ttc",  # 字体路径
-        "font_size": 48,                              # 基础字体大小
-        "font_scale": 1.3,                            # 相对字幕字体的缩放倍数
-        "color": "white",                             # 文字颜色
-        "stroke_color": "black",                      # 描边颜色
-        "stroke_width": 4,                            # 描边粗细
-        "position": ("center", "center"),             # 位置 (居中显示)
-        "max_lines": 6,                               # 最大行数
-        "max_chars_per_line": 10,                     # 每行最大字符数
-        "line_spacing": 20,                           # 行间距 (像素)
-        "letter_spacing": 0,                          # 字间距 (0=正常)
-    }
-    
-    # ==================== 性能控制参数 ====================
-    MAX_CONCURRENT_IMAGE_GENERATION = 4  # 图片生成最大并发数
-    MAX_CONCURRENT_VOICE_SYNTHESIS = 4   # 语音合成最大并发数
-    
-    # ==================== 视频素材处理配置 ====================
-    VIDEO_MATERIAL_CONFIG = {
-        "supported_formats": [".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv", ".m4v"],
-        "target_size": (1280, 720),           # 目标分辨率
-        "target_fps": 30,                     # 目标帧率 (有视频素材时)
-        "remove_original_audio": True,        # 是否移除原音频
-        "duration_adjustment": "stretch",     # 时长调整方式: stretch/crop
-        "resize_method": "crop"               # 尺寸调整方式: crop/stretch
-    }
-    
-    # ==================== 图片素材处理配置 ====================
-    IMAGE_MATERIAL_CONFIG = {
-        "target_fps": 15  # 纯图片素材时的帧率
-    }
-    
-    # ████████████████████████████████████████████████████████████████████████████████
-    # ██                            系统配置区域                                    ██
-    # ██                     (一般无需修改的系统参数)                                 ██
-    # ████████████████████████████████████████████████████████████████████████████████
+    # 引用模块级常量
+    LLM_TEMPERATURE_SCRIPT = LLM_TEMPERATURE_SCRIPT
+    LLM_TEMPERATURE_KEYWORDS = LLM_TEMPERATURE_KEYWORDS
+    BGM_DEFAULT_VOLUME = BGM_DEFAULT_VOLUME
+    NARRATION_DEFAULT_VOLUME = NARRATION_DEFAULT_VOLUME
+    AUDIO_DUCKING_ENABLED = AUDIO_DUCKING_ENABLED
+    AUDIO_DUCKING_STRENGTH = AUDIO_DUCKING_STRENGTH
+    AUDIO_DUCKING_SMOOTH_SECONDS = AUDIO_DUCKING_SMOOTH_SECONDS
+    OPENING_FADEIN_SECONDS = OPENING_FADEIN_SECONDS
+    OPENING_HOLD_AFTER_NARRATION_SECONDS = OPENING_HOLD_AFTER_NARRATION_SECONDS
+    ENDING_FADE_SECONDS = ENDING_FADE_SECONDS
+    SUBTITLE_CONFIG = SUBTITLE_CONFIG
+    OPENING_QUOTE_STYLE = OPENING_QUOTE_STYLE
+    MAX_CONCURRENT_IMAGE_GENERATION = MAX_CONCURRENT_IMAGE_GENERATION
+    MAX_CONCURRENT_VOICE_SYNTHESIS = MAX_CONCURRENT_VOICE_SYNTHESIS
+    VIDEO_MATERIAL_CONFIG = VIDEO_MATERIAL_CONFIG
+    IMAGE_MATERIAL_CONFIG = IMAGE_MATERIAL_CONFIG
     
     # ==================== API 密钥配置 ====================
     OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')

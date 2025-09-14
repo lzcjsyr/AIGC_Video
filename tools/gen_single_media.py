@@ -223,8 +223,11 @@ def main(
 if __name__ == "__main__":
     # ================= 可在下方调整主要参数（便于修改） =================
     # 可选尺寸：1024x1024 | 864x1152 | 1152x864 | 1280x720 | 720x1280 | 832x1248 | 1248x832 | 1512x648
-    IMAGE_SIZE = "1280x720" 
-    IMAGE_MODEL = "doubao-seedream-3-0-t2i-250415"
+    IMAGE_SIZE = "1280x720"
+    # 可选图片模型：
+    # - doubao-seedream-3-0-t2i-250415 (V3模型，支持guidance_scale参数)
+    # - doubao-seedream-4-0-250828 (V4模型，新版API，不支持guidance_scale)
+    IMAGE_MODEL = "doubao-seedream-4-0-250828"
     TTS_VOICE = "zh_male_yuanboxiaoshu_moon_bigtts"  # 可在豆包/字节控制台选择其他音色
     AUDIO_ENCODING = "wav"  # 可选：wav | mp3
 
