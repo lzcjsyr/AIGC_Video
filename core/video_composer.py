@@ -730,7 +730,7 @@ class VideoComposer:
             return [text]
         
         # 第一层：按主要标点切分
-        heavy_punctuation = ['。', '！', '？', '.', '!', '?', '，', ',', '；', ';']
+        heavy_punctuation = ['。', '！', '？', '.', '!', '?', '，', ',', '；', ';', ' ']
         segments = []
         current_segment = ""
         
