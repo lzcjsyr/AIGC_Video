@@ -140,7 +140,7 @@ def intelligent_summarize(server: str, model: str, content: str, target_length: 
         raise ValueError(f"智能缩写处理错误: {e}")
 
 
-def process_raw_to_script(raw_data: Dict[str, Any], num_segments: int) -> Dict[str, Any]:
+def process_raw_to_script(raw_data: Dict[str, Any], num_segments: int, split_mode: str = "auto") -> Dict[str, Any]:
     """
     将原始数据处理为分段脚本数据。
     这是步骤1.5的核心功能，从raw数据生成最终的script数据。
@@ -153,8 +153,9 @@ def process_raw_to_script(raw_data: Dict[str, Any], num_segments: int) -> Dict[s
         if not full_text:
             raise ValueError("原始数据的 content 字段为空")
 
-        # 代码分段：按重标点优先，尽量均衡为 num_segments 段
-        segments_text = _split_text_into_segments(full_text, num_segments)
+        # 根据模式分段
+        segments_text = _split_text_into_segments(full_text, num_segments, split_mode)
+        actual_segments = len(segments_text)
 
         # 汇总统计
         total_length = len(full_text)
@@ -163,7 +164,7 @@ def process_raw_to_script(raw_data: Dict[str, Any], num_segments: int) -> Dict[s
             "golden_quote": golden_quote,
             "total_length": total_length,
             "target_segments": num_segments,
-            "actual_segments": len(segments_text),
+            "actual_segments": actual_segments,
             "created_time": datetime.datetime.now().isoformat(),
             "model_info": raw_data.get("model_info", {}),
             "segments": []
@@ -190,11 +191,26 @@ def process_raw_to_script(raw_data: Dict[str, Any], num_segments: int) -> Dict[s
         raise ValueError(f"处理原始数据为脚本错误: {e}")
 
 
-def _split_text_into_segments(full_text: str, num_segments: int) -> List[str]:
+def _split_text_by_newlines(full_text: str) -> List[str]:
+    """手动切分：根据换行符切分，合并连续换行符"""
+    text = (full_text or "").strip()
+    if not text:
+        return [""]
+
+    # 按换行符切分，过滤空段
+    segments = [seg.strip() for seg in re.split(r'\n+', text) if seg.strip()]
+    return segments if segments else [text]
+
+
+def _split_text_into_segments(full_text: str, num_segments: int, mode: str = "auto") -> List[str]:
     """
-    使用重标点（。？！；.!?\n）先切成句子，再在句子边界上均衡聚合为 num_segments 段。
-    若句子不足，则字符级均分补齐，保证输出恰好 num_segments 段。
+    文本切分函数
+    mode: "manual" 手动切分(按换行符), "auto" 自动切分(智能均分)
     """
+    if mode == "manual":
+        return _split_text_by_newlines(full_text)
+
+    # 原有自动切分逻辑
     text = (full_text or "").strip()
     if num_segments <= 1 or len(text) == 0:
         return [text] if text else [""]

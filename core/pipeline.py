@@ -319,10 +319,20 @@ def run_step_1_5(project_output_dir: str, num_segments: int, is_new_project: boo
         if updated_raw_data is None:
             return {"success": False, "message": "处理raw数据失败：数据为空"}
         
+        # 用户选择切分模式
+        split_mode = "auto"  # 默认自动切分
+        try:
+            from cli.ui_helpers import prompt_choice
+            choice = prompt_choice("请选择文本切分方式", ["手动切分(根据换行符)", "自动切分(智能均分)"], default_index=1)
+            if choice and choice.startswith("手动"):
+                split_mode = "manual"
+        except:
+            pass  # 如果无法显示选择界面，使用默认值
+
         # 处理为分段脚本数据
         from core.routers import process_raw_to_script
         target_segments = updated_raw_data.get("target_segments", num_segments)
-        script_data = process_raw_to_script(updated_raw_data, target_segments)
+        script_data = process_raw_to_script(updated_raw_data, target_segments, split_mode)
         
         # 保存script.json
         with open(script_path, 'w', encoding='utf-8') as f:
