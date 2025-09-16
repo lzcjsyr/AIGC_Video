@@ -1,307 +1,236 @@
 # 智能视频制作系统
 
-一个基于LLM和多媒体AI的自动化视频制作平台，可将文档（EPUB/PDF/MOBI等）智能转换为带字幕、配音、BGM的专业短视频。
+**将任何文档自动转换为专业短视频解说**
 
-![系统架构](docs/architecture.png)
+一键将PDF、EPUB等文档智能转换为带字幕、配音、配图的高质量短视频，专为知识类内容创作设计。
 
-## ✨ 特性亮点
+## 🚀 快速上手
 
-### 🤖 智能化流程
-- **LLM智能缩写**：使用Google Gemini/Claude等模型将长文档压缩为口播稿
-- **关键词提取**：自动提取每段落的视觉关键词和氛围词  
-- **AI图像生成**：集成豆包Seedream 3.0，支持多种尺寸和风格预设
-- **语音合成**：字节跳动TTS大模型，高质量中文语音输出
-- **视频合成**：基于MoviePy 2.x，支持字幕、开场金句、背景音乐
-
-### 📱 双端支持
-- **CLI版本**：命令行界面，支持自动和分步执行模式
-- **Web版本**：Vue3 + Flask，提供可视化操作界面和实时进度
-
-### 🔧 灵活配置
-- **多服务商支持**：OpenRouter、SiliconFlow、AIHubMix等
-- **丰富的参数配置**：字数、段数、画面风格、音色选择
-- **项目管理**：支持项目保存、重新执行指定步骤
-- **文件格式支持**：PDF、EPUB、MOBI、AZW3、DOCX等
-
-## 🚀 快速开始
-
-### 环境要求
-- Python 3.8+
-- Node.js 16+（Web版）
-- FFmpeg（视频处理）
-
-### 1. 安装依赖
+### 第一步：安装配置
 ```bash
+# 1. 安装依赖
 pip install -r requirements.txt
-```
 
-### 2. 配置API密钥
-创建 `.env` 文件并配置必要的API密钥：
-```env
-# LLM服务（至少配置一个）
-OPENROUTER_API_KEY=your_openrouter_key
-SILICONFLOW_KEY=your_siliconflow_key  
-AIHUBMIX_API_KEY=your_aihubmix_key
+# 2. 配置API密钥（复制并编辑 .env 文件）
+cp .env.example .env
+# 编辑 .env 文件，填入你的API密钥
 
-# 图像生成（必需）
-SEEDREAM_API_KEY=your_seedream_key
-
-# 语音合成（必需）
-BYTEDANCE_TTS_APPID=your_appid
-BYTEDANCE_TTS_ACCESS_TOKEN=your_access_token
-```
-
-### 3. 验证配置
-```bash
+# 3. 验证配置
 python check_config.py
 ```
 
-### 4. 启动系统
+### 第二步：准备文档
+```bash
+# 将要制作视频的文档放入 input 文件夹
+# 支持格式：PDF、EPUB、MOBI、DOCX等
+cp "你的文档.pdf" input/
+```
 
-**CLI版本（推荐）**：
+### 第三步：开始制作
+```bash
+# 启动系统
+python -m cli
+
+# 然后按提示操作：
+# 1. 选择"新建项目"
+# 2. 选择你的文档文件
+# 3. 选择"全自动模式"（推荐新手）
+# 等待5-15分钟，视频制作完成！
+```
+
+### 输出结果
+制作完成后，在 `output/项目名称_时间/` 文件夹中查看：
+- `final_video.mp4` - 最终视频文件
+- `images/` - 生成的配图
+- `voice/` - 语音文件和字幕
+- `text/` - 文本内容（可编辑重制）
+
+## 💡 核心工作流程
+
+系统采用**智能5步流程**，将长篇文档转换为短视频：
+
+### 1️⃣ 智能总结 - 文档压缩
+- **输入**：任意长度的文档文件
+- **处理**：AI模型将文档压缩为适合视频的内容（默认800字）
+- **输出**：标题、开场金句、正文内容
+
+### 2️⃣ 脚本切分 - 内容分段
+- **输入**：总结后的文本
+- **处理**：按指定段数智能切分（默认6段，每段约15-20秒）
+- **输出**：带时长预估的分段脚本
+
+### 3️⃣ 要点提取 - 关键词生成
+- **输入**：分段脚本
+- **处理**：为每段提取视觉关键词和氛围词
+- **输出**：用于图像生成的关键词数据
+
+### 4️⃣ 多媒体生成 - 图像+语音
+- **输入**：关键词数据和脚本内容
+- **处理**：AI生成配图 + TTS合成语音（支持并发处理）
+- **输出**：配图文件 + 语音文件 + 字幕文件
+
+### 5️⃣ 视频合成 - 最终输出
+- **输入**：图像、语音、文本、背景音乐
+- **处理**：自动合成视频，添加字幕特效
+- **输出**：高质量mp4视频文件
+
+## 🎛️ 使用模式
+
+### 模式一：全自动模式（推荐新手）
 ```bash
 python -m cli
+# 选择"全自动模式" → 一键完成所有步骤
 ```
 
-**Web版本**：
+### 模式二：分步处理模式（推荐定制）
 ```bash
-cd web && python start_web.py
-```
-然后访问 http://localhost:3000
-
-## 📋 工作流程
-
-### 标准5步处理流程
-
-1. **📖 文档读取与智能缩写**
-   - 支持多种文档格式解析
-   - LLM智能压缩为目标字数的口播稿
-   - 生成标题、开场金句、正文内容
-
-2. **✂️ 脚本分段处理**  
-   - 基于标点符号的智能分段算法
-   - 保持语义完整性的同时均衡段落长度
-   - 生成时长估算和段落索引
-
-3. **🏷️ 关键词提取**
-   - 为每个段落提取视觉关键词
-   - 生成氛围词增强画面表现力
-   - 优化图像生成提示词质量
-
-4. **🎨 AI图像生成**
-   - 豆包Seedream 3.0多尺寸图像生成
-   - 6种预设风格（概念极简、俯视古典等）
-   - 自动重试机制处理敏感内容
-
-5. **🎵 音频与视频合成**
-   - 高质量TTS语音合成
-   - MoviePy视频合成与字幕添加
-   - 背景音乐混合与音频效果处理
-
-### 输出结构
-```
-output/
-└── {title}_{MMDD_HHMM}/
-    ├── images/
-    │   ├── opening.png              # 开场图像
-    │   └── segment_{1..N}.png       # 段落图像
-    ├── voice/
-    │   ├── opening.wav              # 开场金句音频
-    │   └── voice_{1..N}.wav         # 段落配音
-    ├── text/
-    │   ├── raw.json                 # 原始LLM输出
-    │   ├── raw.docx                 # 可编辑版本
-    │   ├── script.json              # 分段脚本
-    │   ├── script.docx              # 阅读版本
-    │   └── keywords.json            # 关键词数据
-    └── final_video.mp4              # 最终视频
+python -m cli
+# 选择"分步处理" → 每步完成可编辑再继续
 ```
 
-## ⚙️ 配置参数
+**分步模式优势：**
+- 第1步后：可编辑 `raw.docx` 调整总结内容
+- 第2步后：可编辑 `script.docx` 调整分段和文本
+- 第3步后：可重跑图像生成尝试不同风格
+- 第4步后：可重跑语音合成尝试不同音色
 
-### 核心参数
+### 模式三：项目管理模式
+```bash
+python -m cli
+# 选择"打开现有项目" → 继续未完成的项目或重制特定步骤
+```
+
+## ⚙️ 关键参数配置
+
+在 `cli/__main__.py` 中的 `PARAMS` 字典可调整核心参数：
+
 ```python
-# 文本处理
-target_length = 1000      # 目标字数 (500-3000)
-num_segments = 10         # 分段数量 (5-20)
+PARAMS = {
+    # 内容控制
+    "target_length": 800,        # 目标字数(500-3000)
+    "num_segments": 6,           # 视频段数(5-20)
 
-# 模型配置
-llm_model = "google/gemini-2.5-pro"           # LLM模型
-image_model = "doubao-seedream-3-0-t2i-250415" # 图像模型  
-voice = "zh_male_yuanboxiaoshu_moon_bigtts"   # 音色
+    # 视觉效果
+    "image_size": "1280x720",    # 视频尺寸(16:9横屏)
+    "image_style_preset": "style05",  # 图像风格
+    "opening_image_style": "des01",   # 开场图风格
 
-# 视觉效果
-image_size = "1280x720"           # 图像尺寸
-image_style_preset = "style05"    # 风格预设
-opening_image_style = "des01"     # 开场图像风格
+    # AI模型
+    "llm_model": "google/gemini-2.5-pro",      # 文本生成模型
+    "image_model": "doubao-seedream-4-0-250828", # 图像生成模型
+    "voice": "zh_male_yuanboxiaoshu_moon_bigtts", # TTS语音
 
-# 音频视频
-enable_subtitles = True          # 启用字幕
-bgm_filename = "bgm.mp3"        # 背景音乐
-```
-
-### 支持的图像尺寸
-- `1024x1024` - 正方形，适合头像、产品图
-- `1280x720` - 16:9横屏，适合视频内容
-- `720x1280` - 9:16竖屏，适合短视频平台
-- `864x1152` - 3:4竖屏，适合手机内容
-- `832x1248` - 2:3竖屏，适合海报封面
-- `1152x864` - 4:3横屏，适合传统比例
-- `1248x832` - 3:2横屏，适合摄影作品
-- `1512x648` - 21:9超宽屏，适合横幅图
-
-## 🛠️ 高级功能
-
-### 项目管理
-- **重跑机制**：支持从任意步骤重新执行
-- **文件编辑**：可编辑生成的DOCX文件后重新处理
-- **进度检测**：智能检测项目完成状态
-- **资源管理**：自动清理下游产物避免冲突
-
-### 字幕系统
-```python
-SUBTITLE_CONFIG = {
-    "font_family": "/System/Library/Fonts/PingFang.ttc",
-    "font_size": 36,
-    "color": "white", 
-    "stroke_color": "black",
-    "stroke_width": 3,
-    "max_chars_per_line": 25,
-    "position": ("center", "bottom")
+    # 输出选项
+    "opening_quote": True,       # 是否包含开场金句
+    "enable_subtitles": True,    # 是否添加字幕
+    "bgm_filename": "bgm.mp3"   # 背景音乐文件名
 }
 ```
 
-### 音频增强
-- **音量控制**：独立调节BGM和口播音量
-- **自动Ducking**：口播时自动降低BGM音量  
-- **淡入淡出**：开场渐显和片尾淡出效果
-- **音频循环**：BGM自动循环匹配视频时长
+## 🎨 视频尺寸选择
 
-## 🌐 Web版特性
+| 尺寸 | 比例 | 适用场景 |
+|------|------|----------|
+| 1280x720 | 16:9 | YouTube、B站横屏 |
+| 720x1280 | 9:16 | 抖音、快手竖屏 |
+| 1024x1024 | 1:1 | 微信视频号 |
+| 864x1152 | 3:4 | 小红书竖屏 |
 
-### 前端界面
-- 📁 拖拽上传文档文件
-- ⚙️ 可视化参数配置界面  
-- 📊 实时任务进度显示
-- 📋 项目历史管理
-- 🎬 在线视频预览和下载
+## 🎭 图像风格预设
 
-### 后端API
-- 🔄 异步任务处理
-- 📡 WebSocket实时通信
-- 🌐 RESTful API设计
-- 🔌 完全复用CLI核心功能
+| 风格代码 | 风格名称 | 视觉特点 |
+|----------|----------|----------|
+| style01 | 概念极简 | 简洁现代，突出重点 |
+| style02 | 俯视古典 | 经典构图，文艺气质 |
+| style05 | 综合平衡 | 适用性广，推荐默认 |
+| style08 | 科技未来 | 科幻感强，适合技术内容 |
 
-### 技术栈
-- **前端**：Vue3 + Element Plus + Vite + Pinia
-- **后端**：Flask + SocketIO + 多线程任务队列
-- **通信**：REST API + WebSocket实时推送
+## 📁 必需的API密钥
 
-## 🧰 工具集
+在 `.env` 文件中配置以下密钥：
+
+```env
+# LLM服务（至少配置一个）
+OPENROUTER_API_KEY=your_key      # 推荐，模型选择多
+SILICONFLOW_KEY=your_key         # 备选方案
+AIHUBMIX_API_KEY=your_key        # 备选方案
+
+# 图像生成（必需）
+SEEDREAM_API_KEY=your_key        # 豆包图像生成
+
+# 语音合成（必需）
+BYTEDANCE_TTS_APPID=your_appid   # 字节跳动TTS
+BYTEDANCE_TTS_ACCESS_TOKEN=your_token
+```
+
+## 🛠️ 高级功能
+
+### Web界面模式
+```bash
+cd web && python start_web.py
+# 访问 http://localhost:3000 使用图形界面
+```
 
 ### 独立工具
-- **文档统计工具**：`tools/check_text_stats.py` - 分析文档字数和Token数量
-- **单独生成工具**：`tools/gen_single_media.py` - 独立测试图像和音频生成
-- **配置检查工具**：`check_config.py` - 验证API密钥和环境配置
-
-### 开发工具
 ```bash
-# 文档统计
-python tools/check_text_stats.py --interactive
+# 文档统计分析
+python tools/check_text_stats.py
 
-# 单独测试图像生成
+# 单独测试媒体生成
 python tools/gen_single_media.py
-
-# 配置验证
-python check_config.py
 ```
 
-## 📚 架构设计
+### 项目管理
+- **断点续制**：意外中断可从任意步骤继续
+- **重制优化**：可重新执行特定步骤优化效果
+- **批量处理**：同时处理多个文档项目
+- **文件编辑**：支持编辑中间产物后重新处理
 
-### 核心模块
+## 🏗️ 输出文件结构
+
 ```
-core/
-├── document_reader.py    # 统一文档解析器
-├── text.py              # 文本处理和分段算法  
-├── services.py          # API服务调用封装
-├── media.py             # 图像和音频生成
-├── video_composer.py    # 视频合成和特效
-├── pipeline.py          # 流程编排和状态管理
-├── validators.py        # 参数验证和服务商检测
-└── routers.py           # 公共API路由
-```
-
-### 配置管理
-- `config.py` - 全局配置管理类
-- `prompts.py` - 提示词模板和图像风格
-- `utils.py` - 通用工具函数和项目管理
-
-### 接口层
-- `cli/` - 命令行界面和交互逻辑
-- `web/` - Web界面和API服务
-
-## 📝 使用技巧
-
-### 文档准备
-- PDF文件建议使用可复制文本版本（非扫描版）
-- EPUB和MOBI格式支持更好的文本提取
-- 文档内容建议在5000-50000字之间
-
-### 参数调优
-- **目标字数**：根据最终视频时长需求调整（1000字约3-4分钟）
-- **分段数量**：建议10-15段，保持每段20-30秒
-- **图像风格**：根据内容类型选择合适的预设风格
-
-### 性能优化
-- 大文档建议使用分步模式，可随时调整参数
-- 图像生成失败时会自动重试，敏感内容会被跳过
-- 可通过编辑DOCX文件精细调整内容
-
-## 🔍 故障排除
-
-### 常见问题
-1. **API调用失败**：检查网络连接和API密钥配置
-2. **文档读取错误**：确认文件格式和编码正确
-3. **视频合成失败**：检查FFmpeg安装和音视频文件完整性
-4. **内存不足**：处理大文档时建议增加系统内存
-
-### 日志调试
-- CLI模式：查看 `cli/cli.log`
-- Web模式：查看 `web/backend/web.log`
-- 通用日志：查看项目根目录 `aigc_video.log`
-
-## 🤝 贡献指南
-
-### 开发环境设置
-```bash
-# 克隆仓库
-git clone <repository>
-cd AIGC_Video
-
-# 安装依赖
-pip install -r requirements.txt
-pip install -r web/backend/requirements.txt
-
-# 安装前端依赖
-cd web/frontend && npm install
+output/
+└── 《你的文档标题》_MMDD_HHMM/
+    ├── final_video.mp4          # 🎬 最终视频
+    ├── images/
+    │   ├── opening.png          # 开场图片
+    │   └── segment_1.png        # 各段配图
+    ├── voice/
+    │   ├── opening.wav          # 开场语音
+    │   ├── voice_1.wav          # 各段语音
+    │   └── 项目名_subtitles.srt  # 字幕文件
+    └── text/
+        ├── raw.json/.docx       # 总结内容（可编辑）
+        ├── script.json/.docx    # 分段脚本（可编辑）
+        └── keywords.json        # 关键词数据
 ```
 
-### 代码结构规范
-- 遵循现有的模块化架构设计
-- 新功能优先考虑复用现有核心模块
-- 添加适当的类型注解和文档字符串
-- 确保CLI和Web版本功能一致性
+## ❓ 常见问题
 
-## 📄 许可证
+**Q: 视频制作需要多长时间？**
+A: 通常5-15分钟，取决于文档长度和API响应速度。
 
-本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。
+**Q: 支持哪些文档格式？**
+A: PDF、EPUB、MOBI、DOCX、TXT等主流格式。
 
-## 📞 支持
+**Q: 可以自定义背景音乐吗？**
+A: 可以，将mp3文件放入 `music/` 文件夹，在参数中指定文件名。
 
-- 🐛 提交Bug：[GitHub Issues](https://github.com/your-repo/issues)
-- 💡 功能建议：[GitHub Discussions](https://github.com/your-repo/discussions)  
-- 📖 文档wiki：[项目Wiki](https://github.com/your-repo/wiki)
+**Q: 如何调整视频内容？**
+A: 使用分步模式，每步生成的docx文件都可编辑后重新处理。
+
+**Q: API费用大概多少？**
+A: 制作一个5分钟视频的总成本约2-5元人民币。
+
+## 🔧 故障排除
+
+1. **配置检查**：`python check_config.py`
+2. **日志查看**：`cli/cli.log` 或控制台输出
+3. **网络问题**：确保API服务可访问
+4. **依赖问题**：重新运行 `pip install -r requirements.txt`
 
 ---
 
-**智能视频制作系统** - 让AI为你的内容赋能 🚀
+**开始你的智能视频创作之旅！** 🚀
+
+将知识转化为视频，让AI为你的内容赋能。
