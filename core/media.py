@@ -27,11 +27,11 @@ def _download_to_path(url: str, output_path: str, error_msg: str = "下载失败
 
 
 def generate_opening_image(model: str, opening_style: str,
-                           image_size: str, output_dir: str, skip_opening: bool = False) -> Optional[str]:
+                           image_size: str, output_dir: str, opening_quote: bool = True) -> Optional[str]:
     """
     生成开场图像，使用预设风格。
     """
-    if skip_opening:
+    if not opening_quote:
         return None
     try:
         prompt = OPENING_IMAGE_STYLES.get(opening_style)

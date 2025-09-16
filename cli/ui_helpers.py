@@ -391,7 +391,7 @@ def _select_entry_and_context(project_root: str, output_dir: str):
 def _run_specific_step(
     target_step, project_output_dir, llm_server, llm_model, image_model,
     image_size, image_style_preset, opening_image_style, tts_server, voice,
-    num_segments, enable_subtitles, bgm_filename, skip_opening_quote=False
+    num_segments, enable_subtitles, bgm_filename, opening_quote=True
 ):
     """执行指定步骤并返回结果"""
     from core.pipeline import run_step_1_5, run_step_2, run_step_3, run_step_4, run_step_5
@@ -403,11 +403,11 @@ def _run_specific_step(
     elif target_step == 2:
         result = run_step_2(llm_server, llm_model, project_output_dir)
     elif target_step == 3:
-        result = run_step_3(image_model, image_size, image_style_preset, project_output_dir, opening_image_style, skip_opening_quote)
+        result = run_step_3(image_model, image_size, image_style_preset, project_output_dir, opening_image_style, opening_quote)
     elif target_step == 4:
-        result = run_step_4(tts_server, voice, project_output_dir)
+        result = run_step_4(tts_server, voice, project_output_dir, opening_quote)
     elif target_step == 5:
-        result = run_step_5(project_output_dir, image_size, enable_subtitles, bgm_filename, voice, skip_opening_quote)
+        result = run_step_5(project_output_dir, image_size, enable_subtitles, bgm_filename, voice, opening_quote)
     else:
         result = {"success": False, "message": "无效的步骤"}
     
@@ -417,7 +417,7 @@ def _run_specific_step(
 def _run_step_by_step_loop(
     project_output_dir, initial_step, llm_server, llm_model, image_model,
     image_size, image_style_preset, opening_image_style, tts_server, voice,
-    num_segments, enable_subtitles, bgm_filename, skip_opening_quote=False
+    num_segments, enable_subtitles, bgm_filename, opening_quote=True
 ):
     """执行指定步骤，然后进入交互模式让用户选择下一步操作"""
     from core.project_scanner import detect_project_progress
@@ -427,7 +427,7 @@ def _run_step_by_step_loop(
         result = _run_specific_step(
             initial_step, project_output_dir, llm_server, llm_model, image_model,
             image_size, image_style_preset, opening_image_style, tts_server, voice,
-            num_segments, enable_subtitles, bgm_filename, skip_opening_quote
+            num_segments, enable_subtitles, bgm_filename, opening_quote
         )
         
         # 显示执行结果
@@ -455,7 +455,7 @@ def _run_step_by_step_loop(
         result = _run_specific_step(
             selected_step, project_output_dir, llm_server, llm_model, image_model,
             image_size, image_style_preset, opening_image_style, tts_server, voice,
-            num_segments, enable_subtitles, bgm_filename, skip_opening_quote
+            num_segments, enable_subtitles, bgm_filename, opening_quote
         )
         
         # 显示结果
@@ -483,7 +483,7 @@ def run_cli_main(
     enable_subtitles: bool = True,
     bgm_filename: str = None,
     run_mode: str = "auto",
-    skip_opening_quote: bool = False,
+    opening_quote: bool = True,
 ) -> Dict[str, Any]:
     """CLI主要业务逻辑入口"""
     
@@ -533,7 +533,7 @@ def run_cli_main(
                 project_output_dir, selection["selected_step"],
                 llm_server, llm_model, image_model, image_size, image_style_preset,
                 opening_image_style, tts_server, voice, num_segments,
-                enable_subtitles, bgm_filename, skip_opening_quote
+                enable_subtitles, bgm_filename, opening_quote
             )
 
     if input_file is not None and not os.path.isabs(input_file):
@@ -544,7 +544,7 @@ def run_cli_main(
             input_file, output_dir, target_length, num_segments, image_size,
             llm_server, llm_model, image_server, image_model, tts_server, voice,
             image_style_preset, opening_image_style, enable_subtitles, bgm_filename,
-            skip_opening_quote,
+            opening_quote,
         )
         if result.get("success"):
             print_section("步骤 5/5 完成：视频合成", "🎬", "=")
@@ -575,5 +575,5 @@ def run_cli_main(
             project_output_dir, 0,  # 不执行初始步骤，直接进入交互模式
             llm_server, llm_model, image_model, image_size, image_style_preset,
             opening_image_style, tts_server, voice, num_segments,
-            enable_subtitles, bgm_filename, skip_opening_quote
+            enable_subtitles, bgm_filename, opening_quote
         )

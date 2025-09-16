@@ -40,7 +40,7 @@ class VideoComposer:
                      opening_golden_quote: Optional[str] = None,
                      opening_narration_audio_path: Optional[str] = None,
                      image_size: str = "1280x720",
-                     skip_opening_quote: bool = False) -> str:
+                     opening_quote: bool = True) -> str:
         """
         合成最终视频
         
@@ -57,7 +57,7 @@ class VideoComposer:
             opening_golden_quote: 开场金句
             opening_narration_audio_path: 开场口播音频路径
             image_size: 目标图像尺寸，如"1280x720"
-            skip_opening_quote: 是否跳过开场金句
+            opening_quote: 是否包含开场金句
         
         Returns:
             str: 输出视频路径
@@ -81,7 +81,7 @@ class VideoComposer:
             # 创建开场片段
             opening_seconds = self._create_opening_segment(
                 opening_image_path, opening_golden_quote,
-                opening_narration_audio_path, video_clips, target_size, skip_opening_quote
+                opening_narration_audio_path, video_clips, target_size, opening_quote
             )
             
             # 创建主要视频片段
@@ -121,13 +121,13 @@ class VideoComposer:
                               opening_golden_quote: Optional[str],
                               opening_narration_audio_path: Optional[str],
                               video_clips: List, target_size: Tuple[int, int],
-                              skip_opening_quote: bool = False) -> float:
+                              opening_quote: bool = True) -> float:
         """创建开场片段"""
         opening_seconds = 0.0
         opening_voice_clip = None
 
-        # 如果跳过开场金句，直接返回
-        if skip_opening_quote:
+        # 如果不包含开场金句，直接返回
+        if not opening_quote:
             return opening_seconds
 
         # 计算开场时长

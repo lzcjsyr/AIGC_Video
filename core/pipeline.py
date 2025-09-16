@@ -49,7 +49,7 @@ def run_auto(
     opening_image_style: str,
     enable_subtitles: bool,
     bgm_filename: Optional[str] = None,
-    skip_opening_quote: bool = False,
+    opening_quote: bool = True,
 ) -> Dict[str, Any]:
     start_time = datetime.datetime.now()
 
@@ -99,7 +99,7 @@ def run_auto(
 
     # 7) 生成开场图像（可选）& 段落图像
     opening_image_path = generate_opening_image(
-        image_model, opening_image_style, image_size, f"{project_output_dir}/images", skip_opening_quote
+        image_model, opening_image_style, image_size, f"{project_output_dir}/images", opening_quote
     )
     image_result = generate_images_for_segments(
         image_model, keywords_data, image_style_preset, image_size, f"{project_output_dir}/images"
@@ -118,15 +118,15 @@ def run_auto(
             bgm_audio_path = candidate
 
     # 10) 开场金句口播（可选）
-    opening_quote = (script_data or {}).get("golden_quote", "")
+    opening_golden_quote = (script_data or {}).get("golden_quote", "")
     opening_narration_audio_path = None
     try:
-        if isinstance(opening_quote, str) and opening_quote.strip():
+        if opening_quote and isinstance(opening_golden_quote, str) and opening_golden_quote.strip():
             opening_voice_dir = os.path.join(project_output_dir, "voice")
             os.makedirs(opening_voice_dir, exist_ok=True)
             opening_narration_audio_path = os.path.join(opening_voice_dir, "opening.wav")
             if not os.path.exists(opening_narration_audio_path):
-                ok = text_to_audio_bytedance(opening_quote, opening_narration_audio_path, voice=voice, encoding="wav")
+                ok = text_to_audio_bytedance(opening_golden_quote, opening_narration_audio_path, voice=voice, encoding="wav")
                 if not ok:
                     opening_narration_audio_path = None
     except Exception:
@@ -139,12 +139,12 @@ def run_auto(
         script_data=script_data, enable_subtitles=enable_subtitles,
         bgm_audio_path=bgm_audio_path,
         opening_image_path=opening_image_path,
-        opening_golden_quote=opening_quote,
+        opening_golden_quote=opening_golden_quote,
         opening_narration_audio_path=opening_narration_audio_path,
         bgm_volume=float(getattr(config, "BGM_DEFAULT_VOLUME", 0.2)),
         narration_volume=float(getattr(config, "NARRATION_DEFAULT_VOLUME", 1.0)),
         image_size=image_size,
-        skip_opening_quote=skip_opening_quote,
+        opening_quote=opening_quote,
     )
 
     # 12) 汇总结果
@@ -371,22 +371,45 @@ def run_step_2(llm_server: str, llm_model: str, project_output_dir: str, script_
     return {"success": True, "keywords_path": keywords_path}
 
 
-def run_step_3(image_model: str, image_size: str, image_style_preset: str, project_output_dir: str, opening_image_style: str, skip_opening_quote: bool = False) -> Dict[str, Any]:
+def run_step_3(image_model: str, image_size: str, image_style_preset: str, project_output_dir: str, opening_image_style: str, opening_quote: bool = True) -> Dict[str, Any]:
+    # 确保必要的文件夹存在
+    os.makedirs(f"{project_output_dir}/images", exist_ok=True)
+
     keywords_path = os.path.join(project_output_dir, 'text', 'keywords.json')
     keywords_data = load_json_file(keywords_path)
-    opening_image_path = generate_opening_image(image_model, opening_image_style, image_size, f"{project_output_dir}/images", skip_opening_quote)
+    opening_image_path = generate_opening_image(image_model, opening_image_style, image_size, f"{project_output_dir}/images", opening_quote)
     image_result = generate_images_for_segments(image_model, keywords_data, image_style_preset, image_size, f"{project_output_dir}/images")
     return {"success": True, "opening_image_path": opening_image_path, **image_result}
 
 
-def run_step_4(tts_server: str, voice: str, project_output_dir: str) -> Dict[str, Any]:
+def run_step_4(tts_server: str, voice: str, project_output_dir: str, opening_quote: bool = True) -> Dict[str, Any]:
+    # 确保必要的文件夹存在
+    os.makedirs(f"{project_output_dir}/voice", exist_ok=True)
+
     script_path = os.path.join(project_output_dir, 'text', 'script.json')
     script_data = load_json_file(script_path)
     audio_paths = synthesize_voice_for_segments(tts_server, voice, script_data, f"{project_output_dir}/voice")
+
+    # 生成开场音频
+    opening_golden_quote = (script_data or {}).get("golden_quote", "")
+    if opening_quote and isinstance(opening_golden_quote, str) and opening_golden_quote.strip():
+        opening_voice_dir = os.path.join(project_output_dir, "voice")
+        os.makedirs(opening_voice_dir, exist_ok=True)
+        opening_narration_audio_path = os.path.join(opening_voice_dir, "opening.wav")
+        if not os.path.exists(opening_narration_audio_path):
+            from core.media import text_to_audio_bytedance
+            ok = text_to_audio_bytedance(opening_golden_quote, opening_narration_audio_path, voice=voice, encoding="wav")
+            if ok:
+                print(f"✅ 开场音频已生成: {opening_narration_audio_path}")
+            else:
+                print("❌ 开场音频生成失败")
+        else:
+            print(f"✅ 开场音频已存在: {opening_narration_audio_path}")
+
     return {"success": True, "audio_paths": audio_paths}
 
 
-def run_step_5(project_output_dir: str, image_size: str, enable_subtitles: bool, bgm_filename: str, voice: str, skip_opening_quote: bool = False) -> Dict[str, Any]:
+def run_step_5(project_output_dir: str, image_size: str, enable_subtitles: bool, bgm_filename: str, voice: str, opening_quote: bool = True) -> Dict[str, Any]:
     project_root = os.path.dirname(os.path.dirname(__file__))
     images_dir = os.path.join(project_output_dir, 'images')
     voice_dir = os.path.join(project_output_dir, 'voice')
@@ -457,13 +480,13 @@ def run_step_5(project_output_dir: str, image_size: str, enable_subtitles: bool,
     # Opening assets
     opening_image_candidate = os.path.join(images_dir, "opening.png")
     opening_image_candidate = opening_image_candidate if os.path.exists(opening_image_candidate) else None
-    opening_quote = (script_data or {}).get("golden_quote", "")
+    opening_golden_quote = (script_data or {}).get("golden_quote", "")
     opening_narration_audio_path = None
     try:
-        if isinstance(opening_quote, str) and opening_quote.strip():
+        if opening_quote and isinstance(opening_golden_quote, str) and opening_golden_quote.strip():
             opening_narration_audio_path = os.path.join(voice_dir, "opening.wav")
             if not os.path.exists(opening_narration_audio_path):
-                ok = text_to_audio_bytedance(opening_quote, opening_narration_audio_path, voice=voice, encoding="wav")
+                ok = text_to_audio_bytedance(opening_golden_quote, opening_narration_audio_path, voice=voice, encoding="wav")
                 if not ok:
                     opening_narration_audio_path = None
     except Exception:
@@ -475,12 +498,12 @@ def run_step_5(project_output_dir: str, image_size: str, enable_subtitles: bool,
         script_data=script_data, enable_subtitles=enable_subtitles,
         bgm_audio_path=bgm_audio_path,
         opening_image_path=opening_image_candidate,
-        opening_golden_quote=opening_quote,
+        opening_golden_quote=opening_golden_quote,
         opening_narration_audio_path=opening_narration_audio_path,
         bgm_volume=float(getattr(config, "BGM_DEFAULT_VOLUME", 0.2)),
         narration_volume=float(getattr(config, "NARRATION_DEFAULT_VOLUME", 1.0)),
         image_size=image_size,
-        skip_opening_quote=skip_opening_quote,
+        opening_quote=opening_quote,
     )
 
     return {"success": True, "final_video": final_video_path}
