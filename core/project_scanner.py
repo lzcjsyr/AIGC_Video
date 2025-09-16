@@ -170,10 +170,10 @@ def detect_project_progress(project_dir: str) -> Dict[str, Any]:
 
     has_final_video = os.path.exists(final_video_path) and os.path.getsize(final_video_path) > 0
 
-    # 计算当前步骤
+    # 计算当前步骤 - 支持步骤3和4的独立执行
     current_step = 0
     current_step_name = ""
-    
+
     if has_raw:
         current_step = 1
         current_step_name = "1"
@@ -183,23 +183,31 @@ def detect_project_progress(project_dir: str) -> Dict[str, Any]:
     if has_keywords:
         current_step = 2
         current_step_name = "2"
-    if images_ok:
+
+    # 步骤3和4可以独立完成，取较高的步骤号
+    if images_ok and audio_ok:
+        current_step = 4
+        current_step_name = "3+4"
+    elif images_ok:
         current_step = 3
         current_step_name = "3"
-    if audio_ok:
+    elif audio_ok:
         current_step = 4
         current_step_name = "4"
+
     if has_final_video:
         current_step = 5
         current_step_name = "5"
 
-    # 向前推导逻辑：如果后续步骤完成，则前面步骤也应该被认为完成
+    # 向前推导逻辑：调整为支持并行步骤3和4
     if has_final_video:
         has_raw = has_script = has_keywords = images_ok = audio_ok = True
-    elif audio_ok:
-        has_raw = has_script = has_keywords = images_ok = True
+    elif images_ok and audio_ok:
+        has_raw = has_script = has_keywords = True
     elif images_ok:
         has_raw = has_script = has_keywords = True
+    elif audio_ok:
+        has_raw = has_script = True
     elif has_keywords:
         has_raw = has_script = True
     elif has_script:

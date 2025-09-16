@@ -32,14 +32,15 @@ class VideoComposer:
         """初始化视频合成器"""
         pass
     
-    def compose_video(self, image_paths: List[str], audio_paths: List[str], output_path: str, 
+    def compose_video(self, image_paths: List[str], audio_paths: List[str], output_path: str,
                      script_data: Dict[str, Any] = None, enable_subtitles: bool = False,
                      bgm_audio_path: Optional[str] = None, bgm_volume: float = 0.15,
                      narration_volume: float = 1.0,
                      opening_image_path: Optional[str] = None,
                      opening_golden_quote: Optional[str] = None,
                      opening_narration_audio_path: Optional[str] = None,
-                     image_size: str = "1280x720") -> str:
+                     image_size: str = "1280x720",
+                     skip_opening_quote: bool = False) -> str:
         """
         合成最终视频
         
@@ -56,6 +57,7 @@ class VideoComposer:
             opening_golden_quote: 开场金句
             opening_narration_audio_path: 开场口播音频路径
             image_size: 目标图像尺寸，如"1280x720"
+            skip_opening_quote: 是否跳过开场金句
         
         Returns:
             str: 输出视频路径
@@ -78,8 +80,8 @@ class VideoComposer:
             
             # 创建开场片段
             opening_seconds = self._create_opening_segment(
-                opening_image_path, opening_golden_quote, 
-                opening_narration_audio_path, video_clips, target_size
+                opening_image_path, opening_golden_quote,
+                opening_narration_audio_path, video_clips, target_size, skip_opening_quote
             )
             
             # 创建主要视频片段
@@ -115,20 +117,25 @@ class VideoComposer:
             raise ValueError(f"视频合成错误: {e}")
     
     @handle_video_operation("开场片段生成", critical=False, fallback_value=0.0)
-    def _create_opening_segment(self, opening_image_path: Optional[str], 
+    def _create_opening_segment(self, opening_image_path: Optional[str],
                               opening_golden_quote: Optional[str],
-                              opening_narration_audio_path: Optional[str], 
-                              video_clips: List, target_size: Tuple[int, int]) -> float:
+                              opening_narration_audio_path: Optional[str],
+                              video_clips: List, target_size: Tuple[int, int],
+                              skip_opening_quote: bool = False) -> float:
         """创建开场片段"""
         opening_seconds = 0.0
         opening_voice_clip = None
-        
+
+        # 如果跳过开场金句，直接返回
+        if skip_opening_quote:
+            return opening_seconds
+
         # 计算开场时长
         if opening_narration_audio_path and os.path.exists(opening_narration_audio_path):
             opening_voice_clip = AudioFileClip(opening_narration_audio_path)
             hold_after = float(getattr(config, "OPENING_HOLD_AFTER_NARRATION_SECONDS", 2.0))
             opening_seconds = float(opening_voice_clip.duration) + max(0.0, hold_after)
-        
+
         if opening_image_path and os.path.exists(opening_image_path) and opening_seconds > 1e-3:
             print("正在创建开场片段…")
             opening_base = ImageClip(opening_image_path).with_duration(opening_seconds)

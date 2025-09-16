@@ -153,25 +153,32 @@ def display_project_progress_and_select_step(progress) -> Optional[float]:
     current_step_name = step_names_dict.get(current_step, '未知')
     print(f"当前进度：步骤 {current_step} - {current_step_name}")
     
-    # 确定允许的步骤：不允许第1步，允许当前步骤重做和下一步执行
+    # 确定允许的步骤：支持步骤3和4的独立执行
     allowed_steps = []
-    if current_step >= 1.5:
+
+    # 基于已完成的步骤确定可重做的步骤
+    if progress.get('has_script', False):
         allowed_steps.append(1.5)  # 允许重做脚本分段
-    if current_step >= 2:
+    if progress.get('has_keywords', False):
         allowed_steps.append(2)    # 允许重做要点提取
-    if current_step >= 3:
+    if progress.get('images_ok', False):
         allowed_steps.append(3)    # 允许重做图像生成
-    if current_step >= 4:
+    if progress.get('audio_ok', False):
         allowed_steps.append(4)    # 允许重做语音合成
-    if current_step >= 5:
+    if progress.get('has_final_video', False):
         allowed_steps.append(5)    # 允许重做视频合成
-    
-    # 添加下一步（如果存在）
-    if current_step < 5:
-        next_steps = {1: 1.5, 1.5: 2, 2: 3, 3: 4, 4: 5}
-        next_step = next_steps.get(current_step)
-        if next_step and next_step not in allowed_steps:
-            allowed_steps.append(next_step)
+
+    # 添加可执行的下一步
+    if not progress.get('has_script', False) and progress.get('has_raw', False):
+        allowed_steps.append(1.5)  # 可执行脚本分段
+    if not progress.get('has_keywords', False) and progress.get('has_script', False):
+        allowed_steps.append(2)    # 可执行要点提取
+    if not progress.get('images_ok', False) and progress.get('has_keywords', False):
+        allowed_steps.append(3)    # 可执行图像生成
+    if not progress.get('audio_ok', False) and progress.get('has_script', False):
+        allowed_steps.append(4)    # 可执行语音合成（只需script.json）
+    if not progress.get('has_final_video', False) and progress.get('images_ok', False) and progress.get('audio_ok', False):
+        allowed_steps.append(5)    # 可执行视频合成（需要图像和音频都完成）
     
     allowed_steps.sort()
     
@@ -382,9 +389,9 @@ def _select_entry_and_context(project_root: str, output_dir: str):
 
 
 def _run_specific_step(
-    target_step, project_output_dir, llm_server, llm_model, image_model, 
-    image_size, image_style_preset, opening_image_style, tts_server, voice, 
-    num_segments, enable_subtitles, bgm_filename
+    target_step, project_output_dir, llm_server, llm_model, image_model,
+    image_size, image_style_preset, opening_image_style, tts_server, voice,
+    num_segments, enable_subtitles, bgm_filename, skip_opening_quote=False
 ):
     """执行指定步骤并返回结果"""
     from core.pipeline import run_step_1_5, run_step_2, run_step_3, run_step_4, run_step_5
@@ -396,11 +403,11 @@ def _run_specific_step(
     elif target_step == 2:
         result = run_step_2(llm_server, llm_model, project_output_dir)
     elif target_step == 3:
-        result = run_step_3(image_model, image_size, image_style_preset, project_output_dir, opening_image_style)
+        result = run_step_3(image_model, image_size, image_style_preset, project_output_dir, opening_image_style, skip_opening_quote)
     elif target_step == 4:
         result = run_step_4(tts_server, voice, project_output_dir)
     elif target_step == 5:
-        result = run_step_5(project_output_dir, image_size, enable_subtitles, bgm_filename, voice)
+        result = run_step_5(project_output_dir, image_size, enable_subtitles, bgm_filename, voice, skip_opening_quote)
     else:
         result = {"success": False, "message": "无效的步骤"}
     
@@ -408,9 +415,9 @@ def _run_specific_step(
 
 
 def _run_step_by_step_loop(
-    project_output_dir, initial_step, llm_server, llm_model, image_model, 
-    image_size, image_style_preset, opening_image_style, tts_server, voice, 
-    num_segments, enable_subtitles, bgm_filename
+    project_output_dir, initial_step, llm_server, llm_model, image_model,
+    image_size, image_style_preset, opening_image_style, tts_server, voice,
+    num_segments, enable_subtitles, bgm_filename, skip_opening_quote=False
 ):
     """执行指定步骤，然后进入交互模式让用户选择下一步操作"""
     from core.project_scanner import detect_project_progress
@@ -418,9 +425,9 @@ def _run_step_by_step_loop(
     # 首先执行指定的步骤
     if initial_step > 0:
         result = _run_specific_step(
-            initial_step, project_output_dir, llm_server, llm_model, image_model, 
-            image_size, image_style_preset, opening_image_style, tts_server, voice, 
-            num_segments, enable_subtitles, bgm_filename
+            initial_step, project_output_dir, llm_server, llm_model, image_model,
+            image_size, image_style_preset, opening_image_style, tts_server, voice,
+            num_segments, enable_subtitles, bgm_filename, skip_opening_quote
         )
         
         # 显示执行结果
@@ -446,9 +453,9 @@ def _run_step_by_step_loop(
         
         # 执行选择的步骤
         result = _run_specific_step(
-            selected_step, project_output_dir, llm_server, llm_model, image_model, 
-            image_size, image_style_preset, opening_image_style, tts_server, voice, 
-            num_segments, enable_subtitles, bgm_filename
+            selected_step, project_output_dir, llm_server, llm_model, image_model,
+            image_size, image_style_preset, opening_image_style, tts_server, voice,
+            num_segments, enable_subtitles, bgm_filename, skip_opening_quote
         )
         
         # 显示结果
@@ -476,6 +483,7 @@ def run_cli_main(
     enable_subtitles: bool = True,
     bgm_filename: str = None,
     run_mode: str = "auto",
+    skip_opening_quote: bool = False,
 ) -> Dict[str, Any]:
     """CLI主要业务逻辑入口"""
     
@@ -522,10 +530,10 @@ def run_cli_main(
             # 处理已有项目的步骤执行循环
             project_output_dir = selection["project_dir"]
             return _run_step_by_step_loop(
-                project_output_dir, selection["selected_step"], 
-                llm_server, llm_model, image_model, image_size, image_style_preset, 
-                opening_image_style, tts_server, voice, num_segments, 
-                enable_subtitles, bgm_filename
+                project_output_dir, selection["selected_step"],
+                llm_server, llm_model, image_model, image_size, image_style_preset,
+                opening_image_style, tts_server, voice, num_segments,
+                enable_subtitles, bgm_filename, skip_opening_quote
             )
 
     if input_file is not None and not os.path.isabs(input_file):
@@ -536,6 +544,7 @@ def run_cli_main(
             input_file, output_dir, target_length, num_segments, image_size,
             llm_server, llm_model, image_server, image_model, tts_server, voice,
             image_style_preset, opening_image_style, enable_subtitles, bgm_filename,
+            skip_opening_quote,
         )
         if result.get("success"):
             print_section("步骤 5/5 完成：视频合成", "🎬", "=")
@@ -564,7 +573,7 @@ def run_cli_main(
         
         return _run_step_by_step_loop(
             project_output_dir, 0,  # 不执行初始步骤，直接进入交互模式
-            llm_server, llm_model, image_model, image_size, image_style_preset, 
-            opening_image_style, tts_server, voice, num_segments, 
-            enable_subtitles, bgm_filename
+            llm_server, llm_model, image_model, image_size, image_style_preset,
+            opening_image_style, tts_server, voice, num_segments,
+            enable_subtitles, bgm_filename, skip_opening_quote
         )

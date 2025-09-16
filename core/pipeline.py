@@ -49,6 +49,7 @@ def run_auto(
     opening_image_style: str,
     enable_subtitles: bool,
     bgm_filename: Optional[str] = None,
+    skip_opening_quote: bool = False,
 ) -> Dict[str, Any]:
     start_time = datetime.datetime.now()
 
@@ -98,7 +99,7 @@ def run_auto(
 
     # 7) 生成开场图像（可选）& 段落图像
     opening_image_path = generate_opening_image(
-        image_model, opening_image_style, image_size, f"{project_output_dir}/images"
+        image_model, opening_image_style, image_size, f"{project_output_dir}/images", skip_opening_quote
     )
     image_result = generate_images_for_segments(
         image_model, keywords_data, image_style_preset, image_size, f"{project_output_dir}/images"
@@ -143,6 +144,7 @@ def run_auto(
         bgm_volume=float(getattr(config, "BGM_DEFAULT_VOLUME", 0.2)),
         narration_volume=float(getattr(config, "NARRATION_DEFAULT_VOLUME", 1.0)),
         image_size=image_size,
+        skip_opening_quote=skip_opening_quote,
     )
 
     # 12) 汇总结果
@@ -369,10 +371,10 @@ def run_step_2(llm_server: str, llm_model: str, project_output_dir: str, script_
     return {"success": True, "keywords_path": keywords_path}
 
 
-def run_step_3(image_model: str, image_size: str, image_style_preset: str, project_output_dir: str, opening_image_style: str) -> Dict[str, Any]:
+def run_step_3(image_model: str, image_size: str, image_style_preset: str, project_output_dir: str, opening_image_style: str, skip_opening_quote: bool = False) -> Dict[str, Any]:
     keywords_path = os.path.join(project_output_dir, 'text', 'keywords.json')
     keywords_data = load_json_file(keywords_path)
-    opening_image_path = generate_opening_image(image_model, opening_image_style, image_size, f"{project_output_dir}/images")
+    opening_image_path = generate_opening_image(image_model, opening_image_style, image_size, f"{project_output_dir}/images", skip_opening_quote)
     image_result = generate_images_for_segments(image_model, keywords_data, image_style_preset, image_size, f"{project_output_dir}/images")
     return {"success": True, "opening_image_path": opening_image_path, **image_result}
 
@@ -384,12 +386,50 @@ def run_step_4(tts_server: str, voice: str, project_output_dir: str) -> Dict[str
     return {"success": True, "audio_paths": audio_paths}
 
 
-def run_step_5(project_output_dir: str, image_size: str, enable_subtitles: bool, bgm_filename: str, voice: str) -> Dict[str, Any]:
+def run_step_5(project_output_dir: str, image_size: str, enable_subtitles: bool, bgm_filename: str, voice: str, skip_opening_quote: bool = False) -> Dict[str, Any]:
     project_root = os.path.dirname(os.path.dirname(__file__))
     images_dir = os.path.join(project_output_dir, 'images')
     voice_dir = os.path.join(project_output_dir, 'voice')
     script_path = os.path.join(project_output_dir, 'text', 'script.json')
+
+    # 前置检查：确保必要文件存在
+    if not os.path.exists(script_path):
+        return {"success": False, "message": "脚本文件不存在，请先完成步骤1.5"}
+
     script_data = load_json_file(script_path)
+    if not script_data:
+        return {"success": False, "message": "脚本文件加载失败"}
+
+    # 检查图像文件
+    expected_segments = script_data.get('actual_segments', 0)
+    image_count = 0
+    for i in range(1, expected_segments + 1):
+        img_path = os.path.join(images_dir, f"segment_{i}.png")
+        if os.path.exists(img_path):
+            image_count += 1
+        else:
+            # 检查视频文件
+            for ext in ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.m4v']:
+                vid_path = os.path.join(images_dir, f"segment_{i}{ext}")
+                if os.path.exists(vid_path):
+                    image_count += 1
+                    break
+
+    # 检查音频文件
+    audio_count = 0
+    for i in range(1, expected_segments + 1):
+        audio_path = os.path.join(voice_dir, f"voice_{i}.wav")
+        if os.path.exists(audio_path):
+            audio_count += 1
+
+    if image_count == 0:
+        return {"success": False, "message": "未找到图像文件，请先完成步骤3"}
+    if audio_count == 0:
+        return {"success": False, "message": "未找到音频文件，请先完成步骤4"}
+    if image_count != expected_segments:
+        return {"success": False, "message": f"图像文件不完整，需要{expected_segments}个，找到{image_count}个"}
+    if audio_count != expected_segments:
+        return {"success": False, "message": f"音频文件不完整，需要{expected_segments}个，找到{audio_count}个"}
 
     # Resolve ordered assets (支持图片和视频文件)
     image_paths = []
@@ -440,6 +480,7 @@ def run_step_5(project_output_dir: str, image_size: str, enable_subtitles: bool,
         bgm_volume=float(getattr(config, "BGM_DEFAULT_VOLUME", 0.2)),
         narration_volume=float(getattr(config, "NARRATION_DEFAULT_VOLUME", 1.0)),
         image_size=image_size,
+        skip_opening_quote=skip_opening_quote,
     )
 
     return {"success": True, "final_video": final_video_path}

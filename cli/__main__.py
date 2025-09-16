@@ -22,6 +22,7 @@ PARAMS = {
     
     # 输出参数
     "enable_subtitles": True,                           # 启用字幕
+    "skip_opening_quote": True,                         # 跳过开场金句，True=跳过, False=保留
     "bgm_filename": "Ramin Djawadi - Light of the Seven.mp3"  # 背景音乐 (可为None)
 }
 
@@ -37,6 +38,7 @@ PARAMS = {
 - opening_image_style: 开场图像风格 (des01-des10)，开场图像风格请查看 prompts.py
 
 - enable_subtitles: 是否启用字幕
+- skip_opening_quote: 是否跳过开场金句 (True=跳过, False=保留)
 - bgm_filename: 背景音乐文件名 (放在项目根目录 music/ 下，不填则无BGM)
 
 🤖 可选图像模型：
