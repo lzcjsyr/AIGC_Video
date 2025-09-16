@@ -17,7 +17,7 @@ import datetime
 from typing import Dict, Any, List, Optional
 
 from config import config
-from utils import load_json_file
+from core.utils import load_json_file
 from core.document_processor import export_raw_to_docx
 from core.routers import (
     read_document,
@@ -261,7 +261,7 @@ def run_step_1_5(project_output_dir: str, num_segments: int, is_new_project: boo
     Returns:
         Dict[str, Any]: 处理结果，包含成功状态和相关信息
     """
-    from utils import load_json_file, logger
+    from core.utils import load_json_file, logger
     from core.document_processor import parse_raw_from_docx, export_script_to_docx
     
     try:

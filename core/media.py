@@ -9,7 +9,7 @@ import threading
 
 from config import config
 from prompts import OPENING_IMAGE_STYLES
-from utils import logger, ensure_directory_exists
+from core.utils import logger, ensure_directory_exists
 from core.services import text_to_image_doubao, text_to_audio_bytedance
 from prompts import IMAGE_STYLE_PRESETS
 

@@ -55,6 +55,10 @@ tools/temp/*
 *.swp
 *.swo
 
-# 音乐文件（通常较大，可选择忽略）
-# music/*.mp3
-# music/*.wav
+# 文件夹
+tests/
+web/
+
+# 音乐文件（通常较大，忽略具体文件但保留文件夹）
+music/*.mp3
+music/*.wav

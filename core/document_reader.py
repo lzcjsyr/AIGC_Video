@@ -23,7 +23,7 @@ try:
 except ImportError:
     HAS_FITZ = False
 
-from utils import logger, FileProcessingError
+from core.utils import logger, FileProcessingError
 
 
 def clean_text(text: str) -> str:

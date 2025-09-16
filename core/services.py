@@ -15,7 +15,7 @@ from enum import IntEnum
 from openai import OpenAI
 
 from config import config
-from utils import logger, APIError, retry_on_failure
+from core.utils import logger, APIError, retry_on_failure
 
 
 @retry_on_failure(max_retries=2, delay=2.0)
@@ -273,7 +273,7 @@ async def _async_text_to_audio(text, output_filename, voice, encoding, appid, ac
                 logger.warning(f"收到未预期的消息类型: {msg.type}")
         if not audio_data:
             raise APIError("未收到音频数据")
-        from utils import ensure_directory_exists
+        from core.utils import ensure_directory_exists
         ensure_directory_exists(os.path.dirname(output_filename))
         with open(output_filename, "wb") as f:
             f.write(audio_data)

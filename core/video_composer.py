@@ -22,7 +22,7 @@ from moviepy import (
 )
 
 from config import config
-from utils import logger, FileProcessingError, VideoProcessingError, handle_video_operation
+from core.utils import logger, FileProcessingError, VideoProcessingError, handle_video_operation
 
 
 class VideoComposer:

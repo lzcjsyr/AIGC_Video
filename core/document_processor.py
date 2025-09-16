@@ -11,7 +11,7 @@
 import os
 from typing import Dict, Any
 
-from utils import logger, ensure_directory_exists, FileProcessingError
+from core.utils import logger, ensure_directory_exists, FileProcessingError
 
 
 def export_script_to_docx(script_data: Dict[str, Any], docx_path: str) -> str:

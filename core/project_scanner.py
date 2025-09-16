@@ -12,7 +12,7 @@ import datetime
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 
-from utils import logger, get_file_info, FileProcessingError
+from core.utils import logger, get_file_info, FileProcessingError
 
 
 def scan_input_files(input_dir: str = "input") -> List[Dict[str, Any]]:

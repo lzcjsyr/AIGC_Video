@@ -9,7 +9,7 @@ import datetime
 
 from config import config
 from prompts import summarize_system_prompt, keywords_extraction_prompt
-from utils import logger
+from core.utils import logger
 from core.services import text_to_text
 
 
