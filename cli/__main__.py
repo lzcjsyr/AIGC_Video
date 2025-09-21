@@ -44,6 +44,7 @@ PARAMS = {
 🧠 可选 LLM 模型（按服务商划分，自动根据模型名前缀识别服务商）
 - openrouter:
   - google/gemini-2.5-pro
+  - openai/gpt-5
   - anthropic/claude-sonnet-4
   - anthropic/claude-3.7-sonnet:thinking
 - siliconflow:
