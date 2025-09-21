@@ -10,7 +10,6 @@ CLI界面特定的交互函数和主要业务逻辑
 """
 
 import os
-import sys
 import logging
 from pathlib import Path
 from typing import Dict, Any, List, Optional
@@ -389,7 +388,7 @@ def _select_entry_and_context(project_root: str, output_dir: str):
 
 
 def _run_specific_step(
-    target_step, project_output_dir, llm_server, llm_model, image_model,
+    target_step, project_output_dir, llm_server, llm_model, image_server, image_model,
     image_size, image_style_preset, opening_image_style, tts_server, voice,
     num_segments, enable_subtitles, bgm_filename, opening_quote=True
 ):
@@ -403,7 +402,7 @@ def _run_specific_step(
     elif target_step == 2:
         result = run_step_2(llm_server, llm_model, project_output_dir)
     elif target_step == 3:
-        result = run_step_3(image_model, image_size, image_style_preset, project_output_dir, opening_image_style, opening_quote)
+        result = run_step_3(image_server, image_model, image_size, image_style_preset, project_output_dir, opening_image_style, opening_quote)
     elif target_step == 4:
         result = run_step_4(tts_server, voice, project_output_dir, opening_quote)
     elif target_step == 5:
@@ -415,7 +414,7 @@ def _run_specific_step(
 
 
 def _run_step_by_step_loop(
-    project_output_dir, initial_step, llm_server, llm_model, image_model,
+    project_output_dir, initial_step, llm_server, llm_model, image_server, image_model,
     image_size, image_style_preset, opening_image_style, tts_server, voice,
     num_segments, enable_subtitles, bgm_filename, opening_quote=True
 ):
@@ -425,7 +424,7 @@ def _run_step_by_step_loop(
     # 首先执行指定的步骤
     if initial_step > 0:
         result = _run_specific_step(
-            initial_step, project_output_dir, llm_server, llm_model, image_model,
+            initial_step, project_output_dir, llm_server, llm_model, image_server, image_model,
             image_size, image_style_preset, opening_image_style, tts_server, voice,
             num_segments, enable_subtitles, bgm_filename, opening_quote
         )
@@ -453,7 +452,7 @@ def _run_step_by_step_loop(
         
         # 执行选择的步骤
         result = _run_specific_step(
-            selected_step, project_output_dir, llm_server, llm_model, image_model,
+            selected_step, project_output_dir, llm_server, llm_model, image_server, image_model,
             image_size, image_style_preset, opening_image_style, tts_server, voice,
             num_segments, enable_subtitles, bgm_filename, opening_quote
         )
@@ -490,10 +489,7 @@ def run_cli_main(
     # 安全导入，避免循环导入
     try:
         # 设置项目路径
-        current_dir = os.path.dirname(__file__)
-        project_root = os.path.dirname(current_dir)
-        if project_root not in sys.path:
-            sys.path.insert(0, project_root)
+        project_root = os.path.dirname(os.path.dirname(__file__))
             
         from config import config
         from core.validators import validate_startup_args
@@ -531,7 +527,7 @@ def run_cli_main(
             project_output_dir = selection["project_dir"]
             return _run_step_by_step_loop(
                 project_output_dir, selection["selected_step"],
-                llm_server, llm_model, image_model, image_size, image_style_preset,
+                llm_server, llm_model, image_server, image_model, image_size, image_style_preset,
                 opening_image_style, tts_server, voice, num_segments,
                 enable_subtitles, bgm_filename, opening_quote
             )
@@ -573,7 +569,7 @@ def run_cli_main(
         
         return _run_step_by_step_loop(
             project_output_dir, 0,  # 不执行初始步骤，直接进入交互模式
-            llm_server, llm_model, image_model, image_size, image_style_preset,
+            llm_server, llm_model, image_server, image_model, image_size, image_style_preset,
             opening_image_style, tts_server, voice, num_segments,
             enable_subtitles, bgm_filename, opening_quote
         )

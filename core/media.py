@@ -6,11 +6,12 @@ from typing import Optional, Dict, Any, List
 import os
 import concurrent.futures
 import threading
+import base64
 
 from config import config
 from prompts import OPENING_IMAGE_STYLES
 from core.utils import logger, ensure_directory_exists
-from core.services import text_to_image_doubao, text_to_audio_bytedance
+from core.services import text_to_image_doubao, text_to_audio_bytedance, text_to_image_siliconflow
 from prompts import IMAGE_STYLE_PRESETS
 
 import requests
@@ -26,11 +27,34 @@ def _download_to_path(url: str, output_path: str, error_msg: str = "下载失败
         raise ValueError(f"{error_msg}: {e}")
 
 
-def generate_opening_image(model: str, opening_style: str,
+def _persist_image_result(image_result: Dict[str, str], output_path: str, error_msg: str) -> None:
+    """根据返回类型写入图像文件，支持URL或base64"""
+    ensure_directory_exists(os.path.dirname(output_path))
+
+    if not image_result:
+        raise ValueError(f"{error_msg}: 空响应")
+
+    data_type = image_result.get("type")
+    data_value = image_result.get("data")
+
+    if not data_type or not data_value:
+        raise ValueError(f"{error_msg}: 响应缺少必要字段")
+
+    try:
+        if data_type == "url":
+            _download_to_path(data_value, output_path, error_msg=error_msg)
+        elif data_type == "b64":
+            with open(output_path, 'wb') as f:
+                f.write(base64.b64decode(data_value))
+        else:
+            raise ValueError(f"未知的图像数据类型: {data_type}")
+    except Exception as e:
+        raise ValueError(f"{error_msg}: {e}")
+
+
+def generate_opening_image(image_server: str, model: str, opening_style: str,
                            image_size: str, output_dir: str, opening_quote: bool = True) -> Optional[str]:
-    """
-    生成开场图像，使用预设风格。
-    """
+    """生成开场图像，兼容多种服务商"""
     if not opening_quote:
         return None
     try:
@@ -41,18 +65,27 @@ def generate_opening_image(model: str, opening_style: str,
             prompt = OPENING_IMAGE_STYLES[default_style]
         prompt = str(prompt).strip()
 
-        image_url = text_to_image_doubao(
-            prompt=prompt,
-            size=image_size,
-            model=model
-        )
-
-        if not image_url:
-            raise ValueError("开场图像生成失败")
-
-        ensure_directory_exists(output_dir)
         image_path = os.path.join(output_dir, "opening.png")
-        _download_to_path(image_url, image_path, error_msg="开场图像下载失败")
+
+        if image_server == "siliconflow":
+            image_result = text_to_image_siliconflow(
+                prompt=prompt,
+                size=image_size,
+                model=model
+            )
+            _persist_image_result(image_result, image_path, "开场图像保存失败")
+        else:
+            image_url = text_to_image_doubao(
+                prompt=prompt,
+                size=image_size,
+                model=model
+            )
+
+            if not image_url:
+                raise ValueError("开场图像生成失败")
+
+            _persist_image_result({"type": "url", "data": image_url}, image_path, "开场图像下载失败")
+
         logger.info(f"开场图像已保存: {image_path} (风格: {opening_style})")
         print(f"开场图像已保存: {image_path}")
         return image_path
@@ -62,10 +95,8 @@ def generate_opening_image(model: str, opening_style: str,
 
 
 def _generate_single_image(args) -> Dict[str, Any]:
-    """
-    生成单个图像的辅助函数（用于多线程）
-    """
-    segment_index, keywords, atmosphere, image_style, model, image_size, output_dir = args
+    """生成单个图像的辅助函数（用于多线程）"""
+    segment_index, keywords, atmosphere, image_style, model, image_size, output_dir, image_server = args
     
     style_part = f"[风格] {image_style}" if image_style else ""
     content_parts: List[str] = []
@@ -80,21 +111,27 @@ def _generate_single_image(args) -> Dict[str, Any]:
 
     for attempt in range(3):
         try:
-            image_url = text_to_image_doubao(
-                prompt=final_prompt,
-                size=image_size,
-                model=model
-            )
-            if image_url:
-                image_path = os.path.join(output_dir, f"segment_{segment_index}.png")
-                _download_to_path(image_url, image_path, error_msg=f"下载第{segment_index}段图像失败")
-                print(f"第{segment_index}段图像已保存: {image_path}")
-                logger.info(f"第{segment_index}段图像生成成功: {image_path}")
-                return {"success": True, "segment_index": segment_index, "image_path": image_path}
+            image_path = os.path.join(output_dir, f"segment_{segment_index}.png")
+
+            if image_server == "siliconflow":
+                image_result = text_to_image_siliconflow(
+                    prompt=final_prompt,
+                    size=image_size,
+                    model=model
+                )
+                _persist_image_result(image_result, image_path, f"保存第{segment_index}段图像失败")
             else:
-                if attempt < 2:
-                    logger.warning(f"第{segment_index}段图像生成失败，准备重试（第{attempt + 2}/3次）")
-                    continue
+                image_url = text_to_image_doubao(
+                    prompt=final_prompt,
+                    size=image_size,
+                    model=model
+                )
+                if not image_url:
+                    raise ValueError("图像生成返回空URL")
+                _persist_image_result({"type": "url", "data": image_url}, image_path, f"下载第{segment_index}段图像失败")
+            print(f"第{segment_index}段图像已保存: {image_path}")
+            logger.info(f"第{segment_index}段图像生成成功: {image_path}")
+            return {"success": True, "segment_index": segment_index, "image_path": image_path}
         except Exception as e:
             error_msg = str(e)
             is_sensitive_error = (
@@ -118,7 +155,7 @@ def _generate_single_image(args) -> Dict[str, Any]:
     return {"success": False, "segment_index": segment_index, "image_path": ""}
 
 
-def generate_images_for_segments(model: str, keywords_data: Dict[str, Any],
+def generate_images_for_segments(image_server: str, model: str, keywords_data: Dict[str, Any],
                                  image_style_preset: str, image_size: str, output_dir: str) -> Dict[str, Any]:
     """
     为每个段落生成图像（支持多线程并发）
@@ -131,14 +168,14 @@ def generate_images_for_segments(model: str, keywords_data: Dict[str, Any],
             )
         except Exception:
             image_style = ""
-        logger.info(f"使用图像风格: {image_style_preset} -> {image_style}")
+        logger.info(f"使用图像服务: {image_server}，风格: {image_style_preset} -> {image_style}")
 
         # 准备并发任务参数
         task_args = []
         for i, segment_keywords in enumerate(keywords_data["segments"], 1):
             keywords = segment_keywords.get("keywords", [])
             atmosphere = segment_keywords.get("atmosphere", [])
-            task_args.append((i, keywords, atmosphere, image_style, model, image_size, output_dir))
+            task_args.append((i, keywords, atmosphere, image_style, model, image_size, output_dir, image_server))
 
         # 使用线程池并发生成图像
         max_workers = getattr(config, "MAX_CONCURRENT_IMAGE_GENERATION", 3)
@@ -353,5 +390,3 @@ def _format_srt_time(seconds: float) -> str:
     secs = int(seconds % 60)
     millisecs = int((seconds % 1) * 1000)
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millisecs:03d}"
-
-

@@ -153,7 +153,6 @@ PARAMS = {
 # LLM服务（至少配置一个）
 OPENROUTER_API_KEY=your_key      # 推荐，模型选择多
 SILICONFLOW_KEY=your_key         # 备选方案
-AIHUBMIX_API_KEY=your_key        # 备选方案
 
 # 图像生成（必需）
 SEEDREAM_API_KEY=your_key        # 豆包图像生成

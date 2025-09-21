@@ -122,7 +122,6 @@ class Config:
     OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
     SEEDREAM_API_KEY = os.getenv('SEEDREAM_API_KEY')
     SILICONFLOW_KEY = os.getenv('SILICONFLOW_KEY')
-    AIHUBMIX_API_KEY = os.getenv('AIHUBMIX_API_KEY')
     
     # 字节语音合成大模型配置
     BYTEDANCE_TTS_APPID = os.getenv('BYTEDANCE_TTS_APPID')
@@ -132,16 +131,16 @@ class Config:
     # ==================== API 端点配置 ====================
     OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
     SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1"
+    SILICONFLOW_IMAGE_BASE_URL = "https://api.siliconflow.cn/v1/images/generations"
     ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
-    AIHUBMIX_URL = "https://aihubmix.com/v1"
     
     # ==================== 默认模型配置 ====================
     DEFAULT_IMAGE_SIZE = "1024x1024"  # 默认图像尺寸
     DEFAULT_VOICE = "zh_male_yuanboxiaoshu_moon_bigtts"  # 默认语音
     
     # ==================== 支持的服务商配置 ====================
-    SUPPORTED_LLM_SERVERS = ["openrouter", "siliconflow", "aihubmix"]
-    SUPPORTED_IMAGE_SERVERS = ["doubao"]
+    SUPPORTED_LLM_SERVERS = ["openrouter", "siliconflow"]
+    SUPPORTED_IMAGE_SERVERS = ["doubao", "siliconflow"]
     SUPPORTED_TTS_SERVERS = ["bytedance"]
     
     # ==================== 推荐模型列表 ====================
@@ -156,11 +155,14 @@ class Config:
                 "zai-org/GLM-4.5",
                 "moonshotai/Kimi-K2-Instruct",
                 "Qwen/Qwen3-235B-A22B-Thinking-2507"
-            ],
-            "aihubmix": ["gpt-5"]
+            ]
         },
         "image": {
-            "doubao": ["doubao-seedream-3-0-t2i-250415"]
+            "doubao": [
+                "doubao-seedream-4-0-250828",
+                "doubao-seedream-3-0-t2i-250415",
+            ],
+            "siliconflow": ["Qwen/Qwen-Image"]
         },
         "tts": {
             "bytedance": ["bytedance-bigtts"]
@@ -170,8 +172,9 @@ class Config:
     # ==================== 文件格式支持 ====================
     SUPPORTED_INPUT_FORMATS = [".epub", ".pdf", ".mobi", ".azw3", ".docx", ".doc"]
     
-    # 豆包Seedream 3.0支持的图像尺寸
+    # 支持的图像尺寸（包含豆包Seedream与Qwen-Image常用尺寸）
     SUPPORTED_IMAGE_SIZES = [
+        # Seedream 常用
         "1024x1024",  # 1:1 - 方形
         "864x1152",   # 3:4 - 竖屏
         "1152x864",   # 4:3 - 横屏
@@ -179,7 +182,15 @@ class Config:
         "720x1280",   # 9:16 - 竖屏视频
         "832x1248",   # 2:3 - 竖屏海报
         "1248x832",   # 3:2 - 横屏摄影
-        "1512x648"    # 21:9 - 超宽屏
+        "1512x648",   # 21:9 - 超宽屏
+        # Qwen-Image 常用
+        "1328x1328",  # 1:1
+        "1664x928",   # 16:9
+        "928x1664",   # 9:16
+        "1472x1140",  # 4:3
+        "1140x1472",  # 3:4
+        "1584x1056",  # 3:2
+        "1056x1584",  # 2:3
     ]
     
     # ==================== 输出路径配置 ====================
@@ -208,26 +219,25 @@ class Config:
         """验证API密钥配置"""
         return {
             "openrouter": bool(cls.OPENROUTER_API_KEY),
-            "seedream": bool(cls.SEEDREAM_API_KEY),  # 用于豆包图像生成
-            "bytedance_tts": bool(cls.BYTEDANCE_TTS_APPID and cls.BYTEDANCE_TTS_ACCESS_TOKEN),  # 用于字节语音合成
+            "seedream": bool(cls.SEEDREAM_API_KEY), 
+            "bytedance_tts": bool(cls.BYTEDANCE_TTS_APPID and cls.BYTEDANCE_TTS_ACCESS_TOKEN), 
             "siliconflow": bool(cls.SILICONFLOW_KEY),
-            "aihubmix": bool(cls.AIHUBMIX_API_KEY)
         }
-    
+
     @classmethod
     def get_required_keys_for_config(cls, llm_server: str, image_server: str, tts_server: str) -> list:
         """获取指定配置所需的API密钥"""
         required_keys = []
-        
+
         if llm_server == "openrouter":
             required_keys.append("OPENROUTER_API_KEY")
-        elif llm_server == "aihubmix":
-            required_keys.append("AIHUBMIX_API_KEY")
         elif llm_server == "siliconflow":
             required_keys.append("SILICONFLOW_KEY")
             
         if image_server == "doubao":
             required_keys.append("SEEDREAM_API_KEY")
+        elif image_server == "siliconflow":
+            required_keys.append("SILICONFLOW_KEY")
             
         if tts_server == "bytedance":
             required_keys.append("BYTEDANCE_TTS_APPID")

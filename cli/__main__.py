@@ -11,9 +11,9 @@ PARAMS = {
     "num_segments": 6,                                  # 分段数量 (5-20)
     
     # 媒体参数
-    "image_size": "1280x720",                           # 图像尺寸 (推荐横屏)
+    "image_size": "1664x928",                           # 图像尺寸 (推荐横屏)
     "llm_model": "google/gemini-2.5-pro",               # LLM模型
-    "image_model": "doubao-seedream-4-0-250828",        # 图像模型 (见下方说明)
+    "image_model": "Qwen/Qwen-Image",                   # 图像模型 (见下方说明)
     "voice": "zh_male_yuanboxiaoshu_moon_bigtts",       # 语音音色
     
     # 风格参数
@@ -41,13 +41,32 @@ PARAMS = {
 - opening_quote: 是否包含开场金句 (True=包含, False=跳过)
 - bgm_filename: 背景音乐文件名 (放在项目根目录 music/ 下，不填则无BGM)
 
+🧠 可选 LLM 模型（按服务商划分，自动根据模型名前缀识别服务商）
+- openrouter:
+  - google/gemini-2.5-pro
+  - anthropic/claude-sonnet-4
+  - anthropic/claude-3.7-sonnet:thinking
+- siliconflow:
+  - zai-org/GLM-4.5
+  - moonshotai/Kimi-K2-Instruct
+  - Qwen/Qwen3-235B-A22B-Thinking-2507
+
 🤖 可选图像模型：
 - doubao-seedream-3-0-t2i-250415: V3模型，支持guidance_scale参数，单价0.275
 - doubao-seedream-4-0-250828: V4模型，新版API，单价0.2
+- Qwen/Qwen-Image: 通过 SiliconFlow 调用（已支持）
+
+🎤 可选语音音色（字节 BigTTS 示例，可在 GUI 中查看更多预设）
+- zh_male_yuanboxiaoshu_moon_bigtts (渊博小叔)
+- zh_male_haoyuxiaoge_moon_bigtts (浩宇小哥)
+- zh_female_sajiaonvyou_moon_bigtts (柔美女友)
+- zh_female_yuanqinvyou_moon_bigtts (撒娇学妹)
+- zh_female_gaolengyujie_moon_bigtts (高冷御姐)
 
 🎨 图像风格配置：
 - image_style_preset: 可选 style01-style10
 - opening_image_style: 可选 des01-des10
+
 📐 支持的图像尺寸 (豆包Seedream 3.0)：
 - 1280x720: 16:9 宽屏横屏 (推荐，适合YouTube、B站等)
 - 720x1280: 9:16 竖屏视频 (推荐，适合抖音、快手、小红书等)
@@ -57,6 +76,15 @@ PARAMS = {
 - 1248x832: 3:2 横屏摄影 (适合摄影作品展示)
 - 832x1248: 2:3 竖屏海报 (适合海报、书籍封面)
 - 1512x648: 21:9 超宽屏 (适合横幅、封面图)
+
+📐 支持的图像尺寸 (Qwen/Qwen-Image)：
+- 1328x1328: 1:1 方形
+- 1664x928: 16:9 横屏
+- 928x1664: 9:16 竖屏
+- 1472x1140: 4:3 横屏
+- 1140x1472: 3:4 竖屏
+- 1584x1056: 3:2 横屏
+- 1056x1584: 2:3 竖屏
 """
 
 # ====================================================================
@@ -74,7 +102,11 @@ if __name__ == "__main__":
         sys.path.insert(0, project_root)
     
     try:
-        from cli.ui_helpers import run_cli_main
+        from cli.ui_helpers import run_cli_main, setup_cli_logging
+
+        # 初始化 CLI 日志，使后续模块共享统一配置
+        setup_cli_logging()
+
         result = run_cli_main(**PARAMS)
         
         # 处理结果

@@ -10,6 +10,7 @@ import uuid
 import websockets
 import io
 import struct
+import requests
 from dataclasses import dataclass
 from enum import IntEnum
 from openai import OpenAI
@@ -36,11 +37,6 @@ def text_to_text(server, model, prompt, system_message="", max_tokens=4000, temp
                 raise APIError("SILICONFLOW_KEY未配置")
             api_key = config.SILICONFLOW_KEY
             base_url = config.SILICONFLOW_BASE_URL
-        elif server == "aihubmix":
-            if not config.AIHUBMIX_API_KEY:
-                raise APIError("AIHUBMIX_API_KEY未配置")
-            api_key = config.AIHUBMIX_API_KEY
-            base_url = config.AIHUBMIX_URL
         else:
             raise ValueError(f"不支持的服务商: {server}，支持的服务商: {config.SUPPORTED_LLM_SERVERS}")
 
@@ -109,6 +105,50 @@ def text_to_image_doubao(prompt, size="1024x1024", model="doubao-seedream-3-0-t2
     except Exception as e:
         logger.error(f"豆包图像生成失败: {str(e)}")
         raise APIError(f"豆包图像生成失败: {str(e)}")
+
+
+@retry_on_failure(max_retries=2, delay=2.0)
+def text_to_image_siliconflow(prompt, size="1024x1024", model="Qwen/Qwen-Image"):
+    if not config.SILICONFLOW_KEY:
+        raise APIError("SILICONFLOW_KEY未配置，无法使用硅基流动图像生成服务")
+
+    base_url = getattr(config, "SILICONFLOW_IMAGE_BASE_URL", "https://api.siliconflow.cn/v1/images/generations")
+    headers = {
+        "Authorization": f"Bearer {config.SILICONFLOW_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "model": model,
+        "prompt": prompt
+    }
+    if size:
+        payload["size"] = size
+
+    logger.info(f"使用硅基流动生成图像，模型: {model}，尺寸: {size}，提示词长度: {len(prompt)}字符")
+
+    try:
+        response = requests.post(base_url, json=payload, headers=headers, timeout=60)
+        response.raise_for_status()
+        data = response.json()
+    except Exception as e:
+        logger.error(f"硅基流动图像生成请求失败: {str(e)}")
+        raise APIError(f"硅基流动图像生成失败: {str(e)}")
+
+    items = data.get("data") if isinstance(data, dict) else None
+    if not items:
+        raise APIError("硅基流动图像生成API返回空响应")
+
+    item = items[0] if isinstance(items, list) else None
+    if not isinstance(item, dict):
+        raise APIError("硅基流动图像生成API返回格式不正确")
+
+    if item.get("url"):
+        return {"type": "url", "data": item["url"]}
+    if item.get("b64_json"):
+        return {"type": "b64", "data": item["b64_json"]}
+
+    raise APIError("硅基流动图像生成API返回缺少可用的图像数据")
 
 
 class MsgType(IntEnum):
@@ -291,7 +331,6 @@ async def _async_text_to_audio(text, output_filename, voice, encoding, appid, ac
 __all__ = [
     'text_to_text',
     'text_to_image_doubao',
+    'text_to_image_siliconflow',
     'text_to_audio_bytedance',
 ]
-
-

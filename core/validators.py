@@ -18,13 +18,14 @@ def auto_detect_server_from_model(model_name: str, model_type: str) -> str:
             return "openrouter"
         if any(prefix in model_name for prefix in ["zai-org/", "moonshotai/", "Qwen/"]):
             return "siliconflow"
-        if model_name.startswith("gpt-"):
-            return "aihubmix"
         return "openrouter"
 
     if model_type == "image":
-        if "doubao" in model_name.lower() or "seedream" in model_name.lower():
+        lower_name = model_name.lower()
+        if "doubao" in lower_name or "seedream" in lower_name:
             return "doubao"
+        if lower_name.startswith("qwen/") or "qwen-image" in lower_name:
+            return "siliconflow"
         return "doubao"
 
     if model_type == "voice":
@@ -70,5 +71,3 @@ __all__ = [
     "auto_detect_server_from_model",
     "validate_startup_args",
 ]
-
-

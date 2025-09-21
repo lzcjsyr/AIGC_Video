@@ -3,6 +3,7 @@
 
 # Python 
 __pycache__/
+.pytest_cache/
 *.pyc
 *.pyo
 *.pyd
@@ -58,6 +59,8 @@ tools/temp/*
 # 文件夹
 tests/
 web/
+gui/
+build/
 
 # 音乐文件（通常较大，忽略具体文件但保留文件夹）
 music/*.mp3

@@ -491,6 +491,19 @@ class VideoComposer:
             bitrate = '8M' if fps == 30 else '3M'
             audio_bitrate = '128k' if fps == 30 else '96k'
             bufsize = '12M' if fps == 30 else '6M'
+
+            width = int(getattr(final_video, "w", 0) or 0)
+            height = int(getattr(final_video, "h", 0) or 0)
+            # h264_videotoolbox 对 level 有更严格限制，1664x928 等超出 1280x720 的分辨率
+            # 会触发 "cannot prepare encoder"。根据尺寸动态选择更高的 level。
+            if width and height:
+                if width > 1280 or height > 720:
+                    level_param = ['-level', '4.1']
+                else:
+                    level_param = ['-level', '3.1']
+            else:
+                level_param = []
+            print("🎞️ 使用硬件编码 (h264_videotoolbox) 导出视频…")
             final_video.write_videofile(
                 output_path,
                 fps=fps,
@@ -499,7 +512,8 @@ class VideoComposer:
                 audio_bitrate=audio_bitrate,
                 bitrate=bitrate,
                 ffmpeg_params=(
-                    ['-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-maxrate', bitrate, '-bufsize', bufsize, '-profile:v', 'main', '-level', '3.1']
+                    ['-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-maxrate', bitrate, '-bufsize', bufsize, '-profile:v', 'main']
+                    + level_param
                     + (['-vf', vf_filter] if vf_filter else [])
                 ),
                 logger=moviepy_logger
@@ -510,6 +524,7 @@ class VideoComposer:
             audio_bitrate = '128k' if fps == 30 else '96k'
             crf = '20' if fps == 30 else '25'
             preset = 'medium'
+            print("🎞️ 改用软件编码 (libx264) 导出视频…")
             final_video.write_videofile(
                 output_path,
                 fps=fps,

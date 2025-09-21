@@ -14,6 +14,7 @@ Implements an auto end-to-end flow using existing core modules.
 import os
 import json
 import datetime
+import re
 from typing import Dict, Any, List, Optional
 
 from config import config
@@ -31,6 +32,78 @@ from core.media import (
 )
 from core.video_composer import VideoComposer
 from core.services import text_to_audio_bytedance
+
+
+def _initialize_project(raw_data: Dict[str, Any], output_dir: str) -> tuple:
+    """Create project folder structure and persist raw outputs."""
+    current_time = datetime.datetime.now()
+    time_suffix = current_time.strftime("%m%d_%H%M")
+    raw_title = raw_data.get('title', 'untitled')
+    sanitized_title = re.sub(r'[^A-Za-z0-9_-]+', '_', raw_title).strip('_') or 'untitled'
+    project_folder = f"{sanitized_title}_{time_suffix}"
+    project_output_dir = os.path.join(output_dir, project_folder)
+
+    os.makedirs(project_output_dir, exist_ok=True)
+    os.makedirs(os.path.join(project_output_dir, "images"), exist_ok=True)
+    os.makedirs(os.path.join(project_output_dir, "voice"), exist_ok=True)
+    os.makedirs(os.path.join(project_output_dir, "text"), exist_ok=True)
+
+    raw_json_path = os.path.join(project_output_dir, 'text', 'raw.json')
+    with open(raw_json_path, 'w', encoding='utf-8') as f:
+        json.dump(raw_data, f, ensure_ascii=False, indent=2)
+
+    raw_docx_path = os.path.join(project_output_dir, 'text', 'raw.docx')
+    try:
+        export_raw_to_docx(raw_data, raw_docx_path)
+    except Exception:
+        raw_docx_path = None
+
+    return project_output_dir, raw_json_path, raw_docx_path
+
+
+def _resolve_bgm_audio_path(bgm_filename: Optional[str], project_root: str) -> Optional[str]:
+    """Locate BGM asset either via absolute path or music directory."""
+    if not bgm_filename:
+        return None
+    if os.path.isabs(bgm_filename) and os.path.exists(bgm_filename):
+        return bgm_filename
+    candidate = os.path.join(project_root, "music", bgm_filename)
+    if os.path.exists(candidate):
+        return candidate
+    return None
+
+
+def _ensure_opening_narration(
+    script_data: Optional[Dict[str, Any]],
+    voice_dir: str,
+    voice: str,
+    opening_quote: bool,
+    announce: bool = False,
+) -> Optional[str]:
+    """Generate or reuse opening narration audio when required."""
+    opening_golden_quote = (script_data or {}).get("golden_quote", "")
+    if not (opening_quote and isinstance(opening_golden_quote, str) and opening_golden_quote.strip()):
+        return None
+
+    try:
+        os.makedirs(voice_dir, exist_ok=True)
+        opening_path = os.path.join(voice_dir, "opening.wav")
+        if os.path.exists(opening_path):
+            if announce:
+                print(f"✅ 开场音频已存在: {opening_path}")
+            return opening_path
+
+        ok = text_to_audio_bytedance(opening_golden_quote, opening_path, voice=voice, encoding="wav")
+        if ok:
+            if announce:
+                print(f"✅ 开场音频已生成: {opening_path}")
+            return opening_path
+        if announce:
+            print("❌ 开场音频生成失败")
+    except Exception:
+        if announce:
+            print("❌ 开场音频生成失败")
+    return None
 
 
 def run_auto(
@@ -64,25 +137,8 @@ def run_auto(
     )
 
     # 3) 创建输出目录结构
-    current_time = datetime.datetime.now()
-    time_suffix = current_time.strftime("%m%d_%H%M")
-    title = raw_data.get('title', 'untitled').replace(' ', '_').replace('/', '_').replace('\\', '_')
-    project_folder = f"{title}_{time_suffix}"
-    project_output_dir = os.path.join(output_dir, project_folder)
-    os.makedirs(project_output_dir, exist_ok=True)
-    os.makedirs(f"{project_output_dir}/images", exist_ok=True)
-    os.makedirs(f"{project_output_dir}/voice", exist_ok=True)
-    os.makedirs(f"{project_output_dir}/text", exist_ok=True)
-
-    # 4) 保存原始JSON + 导出可编辑DOCX
-    raw_json_path = f"{project_output_dir}/text/raw.json"
-    with open(raw_json_path, 'w', encoding='utf-8') as f:
-        json.dump(raw_data, f, ensure_ascii=False, indent=2)
-    try:
-        raw_docx_path = f"{project_output_dir}/text/raw.docx"
-        export_raw_to_docx(raw_data, raw_docx_path)
-    except Exception:
-        raw_docx_path = None
+    project_output_dir, _, _ = _initialize_project(raw_data, output_dir)
+    voice_dir = os.path.join(project_output_dir, "voice")
 
     # 5) 步骤1.5：段落切分
     step15 = run_step_1_5(project_output_dir, num_segments, is_new_project=True, raw_data=raw_data, auto_mode=True)
@@ -99,38 +155,36 @@ def run_auto(
 
     # 7) 生成开场图像（可选）& 段落图像
     opening_image_path = generate_opening_image(
-        image_model, opening_image_style, image_size, f"{project_output_dir}/images", opening_quote
+        image_server, image_model, opening_image_style, image_size, f"{project_output_dir}/images", opening_quote
     )
     image_result = generate_images_for_segments(
-        image_model, keywords_data, image_style_preset, image_size, f"{project_output_dir}/images"
+        image_server, image_model, keywords_data, image_style_preset, image_size, f"{project_output_dir}/images"
     )
-    image_paths: List[str] = image_result["image_paths"]
-    failed_image_segments: List[int] = image_result["failed_segments"]
+    image_paths: List[str] = image_result.get("image_paths", [])
+    failed_image_segments: List[int] = image_result.get("failed_segments", [])
+
+    if failed_image_segments:
+        failed_str = "、".join(str(idx) for idx in failed_image_segments)
+        return {
+            "success": False,
+            "message": f"第 {failed_str} 段图像生成失败，请调整关键词或稍后重试。",
+            "failed_image_segments": failed_image_segments,
+            "needs_retry": True,
+            "stage": 3,
+            "image_paths": image_paths,
+        }
 
     # 8) 语音合成（含SRT导出）
-    audio_paths = synthesize_voice_for_segments(tts_server, voice, script_data, f"{project_output_dir}/voice")
+    audio_paths = synthesize_voice_for_segments(tts_server, voice, script_data, voice_dir)
 
     # 9) BGM路径解析
-    bgm_audio_path = None
-    if bgm_filename:
-        candidate = os.path.join(project_root, "music", bgm_filename)
-        if os.path.exists(candidate):
-            bgm_audio_path = candidate
+    bgm_audio_path = _resolve_bgm_audio_path(bgm_filename, project_root)
 
     # 10) 开场金句口播（可选）
     opening_golden_quote = (script_data or {}).get("golden_quote", "")
-    opening_narration_audio_path = None
-    try:
-        if opening_quote and isinstance(opening_golden_quote, str) and opening_golden_quote.strip():
-            opening_voice_dir = os.path.join(project_output_dir, "voice")
-            os.makedirs(opening_voice_dir, exist_ok=True)
-            opening_narration_audio_path = os.path.join(opening_voice_dir, "opening.wav")
-            if not os.path.exists(opening_narration_audio_path):
-                ok = text_to_audio_bytedance(opening_golden_quote, opening_narration_audio_path, voice=voice, encoding="wav")
-                if not ok:
-                    opening_narration_audio_path = None
-    except Exception:
-        opening_narration_audio_path = None
+    opening_narration_audio_path = _ensure_opening_narration(
+        script_data, voice_dir, voice, opening_quote
+    )
 
     # 11) 视频合成
     composer = VideoComposer()
@@ -182,32 +236,6 @@ def run_auto(
 __all__ = ["run_auto"]
 
 
-def run_interactive_setup(project_root: str, output_dir: str):
-    """Minimal interactive setup: choose input file and run mode.
-
-    Returns: (input_file, run_mode)
-    """
-    try:
-        from cli.ui_helpers import prompt_choice, interactive_file_selector
-        # 文件选择
-        while True:
-            input_file = interactive_file_selector(input_dir=os.path.join(project_root, "input"))
-            if input_file is None:
-                print("\n👋 返回上一级")
-                continue
-            mode = prompt_choice("请选择处理方式", ["全自动（一次性全部生成）", "分步处理（每步确认并可修改产物）"], default_index=0)
-            if mode is None:
-                print("👋 返回上一级")
-                continue
-            run_mode = "auto" if mode.startswith("全自动") else "step"
-            return input_file, run_mode
-    except Exception:
-        # 发生异常时返回None，主流程自行处理
-        return None, "auto"
-
-__all__.append("run_interactive_setup")
-
-
 # -------------------- Step-wise pipeline (for CLI step mode) --------------------
 
 def run_step_1(
@@ -221,25 +249,7 @@ def run_step_1(
     document_content, _ = read_document(input_file)
     raw_data = intelligent_summarize(llm_server, llm_model, document_content, target_length, num_segments)
 
-    current_time = datetime.datetime.now()
-    time_suffix = current_time.strftime("%m%d_%H%M")
-    title = raw_data.get('title', 'untitled').replace(' ', '_').replace('/', '_').replace('\\', '_')
-    project_folder = f"{title}_{time_suffix}"
-    project_output_dir = os.path.join(output_dir, project_folder)
-    os.makedirs(project_output_dir, exist_ok=True)
-    os.makedirs(f"{project_output_dir}/images", exist_ok=True)
-    os.makedirs(f"{project_output_dir}/voice", exist_ok=True)
-    os.makedirs(f"{project_output_dir}/text", exist_ok=True)
-
-    raw_json_path = f"{project_output_dir}/text/raw.json"
-    with open(raw_json_path, 'w', encoding='utf-8') as f:
-        json.dump(raw_data, f, ensure_ascii=False, indent=2)
-
-    try:
-        raw_docx_path = f"{project_output_dir}/text/raw.docx"
-        export_raw_to_docx(raw_data, raw_docx_path)
-    except Exception:
-        raw_docx_path = None
+    project_output_dir, raw_json_path, raw_docx_path = _initialize_project(raw_data, output_dir)
 
     return {
         "success": True,
@@ -371,14 +381,26 @@ def run_step_2(llm_server: str, llm_model: str, project_output_dir: str, script_
     return {"success": True, "keywords_path": keywords_path}
 
 
-def run_step_3(image_model: str, image_size: str, image_style_preset: str, project_output_dir: str, opening_image_style: str, opening_quote: bool = True) -> Dict[str, Any]:
+def run_step_3(image_server: str, image_model: str, image_size: str, image_style_preset: str, project_output_dir: str, opening_image_style: str, opening_quote: bool = True) -> Dict[str, Any]:
     # 确保必要的文件夹存在
     os.makedirs(f"{project_output_dir}/images", exist_ok=True)
 
     keywords_path = os.path.join(project_output_dir, 'text', 'keywords.json')
     keywords_data = load_json_file(keywords_path)
-    opening_image_path = generate_opening_image(image_model, opening_image_style, image_size, f"{project_output_dir}/images", opening_quote)
-    image_result = generate_images_for_segments(image_model, keywords_data, image_style_preset, image_size, f"{project_output_dir}/images")
+    opening_image_path = generate_opening_image(image_server, image_model, opening_image_style, image_size, f"{project_output_dir}/images", opening_quote)
+    image_result = generate_images_for_segments(image_server, image_model, keywords_data, image_style_preset, image_size, f"{project_output_dir}/images")
+    failed_segments = image_result.get("failed_segments", [])
+
+    if failed_segments:
+        failed_str = "、".join(str(idx) for idx in failed_segments)
+        return {
+            "success": False,
+            "message": f"第 {failed_str} 段图像生成失败，请调整关键词或稍后重试。",
+            "failed_segments": failed_segments,
+            "image_paths": image_result.get("image_paths", []),
+            "opening_image_path": opening_image_path,
+        }
+
     return {"success": True, "opening_image_path": opening_image_path, **image_result}
 
 
@@ -388,23 +410,12 @@ def run_step_4(tts_server: str, voice: str, project_output_dir: str, opening_quo
 
     script_path = os.path.join(project_output_dir, 'text', 'script.json')
     script_data = load_json_file(script_path)
-    audio_paths = synthesize_voice_for_segments(tts_server, voice, script_data, f"{project_output_dir}/voice")
+    voice_dir = os.path.join(project_output_dir, 'voice')
+    audio_paths = synthesize_voice_for_segments(tts_server, voice, script_data, voice_dir)
 
-    # 生成开场音频
-    opening_golden_quote = (script_data or {}).get("golden_quote", "")
-    if opening_quote and isinstance(opening_golden_quote, str) and opening_golden_quote.strip():
-        opening_voice_dir = os.path.join(project_output_dir, "voice")
-        os.makedirs(opening_voice_dir, exist_ok=True)
-        opening_narration_audio_path = os.path.join(opening_voice_dir, "opening.wav")
-        if not os.path.exists(opening_narration_audio_path):
-            from core.media import text_to_audio_bytedance
-            ok = text_to_audio_bytedance(opening_golden_quote, opening_narration_audio_path, voice=voice, encoding="wav")
-            if ok:
-                print(f"✅ 开场音频已生成: {opening_narration_audio_path}")
-            else:
-                print("❌ 开场音频生成失败")
-        else:
-            print(f"✅ 开场音频已存在: {opening_narration_audio_path}")
+    _ensure_opening_narration(
+        script_data, voice_dir, voice, opening_quote, announce=True
+    )
 
     return {"success": True, "audio_paths": audio_paths}
 
@@ -441,8 +452,9 @@ def run_step_5(project_output_dir: str, image_size: str, enable_subtitles: bool,
     # 检查音频文件
     audio_count = 0
     for i in range(1, expected_segments + 1):
-        audio_path = os.path.join(voice_dir, f"voice_{i}.wav")
-        if os.path.exists(audio_path):
+        audio_wav = os.path.join(voice_dir, f"voice_{i}.wav")
+        audio_mp3 = os.path.join(voice_dir, f"voice_{i}.mp3")
+        if os.path.exists(audio_wav) or os.path.exists(audio_mp3):
             audio_count += 1
 
     if image_count == 0:
@@ -468,29 +480,25 @@ def run_step_5(project_output_dir: str, image_size: str, enable_subtitles: bool,
             if os.path.exists(vid_path):
                 image_paths.append(vid_path)
                 break
-    audio_paths = [os.path.join(voice_dir, f"voice_{i}.wav") for i in range(1, script_data.get('actual_segments', 0) + 1) if os.path.exists(os.path.join(voice_dir, f"voice_{i}.wav"))]
+    audio_paths = []
+    for i in range(1, script_data.get('actual_segments', 0) + 1):
+        audio_wav = os.path.join(voice_dir, f"voice_{i}.wav")
+        audio_mp3 = os.path.join(voice_dir, f"voice_{i}.mp3")
+        if os.path.exists(audio_wav):
+            audio_paths.append(audio_wav)
+        elif os.path.exists(audio_mp3):
+            audio_paths.append(audio_mp3)
 
     # BGM
-    bgm_audio_path = None
-    if bgm_filename:
-        candidate = os.path.join(project_root, "music", bgm_filename)
-        if os.path.exists(candidate):
-            bgm_audio_path = candidate
+    bgm_audio_path = _resolve_bgm_audio_path(bgm_filename, project_root)
 
     # Opening assets
     opening_image_candidate = os.path.join(images_dir, "opening.png")
     opening_image_candidate = opening_image_candidate if os.path.exists(opening_image_candidate) else None
     opening_golden_quote = (script_data or {}).get("golden_quote", "")
-    opening_narration_audio_path = None
-    try:
-        if opening_quote and isinstance(opening_golden_quote, str) and opening_golden_quote.strip():
-            opening_narration_audio_path = os.path.join(voice_dir, "opening.wav")
-            if not os.path.exists(opening_narration_audio_path):
-                ok = text_to_audio_bytedance(opening_golden_quote, opening_narration_audio_path, voice=voice, encoding="wav")
-                if not ok:
-                    opening_narration_audio_path = None
-    except Exception:
-        opening_narration_audio_path = None
+    opening_narration_audio_path = _ensure_opening_narration(
+        script_data, voice_dir, voice, opening_quote
+    )
 
     composer = VideoComposer()
     final_video_path = composer.compose_video(
@@ -517,5 +525,3 @@ __all__ += [
     "run_step_4",
     "run_step_5",
 ]
-
-
