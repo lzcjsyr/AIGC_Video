@@ -74,13 +74,12 @@ OPENING_QUOTE_STYLE = {
 }
 
 # ==================== 性能控制参数 ====================
-MAX_CONCURRENT_IMAGE_GENERATION = 4  # 图片生成最大并发数
-MAX_CONCURRENT_VOICE_SYNTHESIS = 4   # 语音合成最大并发数
+MAX_CONCURRENT_IMAGE_GENERATION = 5  # 图片生成最大并发数
+MAX_CONCURRENT_VOICE_SYNTHESIS = 5   # 语音合成最大并发数
 
 # ==================== 视频素材处理配置 ====================
 VIDEO_MATERIAL_CONFIG = {
     "supported_formats": [".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv", ".m4v"],
-    "target_size": (1280, 720),           # 目标分辨率
     "target_fps": 30,                     # 目标帧率 (有视频素材时)
     "remove_original_audio": True,        # 是否移除原音频
     "duration_adjustment": "stretch",     # 时长调整方式: stretch/crop
