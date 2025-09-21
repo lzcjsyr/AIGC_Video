@@ -15,8 +15,6 @@ pip install -r requirements.txt
 cp .env.example .env
 # 编辑 .env 文件，填入你的API密钥
 
-# 3. 验证配置
-python check_config.py
 ```
 
 ### 第二步：准备文档
@@ -102,28 +100,28 @@ python -m cli
 
 ## ⚙️ 关键参数配置
 
-在 `cli/__main__.py` 中的 `PARAMS` 字典可调整核心参数：
+在 `config.py` 顶部的 `DEFAULT_GENERATION_PARAMS` 字典可调整通用默认参数（可通过 `config.get_default_generation_params()` 获取副本）：
 
 ```python
-PARAMS = {
-    # 内容控制
-    "target_length": 800,        # 目标字数(500-3000)
-    "num_segments": 6,           # 视频段数(5-20)
+DEFAULT_GENERATION_PARAMS = {
+    # 内容生成参数
+    "target_length": 800,        # 目标字数 (500-3000)
+    "num_segments": 6,           # 分段数量 (5-20)
 
-    # 视觉效果
-    "image_size": "1280x720",    # 视频尺寸(16:9横屏)
-    "image_style_preset": "style05",  # 图像风格
-    "opening_image_style": "des01",   # 开场图风格
+    # 媒体参数
+    "image_size": "1664x928",    # 图像尺寸 (推荐横屏)
+    "llm_model": "google/gemini-2.5-pro",        # LLM 模型
+    "image_model": "Qwen/Qwen-Image",            # 图像生成模型
+    "voice": "zh_male_yuanboxiaoshu_moon_bigtts",# 语音音色
 
-    # AI模型
-    "llm_model": "google/gemini-2.5-pro",      # 文本生成模型
-    "image_model": "doubao-seedream-4-0-250828", # 图像生成模型
-    "voice": "zh_male_yuanboxiaoshu_moon_bigtts", # TTS语音
+    # 风格参数
+    "image_style_preset": "style05",             # 图像风格预设
+    "opening_image_style": "des01",              # 开场图像风格
 
-    # 输出选项
-    "opening_quote": True,       # 是否包含开场金句
-    "enable_subtitles": True,    # 是否添加字幕
-    "bgm_filename": "bgm.mp3"   # 背景音乐文件名
+    # 输出参数
+    "enable_subtitles": True,                     # 是否启用字幕
+    "opening_quote": True,                        # 是否包含开场金句
+    "bgm_filename": "Ramin Djawadi - Light of the Seven.mp3"  # 背景音乐
 }
 ```
 
@@ -223,7 +221,7 @@ A: 制作一个5分钟视频的总成本约2-5元人民币。
 
 ## 🔧 故障排除
 
-1. **配置检查**：`python check_config.py`
+1. **检查依赖与路径**：确认已安装依赖，项目根目录存在 `config.py`、`core/`、`cli/`。
 2. **日志查看**：`cli/cli.log` 或控制台输出
 3. **网络问题**：确保API服务可访问
 4. **依赖问题**：重新运行 `pip install -r requirements.txt`

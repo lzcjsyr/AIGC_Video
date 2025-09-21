@@ -6,6 +6,7 @@
 import os
 from dotenv import load_dotenv
 from typing import Dict
+from copy import deepcopy
 
 # 加载环境变量
 load_dotenv()
@@ -14,6 +15,25 @@ load_dotenv()
 # ██                            用户常调参数区域                                  ██
 # ██                     (经常需要调整的参数放在这里)                               ██
 # ████████████████████████████████████████████████████████████████████████████████
+
+# ==================== 默认生成参数 ====================
+DEFAULT_GENERATION_PARAMS = {
+    "target_length": 800,                          # 目标字数
+    "num_segments": 6,                             # 视频分段数量
+    "image_size": "1664x928",                      # 图像尺寸 (常用 16:9 横屏)
+    "llm_model": "google/gemini-2.5-pro",          # 文本生成模型
+    "image_model": "Qwen/Qwen-Image",              # 图像生成模型
+    "voice": "zh_male_yuanboxiaoshu_moon_bigtts",  # 语音音色
+    "image_style_preset": "style05",               # 图像风格预设 (详见 prompts.py)
+    "opening_image_style": "des01",                # 开场图像风格 (详见 prompts.py)
+    "enable_subtitles": True,                      # 是否启用字幕
+    "opening_quote": True,                         # 是否加入开场金句
+    "bgm_filename": "Ramin Djawadi - Light of the Seven.mp3"  # 背景音乐文件名 (music/ 下，可为 None)
+}
+
+# 常用 LLM 模型: google/gemini-2.5-pro, anthropic/claude-sonnet-4, openai/gpt-5, moonshotai/Kimi-K2-Instruct-0905
+# 常用图像模型: Qwen/Qwen-Image, doubao-seedream-4-0-250828
+# 常用语音音色: zh_male_yuanboxiaoshu_moon_bigtts, zh_male_haoyuxiaoge_moon_bigtts, zh_female_sajiaonvyou_moon_bigtts
 
 # ==================== LLM 模型生成参数 ====================
 LLM_TEMPERATURE_SCRIPT = 0.7            # 脚本生成随机性 (0-1，越大越随机)
@@ -68,7 +88,7 @@ OPENING_QUOTE_STYLE = {
     "stroke_width": 4,                            # 描边粗细
     "position": ("center", "center"),             # 位置 (居中显示)
     "max_lines": 6,                               # 最大行数
-    "max_chars_per_line": 10,                     # 每行最大字符数
+    "max_chars_per_line": 20,                     # 每行最大字符数
     "line_spacing": 20,                           # 行间距 (像素)
     "letter_spacing": 0,                          # 字间距 (0=正常)
 }
@@ -96,6 +116,10 @@ IMAGE_MATERIAL_CONFIG = {
 # ██                     (一般无需修改的系统参数)                                  ██
 # ████████████████████████████████████████████████████████████████████████████████
 
+def get_default_generation_params() -> Dict[str, object]:
+    """返回默认生成参数的拷贝，避免调用方修改全局配置"""
+    return deepcopy(DEFAULT_GENERATION_PARAMS)
+    
 class Config:
     """系统配置类，统一管理所有配置项"""
 
@@ -274,6 +298,8 @@ config = Config()
 # 导出常用配置
 __all__ = [
     'Config', 'config',
+    'DEFAULT_GENERATION_PARAMS',
+    'get_default_generation_params',
     'SUPPORTED_LLM_SERVERS', 'SUPPORTED_IMAGE_SERVERS', 'SUPPORTED_TTS_SERVERS',
     'RECOMMENDED_MODELS', 'SUPPORTED_IMAGE_SIZES'
 ]

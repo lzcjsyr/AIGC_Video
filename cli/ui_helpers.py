@@ -15,6 +15,9 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 
 
+_UNSET = object()
+
+
 def setup_cli_logging(log_level=logging.INFO):
     """配置CLI专用的日志设置"""
     
@@ -470,19 +473,19 @@ def _run_step_by_step_loop(
 
 def run_cli_main(
     input_file=None,
-    target_length: int = 1000,
-    num_segments: int = 10,
-    image_size: str = None,
-    llm_model: str = "google/gemini-2.5-pro",
-    image_model: str = "doubao-seedream-3-0-t2i-250415",
-    voice: str = None,
-    output_dir: str = None,
-    image_style_preset: str = "style05",
-    opening_image_style: str = "des01",
-    enable_subtitles: bool = True,
-    bgm_filename: str = None,
+    target_length: int = _UNSET,
+    num_segments: int = _UNSET,
+    image_size: Optional[str] = _UNSET,
+    llm_model: str = _UNSET,
+    image_model: str = _UNSET,
+    voice: Optional[str] = _UNSET,
+    output_dir: Optional[str] = None,
+    image_style_preset: str = _UNSET,
+    opening_image_style: str = _UNSET,
+    enable_subtitles: bool = _UNSET,
+    bgm_filename: Optional[str] = _UNSET,
     run_mode: str = "auto",
-    opening_quote: bool = True,
+    opening_quote: bool = _UNSET,
 ) -> Dict[str, Any]:
     """CLI主要业务逻辑入口"""
     
@@ -491,11 +494,40 @@ def run_cli_main(
         # 设置项目路径
         project_root = os.path.dirname(os.path.dirname(__file__))
             
-        from config import config
+        from config import config, get_default_generation_params
         from core.validators import validate_startup_args
         from core.pipeline import run_auto, run_step_1
         
-        # 使用配置默认值填充None参数
+        params = get_default_generation_params()
+        overrides = {
+            "target_length": target_length,
+            "num_segments": num_segments,
+            "image_size": image_size,
+            "llm_model": llm_model,
+            "image_model": image_model,
+            "voice": voice,
+            "image_style_preset": image_style_preset,
+            "opening_image_style": opening_image_style,
+            "enable_subtitles": enable_subtitles,
+            "bgm_filename": bgm_filename,
+            "opening_quote": opening_quote,
+        }
+        for key, value in overrides.items():
+            if value is not _UNSET:
+                params[key] = value
+
+        target_length = params["target_length"]
+        num_segments = params["num_segments"]
+        image_size = params["image_size"]
+        llm_model = params["llm_model"]
+        image_model = params["image_model"]
+        voice = params["voice"]
+        image_style_preset = params["image_style_preset"]
+        opening_image_style = params["opening_image_style"]
+        enable_subtitles = params["enable_subtitles"]
+        bgm_filename = params["bgm_filename"]
+        opening_quote = params["opening_quote"]
+
         image_size = image_size or config.DEFAULT_IMAGE_SIZE
         voice = voice or config.DEFAULT_VOICE
         output_dir = output_dir or config.DEFAULT_OUTPUT_DIR
