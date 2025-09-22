@@ -571,7 +571,7 @@ class VideoComposer:
         segment_durations = subtitle_config.get("segment_durations", [])
         
         # 标点替换模式
-        punctuation_pattern = r"[-.,!?;:\"，。！？；：（）()\[\]{}【】—…–、]+"
+        punctuation_pattern = r"[.,!?;:，。！？；：…、—]+"
         
         for i, segment in enumerate(script_data["segments"], 1):
             content = segment["content"]
@@ -752,7 +752,7 @@ class VideoComposer:
             return [text]
         
         # 第一层：按主要标点切分
-        heavy_punctuation = ['。', '！', '？', '.', '!', '?', '，', ',', '；', ';', ' ']
+        heavy_punctuation = ['。', '！', '？', '.', '!', '?', '，', ',', '；', ';', ":", "：", "——"]
         segments = []
         current_segment = ""
         
