@@ -9,6 +9,7 @@ from core.text import (
     intelligent_summarize,
     process_raw_to_script,
     extract_keywords,
+    generate_description_summary,
 )
 from core.media import (
     generate_opening_image,
@@ -28,9 +29,9 @@ __all__ = [
     'intelligent_summarize',
     'process_raw_to_script',
     'extract_keywords',
+    'generate_description_summary',
     'generate_opening_image',
     'generate_images_for_segments',
     'synthesize_voice_for_segments',
 ]
-
 

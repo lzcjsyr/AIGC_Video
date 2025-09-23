@@ -12,7 +12,7 @@ from config import config
 from prompts import OPENING_IMAGE_STYLES
 from core.utils import logger, ensure_directory_exists
 from core.services import text_to_image_doubao, text_to_audio_bytedance, text_to_image_siliconflow
-from prompts import IMAGE_STYLE_PRESETS
+from prompts import IMAGE_STYLE_PRESETS, IMAGE_DESCRIPTION_PROMPT_TEMPLATE
 
 import requests
 
@@ -96,15 +96,7 @@ def generate_opening_image(image_server: str, model: str, opening_style: str,
 
 def _generate_single_image(args) -> Dict[str, Any]:
     """生成单个图像的辅助函数（用于多线程）"""
-    segment_index, keywords, atmosphere, image_style, model, image_size, output_dir, image_server = args
-    
-    style_part = f"[风格] {image_style}" if image_style else ""
-    content_parts: List[str] = []
-    content_parts.extend(keywords)
-    content_parts.extend(atmosphere)
-    content_part = f"[内容] {' | '.join(content_parts)}" if content_parts else ""
-    prompt_sections = [part for part in [style_part, content_part] if part]
-    final_prompt = "\n".join(prompt_sections)
+    segment_index, final_prompt, model, image_size, output_dir, image_server = args
 
     print(f"正在生成第{segment_index}段图像...")
     logger.debug(f"第{segment_index}段图像提示词: {final_prompt}")
@@ -151,15 +143,22 @@ def _generate_single_image(args) -> Dict[str, Any]:
                 else:
                     logger.warning(f"第{segment_index}段图像生成失败，已跳过。错误：{error_msg}")
                 print(f"第{segment_index}段图像生成失败，已跳过")
-    
+
     return {"success": False, "segment_index": segment_index, "image_path": ""}
 
 
-def generate_images_for_segments(image_server: str, model: str, keywords_data: Dict[str, Any],
-                                 image_style_preset: str, image_size: str, output_dir: str) -> Dict[str, Any]:
-    """
-    为每个段落生成图像（支持多线程并发）
-    """
+def generate_images_for_segments(
+    image_server: str,
+    model: str,
+    script_data: Dict[str, Any],
+    image_style_preset: str,
+    image_size: str,
+    output_dir: str,
+    images_method: str = "keywords",
+    keywords_data: Optional[Dict[str, Any]] = None,
+    description_data: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """为每个段落生成图像（支持多线程并发）"""
     try:
         try:
             image_style = IMAGE_STYLE_PRESETS.get(
@@ -168,39 +167,94 @@ def generate_images_for_segments(image_server: str, model: str, keywords_data: D
             )
         except Exception:
             image_style = ""
-        logger.info(f"使用图像服务: {image_server}，风格: {image_style_preset} -> {image_style}")
+        logger.info(
+            f"使用图像服务: {image_server}，风格: {image_style_preset} -> {image_style}，模式: {images_method}"
+        )
 
-        # 准备并发任务参数
-        task_args = []
-        for i, segment_keywords in enumerate(keywords_data["segments"], 1):
-            keywords = segment_keywords.get("keywords", [])
-            atmosphere = segment_keywords.get("atmosphere", [])
-            task_args.append((i, keywords, atmosphere, image_style, model, image_size, output_dir, image_server))
+        images_method = images_method or getattr(config, "SUPPORTED_IMAGE_METHODS", ["keywords"])[0]
+        segments = script_data.get("segments", [])
+        if not segments:
+            raise ValueError("脚本数据为空，无法生成图像")
 
-        # 使用线程池并发生成图像
+        prompt_payload: List[tuple[int, str]] = []
+
+        if images_method == "description":
+            summary_text = (description_data or {}).get("summary", "").strip()
+            if not summary_text:
+                raise ValueError("缺少描述模式所需的小结内容")
+            template = IMAGE_DESCRIPTION_PROMPT_TEMPLATE
+            default_style = getattr(
+                config,
+                "DESCRIPTION_DEFAULT_STYLE_GUIDANCE",
+                "画面需保持信息清晰、构图稳定、色彩和谐。"
+            )
+            for segment in segments:
+                segment_index = int(segment.get("index") or len(prompt_payload) + 1)
+                segment_content = segment.get("content", "")
+                style_block = image_style or default_style
+                final_prompt = template.format(
+                    summary=summary_text,
+                    segment=segment_content,
+                    style_block=style_block
+                )
+                prompt_payload.append((segment_index, final_prompt))
+        else:
+            if not keywords_data:
+                raise ValueError("缺少关键词数据")
+            keyword_segments = list(keywords_data.get("segments", []))
+            if len(keyword_segments) < len(segments):
+                keyword_segments.extend(
+                    [{"keywords": [], "atmosphere": []}] * (len(segments) - len(keyword_segments))
+                )
+            for idx, segment in enumerate(segments, 1):
+                segment_keywords = keyword_segments[idx - 1] if idx - 1 < len(keyword_segments) else {}
+                keywords = segment_keywords.get("keywords", [])
+                atmosphere = segment_keywords.get("atmosphere", [])
+                style_part = f"[风格] {image_style}" if image_style else ""
+                content_parts: List[str] = []
+                content_parts.extend(keywords)
+                content_parts.extend(atmosphere)
+                content_part = f"[内容] {' | '.join(content_parts)}" if content_parts else ""
+                sections = [part for part in [style_part, content_part] if part]
+                final_prompt = "\n".join(sections) if sections else image_style
+                if not final_prompt:
+                    final_prompt = f"[内容] {segment.get('content', '')}".strip()
+                segment_index = segment.get('index') or idx
+                prompt_payload.append((segment_index, final_prompt))
+
+        if not prompt_payload:
+            raise ValueError("未生成有效的提示词")
+
         max_workers = getattr(config, "MAX_CONCURRENT_IMAGE_GENERATION", 3)
         print(f"使用 {max_workers} 个并发线程生成图像...")
-        
-        image_paths: List[str] = [""] * len(task_args)  # 预分配位置
+
+        segment_count = len(segments)
+        image_paths: List[str] = [""] * segment_count
         failed_segments: List[int] = []
-        
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # 提交所有任务
-            future_to_index = {executor.submit(_generate_single_image, args): args[0] for args in task_args}
-            
-            # 等待任务完成
+            future_to_index = {
+                executor.submit(
+                    _generate_single_image,
+                    (int(idx), prompt, model, image_size, output_dir, image_server)
+                ): int(idx)
+                for idx, prompt in prompt_payload
+            }
+
             for future in concurrent.futures.as_completed(future_to_index):
                 result = future.result()
-                segment_index = result["segment_index"]
-                if result["success"]:
-                    image_paths[segment_index - 1] = result["image_path"]
+                segment_index = int(result["segment_index"])
+                position = segment_index - 1
+                if result["success"] and 0 <= position < segment_count:
+                    image_paths[position] = result["image_path"]
                 else:
                     failed_segments.append(segment_index)
-                    image_paths[segment_index - 1] = ""
+                    if 0 <= position < segment_count:
+                        image_paths[position] = ""
 
         return {
             "image_paths": image_paths,
-            "failed_segments": failed_segments
+            "failed_segments": failed_segments,
         }
 
     except Exception as e:

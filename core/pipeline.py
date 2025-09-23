@@ -14,16 +14,16 @@ Implements an auto end-to-end flow using existing core modules.
 import os
 import json
 import datetime
-import re
 from typing import Dict, Any, List, Optional
 
 from config import config
-from core.utils import load_json_file
+from core.utils import load_json_file, logger
 from core.document_processor import export_raw_to_docx
 from core.routers import (
     read_document,
     intelligent_summarize,
     extract_keywords,
+    generate_description_summary,
 )
 from core.media import (
     generate_opening_image,
@@ -38,9 +38,8 @@ def _initialize_project(raw_data: Dict[str, Any], output_dir: str) -> tuple:
     """Create project folder structure and persist raw outputs."""
     current_time = datetime.datetime.now()
     time_suffix = current_time.strftime("%m%d_%H%M")
-    raw_title = raw_data.get('title', 'untitled')
-    sanitized_title = re.sub(r'[^A-Za-z0-9_-]+', '_', raw_title).strip('_') or 'untitled'
-    project_folder = f"{sanitized_title}_{time_suffix}"
+    raw_title = raw_data.get('title', 'untitled') or 'untitled'
+    project_folder = f"{raw_title}_{time_suffix}"
     project_output_dir = os.path.join(output_dir, project_folder)
 
     os.makedirs(project_output_dir, exist_ok=True)
@@ -106,6 +105,39 @@ def _ensure_opening_narration(
     return None
 
 
+def _resolve_description_source_text(
+    project_output_dir: str,
+    raw_data: Optional[Dict[str, Any]] = None,
+    script_data: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Prefer raw.docx edits when building description-mode summary input."""
+    docx_path = os.path.join(project_output_dir, 'text', 'raw.docx')
+    if os.path.exists(docx_path):
+        try:
+            from core.document_processor import parse_raw_from_docx
+
+            parsed = parse_raw_from_docx(docx_path)
+            content = (parsed.get('content') or '').strip()
+            if content:
+                return content
+        except Exception as exc:
+            logger.warning(f"解析raw.docx失败，改用备用内容: {exc}")
+
+    if raw_data:
+        content = (raw_data.get('content') or '').strip()
+        if content:
+            return content
+
+    if script_data:
+        segments = script_data.get('segments') or []
+        merged = "\n".join(seg.get('content', '') for seg in segments).strip()
+        if merged:
+            return merged
+
+    return ""
+
+
+
 def run_auto(
     input_file: str,
     output_dir: str,
@@ -120,6 +152,7 @@ def run_auto(
     voice: str,
     image_style_preset: str,
     opening_image_style: str,
+    images_method: str,
     enable_subtitles: bool,
     bgm_filename: Optional[str] = None,
     opening_quote: bool = True,
@@ -127,6 +160,7 @@ def run_auto(
     start_time = datetime.datetime.now()
 
     project_root = os.path.dirname(os.path.dirname(__file__))
+    images_method = images_method or getattr(config, "SUPPORTED_IMAGE_METHODS", ["keywords"])[0]
 
     # 1) 读取文档
     document_content, original_length = read_document(input_file)
@@ -147,31 +181,49 @@ def run_auto(
     script_data = step15.get("script_data")
     script_path = step15.get("script_path")
 
-    # 6) 要点提取
-    keywords_data = extract_keywords(llm_server, llm_model, script_data)
-    keywords_path = f"{project_output_dir}/text/keywords.json"
-    with open(keywords_path, 'w', encoding='utf-8') as f:
-        json.dump(keywords_data, f, ensure_ascii=False, indent=2)
+    # 6) 生成第二阶段产物（关键词或描述）
+    keywords_data: Optional[Dict[str, Any]] = None
+    keywords_path: Optional[str] = None
+    description_data: Optional[Dict[str, Any]] = None
+    description_path: Optional[str] = None
+
+    if images_method == 'description':
+        description_source = _resolve_description_source_text(
+            project_output_dir, raw_data=raw_data
+        )
+        description_data = generate_description_summary(
+            llm_server, llm_model, description_source, max_chars=200
+        )
+        description_path = os.path.join(project_output_dir, 'text', 'mini_summary.json')
+        with open(description_path, 'w', encoding='utf-8') as f:
+            json.dump(description_data, f, ensure_ascii=False, indent=2)
+    else:
+        keywords_data = extract_keywords(llm_server, llm_model, script_data)
+        keywords_path = os.path.join(project_output_dir, 'text', 'keywords.json')
+        with open(keywords_path, 'w', encoding='utf-8') as f:
+            json.dump(keywords_data, f, ensure_ascii=False, indent=2)
 
     # 7) 生成开场图像（可选）& 段落图像
+    images_dir = os.path.join(project_output_dir, 'images')
     opening_image_path = generate_opening_image(
-        image_server, image_model, opening_image_style, image_size, f"{project_output_dir}/images", opening_quote
+        image_server, image_model, opening_image_style, image_size, images_dir, opening_quote
     )
     image_result = generate_images_for_segments(
-        image_server, image_model, keywords_data, image_style_preset, image_size, f"{project_output_dir}/images"
+        image_server, image_model, script_data, image_style_preset, image_size, images_dir,
+        images_method=images_method, keywords_data=keywords_data, description_data=description_data
     )
-    image_paths: List[str] = image_result.get("image_paths", [])
-    failed_image_segments: List[int] = image_result.get("failed_segments", [])
+    image_paths: List[str] = image_result.get('image_paths', [])
+    failed_image_segments: List[int] = image_result.get('failed_segments', [])
 
     if failed_image_segments:
-        failed_str = "、".join(str(idx) for idx in failed_image_segments)
+        failed_str = '、'.join(str(idx) for idx in failed_image_segments)
         return {
-            "success": False,
-            "message": f"第 {failed_str} 段图像生成失败，请调整关键词或稍后重试。",
-            "failed_image_segments": failed_image_segments,
-            "needs_retry": True,
-            "stage": 3,
-            "image_paths": image_paths,
+            'success': False,
+            'message': f"第 {failed_str} 段图像生成失败，请调整提示或稍后重试。",
+            'failed_image_segments': failed_image_segments,
+            'needs_retry': True,
+            'stage': 3,
+            'image_paths': image_paths,
         }
 
     # 8) 语音合成（含SRT导出）
@@ -206,31 +258,47 @@ def run_auto(
     execution_time = (end_time - start_time).total_seconds()
     compression_ratio = (1 - (script_data['total_length'] / original_length)) * 100 if original_length > 0 else 0.0
 
-    return {
-        "success": True,
-        "message": "视频制作完成",
-        "execution_time": execution_time,
-        "script": {
-            "file_path": script_path,
-            "total_length": script_data['total_length'],
-            "segments_count": script_data['actual_segments']
+    result: Dict[str, Any] = {
+        'success': True,
+        'message': '视频制作完成',
+        'execution_time': execution_time,
+        'script': {
+            'file_path': script_path,
+            'total_length': script_data['total_length'],
+            'segments_count': script_data['actual_segments'],
         },
-        "keywords": {
-            "file_path": keywords_path,
-            "total_keywords": sum(len(seg.get('keywords', [])) + len(seg.get('atmosphere', [])) for seg in keywords_data['segments']),
-            "avg_per_segment": sum(len(seg.get('keywords', [])) + len(seg.get('atmosphere', [])) for seg in keywords_data['segments']) / max(1, len(keywords_data['segments']))
+        'images_method': images_method,
+        'images': image_paths,
+        'audio_files': audio_paths,
+        'final_video': final_video_path,
+        'statistics': {
+            'original_length': original_length,
+            'compression_ratio': f"{compression_ratio:.1f}%",
+            'total_processing_time': execution_time,
         },
-        "images": image_paths,
-        "audio_files": audio_paths,
-        "final_video": final_video_path,
-        "statistics": {
-            "original_length": original_length,
-            "compression_ratio": f"{compression_ratio:.1f}%",
-            "total_processing_time": execution_time,
-        },
-        "project_output_dir": project_output_dir,
-        "failed_image_segments": failed_image_segments,
+        'project_output_dir': project_output_dir,
+        'failed_image_segments': failed_image_segments,
     }
+
+    if keywords_data and keywords_path:
+        total_kw = sum(
+            len(seg.get('keywords', [])) + len(seg.get('atmosphere', []))
+            for seg in keywords_data.get('segments', [])
+        )
+        result['keywords'] = {
+            'file_path': keywords_path,
+            'total_keywords': total_kw,
+            'avg_per_segment': total_kw / max(1, len(keywords_data.get('segments', [])))
+            if keywords_data.get('segments') else 0,
+        }
+
+    if description_data and description_path:
+        result['mini_summary'] = {
+            'file_path': description_path,
+            'summary_length': description_data.get('total_length', len(description_data.get('summary', ''))),
+        }
+
+    return result
 
 
 __all__ = ["run_auto"]
@@ -271,7 +339,7 @@ def run_step_1_5(project_output_dir: str, num_segments: int, is_new_project: boo
     Returns:
         Dict[str, Any]: 处理结果，包含成功状态和相关信息
     """
-    from core.utils import load_json_file, logger
+    from core.utils import load_json_file, logger, logger
     from core.document_processor import parse_raw_from_docx, export_script_to_docx
     
     try:
@@ -372,36 +440,102 @@ def run_step_1_5(project_output_dir: str, num_segments: int, is_new_project: boo
         return {"success": False, "message": f"步骤1.5处理失败: {str(e)}"}
 
 
-def run_step_2(llm_server: str, llm_model: str, project_output_dir: str, script_path: str = None) -> Dict[str, Any]:
-    script_data = load_json_file(script_path) if script_path else load_json_file(os.path.join(project_output_dir, 'text', 'script.json'))
+def run_step_2(
+    llm_server: str,
+    llm_model: str,
+    project_output_dir: str,
+    script_path: str = None,
+    images_method: str = "keywords",
+) -> Dict[str, Any]:
+    script_data = load_json_file(script_path) if script_path else load_json_file(
+        os.path.join(project_output_dir, 'text', 'script.json')
+    )
+    if script_data is None:
+        return {"success": False, "message": "未找到脚本数据，请先完成步骤1.5"}
+
+    images_method = images_method or getattr(config, "SUPPORTED_IMAGE_METHODS", ["keywords"])[0]
+
+    if images_method == "description":
+        raw_path = os.path.join(project_output_dir, 'text', 'raw.json')
+        raw_data = load_json_file(raw_path) if os.path.exists(raw_path) else None
+        description_source = _resolve_description_source_text(
+            project_output_dir, raw_data=raw_data, script_data=script_data
+        )
+        description_data = generate_description_summary(
+            llm_server, llm_model, description_source or "", max_chars=200
+        )
+        description_path = os.path.join(project_output_dir, 'text', 'mini_summary.json')
+        with open(description_path, 'w', encoding='utf-8') as f:
+            json.dump(description_data, f, ensure_ascii=False, indent=2)
+        return {"success": True, "mini_summary_path": description_path}
+
     keywords_data = extract_keywords(llm_server, llm_model, script_data)
-    keywords_path = f"{project_output_dir}/text/keywords.json"
+    keywords_path = os.path.join(project_output_dir, 'text', 'keywords.json')
     with open(keywords_path, 'w', encoding='utf-8') as f:
         json.dump(keywords_data, f, ensure_ascii=False, indent=2)
     return {"success": True, "keywords_path": keywords_path}
 
 
-def run_step_3(image_server: str, image_model: str, image_size: str, image_style_preset: str, project_output_dir: str, opening_image_style: str, opening_quote: bool = True) -> Dict[str, Any]:
-    # 确保必要的文件夹存在
-    os.makedirs(f"{project_output_dir}/images", exist_ok=True)
+def run_step_3(
+    image_server: str,
+    image_model: str,
+    image_size: str,
+    image_style_preset: str,
+    project_output_dir: str,
+    opening_image_style: str,
+    images_method: str = "keywords",
+    opening_quote: bool = True,
+) -> Dict[str, Any]:
+    images_dir = os.path.join(project_output_dir, 'images')
+    os.makedirs(images_dir, exist_ok=True)
 
-    keywords_path = os.path.join(project_output_dir, 'text', 'keywords.json')
-    keywords_data = load_json_file(keywords_path)
-    opening_image_path = generate_opening_image(image_server, image_model, opening_image_style, image_size, f"{project_output_dir}/images", opening_quote)
-    image_result = generate_images_for_segments(image_server, image_model, keywords_data, image_style_preset, image_size, f"{project_output_dir}/images")
-    failed_segments = image_result.get("failed_segments", [])
+    script_path = os.path.join(project_output_dir, 'text', 'script.json')
+    script_data = load_json_file(script_path)
+    if script_data is None:
+        return {"success": False, "message": "未找到脚本数据，请先完成步骤1.5"}
+
+    images_method = images_method or getattr(config, "SUPPORTED_IMAGE_METHODS", ["keywords"])[0]
+
+    keywords_data = None
+    description_data = None
+    if images_method == 'description':
+        description_path = os.path.join(project_output_dir, 'text', 'mini_summary.json')
+        description_data = load_json_file(description_path)
+        if description_data is None:
+            return {"success": False, "message": "未找到描述小结，请先执行步骤2生成描述"}
+    else:
+        keywords_path = os.path.join(project_output_dir, 'text', 'keywords.json')
+        keywords_data = load_json_file(keywords_path)
+        if keywords_data is None:
+            return {"success": False, "message": "未找到关键词数据，请先执行步骤2生成关键词"}
+
+    opening_image_path = generate_opening_image(
+        image_server, image_model, opening_image_style, image_size, images_dir, opening_quote
+    )
+    image_result = generate_images_for_segments(
+        image_server,
+        image_model,
+        script_data,
+        image_style_preset,
+        image_size,
+        images_dir,
+        images_method=images_method,
+        keywords_data=keywords_data,
+        description_data=description_data,
+    )
+    failed_segments = image_result.get('failed_segments', [])
 
     if failed_segments:
-        failed_str = "、".join(str(idx) for idx in failed_segments)
+        failed_str = '、'.join(str(idx) for idx in failed_segments)
         return {
-            "success": False,
-            "message": f"第 {failed_str} 段图像生成失败，请调整关键词或稍后重试。",
-            "failed_segments": failed_segments,
-            "image_paths": image_result.get("image_paths", []),
-            "opening_image_path": opening_image_path,
+            'success': False,
+            'message': f"第 {failed_str} 段图像生成失败，请调整提示或稍后重试。",
+            'failed_segments': failed_segments,
+            'image_paths': image_result.get('image_paths', []),
+            'opening_image_path': opening_image_path,
         }
 
-    return {"success": True, "opening_image_path": opening_image_path, **image_result}
+    return {'success': True, 'opening_image_path': opening_image_path, **image_result}
 
 
 def run_step_4(tts_server: str, voice: str, project_output_dir: str, opening_quote: bool = True) -> Dict[str, Any]:

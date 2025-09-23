@@ -123,10 +123,14 @@ def display_project_progress_and_select_step(progress) -> Optional[float]:
         Optional[float]: 选择的步骤编号，None表示退出
     """
     # 步骤定义
+    has_keywords = progress.get('has_keywords', False)
+    has_description = progress.get('has_description', False)
+    step2_done = has_keywords or has_description
+
     steps = [
         (1, "内容生成", progress.get('has_raw', False)),
         (1.5, "脚本分段", progress.get('has_script', False)),
-        (2, "要点提取", progress.get('has_keywords', False)),
+        (2, "要点提取", step2_done),
         (3, "图像生成", progress.get('images_ok', False)),
         (4, "语音合成", progress.get('audio_ok', False)),
         (5, "视频合成", progress.get('has_final_video', False))
@@ -161,7 +165,7 @@ def display_project_progress_and_select_step(progress) -> Optional[float]:
     # 基于已完成的步骤确定可重做的步骤
     if progress.get('has_script', False):
         allowed_steps.append(1.5)  # 允许重做脚本分段
-    if progress.get('has_keywords', False):
+    if step2_done:
         allowed_steps.append(2)    # 允许重做要点提取
     if progress.get('images_ok', False):
         allowed_steps.append(3)    # 允许重做图像生成
@@ -173,9 +177,9 @@ def display_project_progress_and_select_step(progress) -> Optional[float]:
     # 添加可执行的下一步
     if not progress.get('has_script', False) and progress.get('has_raw', False):
         allowed_steps.append(1.5)  # 可执行脚本分段
-    if not progress.get('has_keywords', False) and progress.get('has_script', False):
+    if not step2_done and progress.get('has_script', False):
         allowed_steps.append(2)    # 可执行要点提取
-    if not progress.get('images_ok', False) and progress.get('has_keywords', False):
+    if not progress.get('images_ok', False) and step2_done:
         allowed_steps.append(3)    # 可执行图像生成
     if not progress.get('audio_ok', False) and progress.get('has_script', False):
         allowed_steps.append(4)    # 可执行语音合成（只需script.json）
@@ -387,12 +391,12 @@ def _select_entry_and_context(project_root: str, output_dir: str):
             
         step_val = selected_step
         
-        return {"entry": "existing", "project_dir": project_dir, "selected_step": step_val}
+        return {"entry": "existing", "project_dir": project_dir, "selected_step": step_val, "image_method": progress.get('image_method')}
 
 
 def _run_specific_step(
     target_step, project_output_dir, llm_server, llm_model, image_server, image_model,
-    image_size, image_style_preset, opening_image_style, tts_server, voice,
+    image_size, image_style_preset, opening_image_style, images_method, tts_server, voice,
     num_segments, enable_subtitles, bgm_filename, opening_quote=True
 ):
     """执行指定步骤并返回结果"""
@@ -403,9 +407,12 @@ def _run_specific_step(
     if target_step == 1.5:
         result = run_step_1_5(project_output_dir, num_segments)
     elif target_step == 2:
-        result = run_step_2(llm_server, llm_model, project_output_dir)
+        result = run_step_2(llm_server, llm_model, project_output_dir, images_method=images_method)
     elif target_step == 3:
-        result = run_step_3(image_server, image_model, image_size, image_style_preset, project_output_dir, opening_image_style, opening_quote)
+        result = run_step_3(
+            image_server, image_model, image_size, image_style_preset,
+            project_output_dir, opening_image_style, images_method, opening_quote
+        )
     elif target_step == 4:
         result = run_step_4(tts_server, voice, project_output_dir, opening_quote)
     elif target_step == 5:
@@ -418,7 +425,7 @@ def _run_specific_step(
 
 def _run_step_by_step_loop(
     project_output_dir, initial_step, llm_server, llm_model, image_server, image_model,
-    image_size, image_style_preset, opening_image_style, tts_server, voice,
+    image_size, image_style_preset, opening_image_style, images_method, tts_server, voice,
     num_segments, enable_subtitles, bgm_filename, opening_quote=True
 ):
     """执行指定步骤，然后进入交互模式让用户选择下一步操作"""
@@ -428,7 +435,7 @@ def _run_step_by_step_loop(
     if initial_step > 0:
         result = _run_specific_step(
             initial_step, project_output_dir, llm_server, llm_model, image_server, image_model,
-            image_size, image_style_preset, opening_image_style, tts_server, voice,
+            image_size, image_style_preset, opening_image_style, images_method, tts_server, voice,
             num_segments, enable_subtitles, bgm_filename, opening_quote
         )
         
@@ -456,7 +463,7 @@ def _run_step_by_step_loop(
         # 执行选择的步骤
         result = _run_specific_step(
             selected_step, project_output_dir, llm_server, llm_model, image_server, image_model,
-            image_size, image_style_preset, opening_image_style, tts_server, voice,
+            image_size, image_style_preset, opening_image_style, images_method, tts_server, voice,
             num_segments, enable_subtitles, bgm_filename, opening_quote
         )
         
@@ -482,6 +489,7 @@ def run_cli_main(
     output_dir: Optional[str] = None,
     image_style_preset: str = _UNSET,
     opening_image_style: str = _UNSET,
+    images_method: str = _UNSET,
     enable_subtitles: bool = _UNSET,
     bgm_filename: Optional[str] = _UNSET,
     run_mode: str = "auto",
@@ -508,6 +516,7 @@ def run_cli_main(
             "voice": voice,
             "image_style_preset": image_style_preset,
             "opening_image_style": opening_image_style,
+            "images_method": images_method,
             "enable_subtitles": enable_subtitles,
             "bgm_filename": bgm_filename,
             "opening_quote": opening_quote,
@@ -524,6 +533,7 @@ def run_cli_main(
         voice = params["voice"]
         image_style_preset = params["image_style_preset"]
         opening_image_style = params["opening_image_style"]
+        images_method = params.get("images_method", config.SUPPORTED_IMAGE_METHODS[0])
         enable_subtitles = params["enable_subtitles"]
         bgm_filename = params["bgm_filename"]
         opening_quote = params["opening_quote"]
@@ -531,6 +541,7 @@ def run_cli_main(
         image_size = image_size or config.DEFAULT_IMAGE_SIZE
         voice = voice or config.DEFAULT_VOICE
         output_dir = output_dir or config.DEFAULT_OUTPUT_DIR
+        images_method = images_method or config.SUPPORTED_IMAGE_METHODS[0]
         
     except ImportError as e:
         return {"success": False, "message": f"导入失败: {e}"}
@@ -541,7 +552,7 @@ def run_cli_main(
     # 验证参数
     try:
         llm_server, image_server, tts_server = validate_startup_args(
-            target_length, num_segments, image_size, llm_model, image_model, voice
+            target_length, num_segments, image_size, llm_model, image_model, voice, images_method
         )
     except Exception as e:
         return {"success": False, "message": f"参数验证失败: {e}"}
@@ -557,10 +568,11 @@ def run_cli_main(
         else:
             # 处理已有项目的步骤执行循环
             project_output_dir = selection["project_dir"]
+            images_method = selection.get("image_method") or images_method
             return _run_step_by_step_loop(
                 project_output_dir, selection["selected_step"],
                 llm_server, llm_model, image_server, image_model, image_size, image_style_preset,
-                opening_image_style, tts_server, voice, num_segments,
+                opening_image_style, images_method, tts_server, voice, num_segments,
                 enable_subtitles, bgm_filename, opening_quote
             )
 
@@ -571,7 +583,8 @@ def run_cli_main(
         result = run_auto(
             input_file, output_dir, target_length, num_segments, image_size,
             llm_server, llm_model, image_server, image_model, tts_server, voice,
-            image_style_preset, opening_image_style, enable_subtitles, bgm_filename,
+            image_style_preset, opening_image_style, images_method,
+            enable_subtitles, bgm_filename,
             opening_quote,
         )
         if result.get("success"):
@@ -595,6 +608,7 @@ def run_cli_main(
         
         progress = detect_project_progress(project_output_dir)
         current_step = progress.get('current_step', 1)
+        images_method = progress.get('image_method') or images_method
         
         print(f"\n📍 当前进度：已完成到第{current_step}步")
         print("💡 如需修改生成的内容，可编辑对应文件后再继续")
@@ -602,6 +616,6 @@ def run_cli_main(
         return _run_step_by_step_loop(
             project_output_dir, 0,  # 不执行初始步骤，直接进入交互模式
             llm_server, llm_model, image_server, image_model, image_size, image_style_preset,
-            opening_image_style, tts_server, voice, num_segments,
+            opening_image_style, images_method, tts_server, voice, num_segments,
             enable_subtitles, bgm_filename, opening_quote
         )

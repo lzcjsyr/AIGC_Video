@@ -8,7 +8,11 @@ import json
 import datetime
 
 from config import config
-from prompts import summarize_system_prompt, keywords_extraction_prompt
+from prompts import (
+    summarize_system_prompt,
+    keywords_extraction_prompt,
+    description_summary_system_prompt,
+)
 from core.utils import logger
 from core.services import text_to_text
 
@@ -138,6 +142,203 @@ def intelligent_summarize(server: str, model: str, content: str, target_length: 
 
     except Exception as e:
         raise ValueError(f"智能缩写处理错误: {e}")
+
+
+def generate_description_summary(server: str, model: str, content: str, max_chars: int = 100) -> Dict[str, Any]:
+    """为描述模式生成配图背景小结"""
+    try:
+        user_message = f"""请基于以下文案内容生成一段不超过{max_chars}字的简介，概述内容的核心信息，：
+
+原文内容：
+{content}
+
+要求：
+1. 使用自然、简洁的中文。
+2. 突出主题、背景与主要看点。
+3. 字数不超过{max_chars}字。
+"""
+
+        summary = ""
+        attempts = max(1, int(getattr(config, "DESCRIPTION_SUMMARY_MAX_RETRY", 3)))
+        used_attempts = 0
+
+        for attempt in range(attempts):
+            used_attempts = attempt + 1
+            output = text_to_text(
+                server=server,
+                model=model,
+                prompt=user_message,
+                system_message=description_summary_system_prompt,
+                max_tokens=4096,
+                temperature=config.LLM_TEMPERATURE_KEYWORDS,
+            )
+
+            if output is None:
+                raise ValueError("未能从 API 获取响应。")
+
+            try:
+                parsed = parse_json_robust(output)
+                summary = _clean_summary_text(parsed.get("summary"))
+            except Exception as parse_error:
+                logger.warning(f"描述小结JSON解析失败，尝试兜底处理: {parse_error}")
+                summary = _extract_summary_fallback(output)
+
+            summary = _clean_summary_text(summary)
+
+            if summary:
+                if len(summary) > max_chars:
+                    logger.warning(
+                        "描述小结长度(%d)超过预期上限(%d)，将按原文保留",
+                        len(summary),
+                        max_chars,
+                    )
+
+                if not _looks_truncated_summary(summary):
+                    break
+
+                logger.warning(
+                    "描述小结疑似不完整，准备重试 (第%d次尝试)",
+                    attempt + 1,
+                )
+                summary = ""
+
+            if attempt < attempts - 1:
+                continue
+
+        if not summary:
+            summary = _build_fallback_summary(content, max_chars)
+            generation_type = "description_summary_fallback"
+        else:
+            generation_type = "description_summary"
+
+        if not summary:
+            raise ValueError("生成的小结为空")
+
+        return {
+            "summary": summary,
+            "max_length": max_chars,
+            "total_length": len(summary),
+            "created_time": datetime.datetime.now().isoformat(),
+            "model_info": {
+                "llm_server": server,
+                "llm_model": model,
+                "generation_type": generation_type,
+                "attempts": used_attempts,
+            }
+        }
+
+    except Exception as e:
+        raise ValueError(f"描述模式小结生成错误: {e}")
+
+
+def _clean_summary_text(value) -> str:
+    if not value:
+        return ""
+    text = str(value).strip()
+    text = text.strip('"')
+    text = re.sub(r'^\s*[\[{（(]*"?summary"?\s*[:：\-–]?\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'^\s*[\[{（(]*简介\s*[:：\-–]?\s*', '', text)
+    text = text.rstrip(']}')
+    text = text.strip('"')
+    return text.strip()
+
+
+def _extract_summary_fallback(raw_text: str) -> str:
+    """当JSON解析失败时，尝试从原始文本中提取摘要"""
+    if not raw_text:
+        return ""
+
+    text = raw_text.strip()
+
+    # 去除代码块包裹
+    if text.startswith("```"):
+        text = text.split("\n", 1)[-1]
+    if text.endswith("```"):
+        text = text.rsplit("\n", 1)[0]
+
+    text = _clean_summary_text(text.strip().strip('"'))
+
+    lines = [line.strip('"') for line in text.splitlines() if line.strip()]
+    summary = " ".join(lines) if lines else text
+    return _clean_summary_text(summary)
+
+
+def _looks_truncated_summary(text: str) -> bool:
+    stripped = (text or "").strip()
+    if not stripped:
+        return True
+
+    suspicious_endings = {',', '，', ':', '：', ';', '；', '“', '‘', '"', "'", '(', '（', '《', '/', '\\'}
+    if stripped[-1] in suspicious_endings:
+        return True
+
+    if _has_unbalanced_pairs(stripped):
+        return True
+
+    return False
+
+
+def _has_unbalanced_pairs(text: str) -> bool:
+    pairs = [
+        ('《', '》'),
+        ('「', '」'),
+        ('“', '”'),
+        ('‘', '’'),
+        ('(', ')'),
+        ('（', '）'),
+        ('[', ']'),
+        ('{', '}'),
+        ('<', '>'),
+    ]
+
+    for opener, closer in pairs:
+        if text.count(opener) != text.count(closer):
+            return True
+
+    if text.count('"') % 2 != 0:
+        return True
+    if text.count("'") % 2 != 0:
+        return True
+
+    return False
+
+
+def _build_fallback_summary(source_text: str, max_chars: int) -> str:
+    text = (source_text or "").strip()
+    if not text:
+        return ""
+
+    sentences = re.split(r'(?<=[。！？.!?])', text)
+    summary_parts: List[str] = []
+    total_chars = 0
+
+    for sentence in sentences:
+        segment = sentence.strip()
+        if not segment:
+            continue
+
+        segment_len = len(segment)
+        if total_chars + segment_len > max_chars:
+            remaining = max_chars - total_chars
+            if remaining > 0:
+                summary_parts.append(segment[:remaining].rstrip())
+                total_chars += remaining
+            break
+
+        summary_parts.append(segment)
+        total_chars += segment_len
+
+        if total_chars >= max_chars:
+            break
+
+    if not summary_parts:
+        return text[:max_chars].rstrip()
+
+    summary = ''.join(summary_parts).strip()
+    if len(summary) > max_chars:
+        summary = summary[:max_chars].rstrip()
+
+    return summary
 
 
 def process_raw_to_script(raw_data: Dict[str, Any], num_segments: int, split_mode: str = "auto") -> Dict[str, Any]:
@@ -347,5 +548,3 @@ def extract_keywords(server: str, model: str, script_data: Dict[str, Any]) -> Di
 
     except Exception as e:
         raise ValueError(f"要点提取错误: {e}")
-
-

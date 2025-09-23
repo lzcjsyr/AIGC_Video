@@ -138,8 +138,16 @@ def detect_project_progress(project_dir: str) -> Dict[str, Any]:
     has_script = script is not None and isinstance(script, dict) and 'segments' in script
 
     keywords = _read_json_if_exists(os.path.join(text_dir, "keywords.json"))
-    has_keywords = has_script and keywords is not None and 'segments' in keywords and \
-        len(keywords.get('segments', [])) == len(script.get('segments', []))
+    image_description = _read_json_if_exists(os.path.join(text_dir, "mini_summary.json"))
+
+    has_keywords = False
+    has_description = False
+    if has_script:
+        if keywords is not None and 'segments' in keywords and \
+                len(keywords.get('segments', [])) == len(script.get('segments', [])):
+            has_keywords = True
+        if image_description is not None and image_description.get('summary'):
+            has_description = True
 
     images_ok = False
     audio_ok = False
@@ -180,7 +188,7 @@ def detect_project_progress(project_dir: str) -> Dict[str, Any]:
     if has_script:
         current_step = 1.5
         current_step_name = "1.5"
-    if has_keywords:
+    if has_keywords or has_description:
         current_step = 2
         current_step_name = "2"
 
@@ -201,14 +209,14 @@ def detect_project_progress(project_dir: str) -> Dict[str, Any]:
 
     # 向前推导逻辑：调整为支持并行步骤3和4
     if has_final_video:
-        has_raw = has_script = has_keywords = images_ok = audio_ok = True
+        has_raw = has_script = has_keywords = has_description = images_ok = audio_ok = True
     elif images_ok and audio_ok:
         has_raw = has_script = has_keywords = True
     elif images_ok:
         has_raw = has_script = has_keywords = True
     elif audio_ok:
         has_raw = has_script = True
-    elif has_keywords:
+    elif has_keywords or has_description:
         has_raw = has_script = True
     elif has_script:
         has_raw = True
@@ -217,6 +225,7 @@ def detect_project_progress(project_dir: str) -> Dict[str, Any]:
         'has_raw': has_raw,
         'has_script': has_script,
         'has_keywords': has_keywords,
+        'has_description': has_description,
         'images_ok': images_ok,
         'audio_ok': audio_ok,
         'has_final_video': has_final_video,
@@ -226,10 +235,12 @@ def detect_project_progress(project_dir: str) -> Dict[str, Any]:
         'raw_json': raw_json,
         'script': script,
         'keywords': keywords,
+        'mini_summary': image_description,
         'final_video_path': final_video_path,
         'images_dir': images_dir,
         'voice_dir': voice_dir,
-        'text_dir': text_dir
+        'text_dir': text_dir,
+        'image_method': 'description' if has_description else ('keywords' if has_keywords else None),
     }
 
 

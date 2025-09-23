@@ -18,17 +18,18 @@ load_dotenv()
 
 # ==================== 默认生成参数 ====================
 DEFAULT_GENERATION_PARAMS = {
-    "target_length": 800,                          # 目标字数
-    "num_segments": 6,                             # 视频分段数量
-    "image_size": "1664x928",                      # 图像尺寸 (常用 16:9 横屏)
-    "llm_model": "google/gemini-2.5-pro",          # 文本生成模型
-    "image_model": "Qwen/Qwen-Image",              # 图像生成模型
+    "target_length": 1500,                          # 目标字数
+    "num_segments": 10,                             # 视频分段数量
+    "image_size": "1280x720",                      # 图像尺寸 (常用 16:9 横屏)
+    "llm_model": "moonshotai/Kimi-K2-Instruct-0905",          # 文本生成模型
+    "image_model": "doubao-seedream-4-0-250828",   # 图像生成模型
     "voice": "zh_male_yuanboxiaoshu_moon_bigtts",  # 语音音色
     "image_style_preset": "style05",               # 图像风格预设 (详见 prompts.py)
     "opening_image_style": "des01",                # 开场图像风格 (详见 prompts.py)
+    "images_method": "description",                   # 配图生成方式: keywords / description
     "enable_subtitles": True,                      # 是否启用字幕
     "opening_quote": True,                         # 是否加入开场金句
-    "bgm_filename": "Ramin Djawadi - Light of the Seven.mp3"  # 背景音乐文件名 (music/ 下，可为 None)
+    "bgm_filename": "Under No Flag.mp3"  # 背景音乐文件名 (music/ 下，可为 None)
 }
 
 # 常用 LLM 模型: google/gemini-2.5-pro, anthropic/claude-sonnet-4, openai/gpt-5, moonshotai/Kimi-K2-Instruct-0905
@@ -40,7 +41,7 @@ LLM_TEMPERATURE_SCRIPT = 0.7            # 脚本生成随机性 (0-1，越大越
 LLM_TEMPERATURE_KEYWORDS = 0.5          # 要点提取随机性 (0-1，越大越随机)
 
 # ==================== 音频控制参数 ====================
-BGM_DEFAULT_VOLUME = 0.2                # 背景音乐音量 (0=静音, 1=原音, >1放大, 推荐0.03-0.20)
+BGM_DEFAULT_VOLUME = 0.23                # 背景音乐音量 (0=静音, 1=原音, >1放大, 推荐0.03-0.20)
 NARRATION_DEFAULT_VOLUME = 2.0          # 口播音量 (0.5-3.0, 推荐0.8-1.5, >2.0有削波风险)
 AUDIO_DUCKING_ENABLED = False           # 口播时是否压低BGM
 AUDIO_DUCKING_STRENGTH = 0.3            # BGM压低强度 (0-1)
@@ -165,6 +166,8 @@ class Config:
     SUPPORTED_LLM_SERVERS = ["openrouter", "siliconflow"]
     SUPPORTED_IMAGE_SERVERS = ["doubao", "siliconflow"]
     SUPPORTED_TTS_SERVERS = ["bytedance"]
+
+    SUPPORTED_IMAGE_METHODS = ["keywords", "description"]
     
     # ==================== 推荐模型列表 ====================
     RECOMMENDED_MODELS = {
@@ -271,7 +274,8 @@ class Config:
     
     @classmethod
     def validate_parameters(cls, target_length: int, num_segments: int, 
-                          llm_server: str, image_server: str, tts_server: str, image_size: str = None) -> None:
+                          llm_server: str, image_server: str, tts_server: str, image_size: str = None,
+                          images_method: str = None) -> None:
         """验证参数有效性"""
         if not cls.MIN_TARGET_LENGTH <= target_length <= cls.MAX_TARGET_LENGTH:
             raise ValueError(f"target_length必须在{cls.MIN_TARGET_LENGTH}-{cls.MAX_TARGET_LENGTH}之间")
@@ -292,8 +296,20 @@ class Config:
             available_sizes = ", ".join(cls.SUPPORTED_IMAGE_SIZES)
             raise ValueError(f"不支持的图像尺寸: {image_size}，支持的尺寸: {available_sizes}")
 
+        if images_method and images_method not in cls.SUPPORTED_IMAGE_METHODS:
+            raise ValueError(
+                f"不支持的生图模式: {images_method}，支持: {cls.SUPPORTED_IMAGE_METHODS}"
+            )
+
 # 创建配置实例
 config = Config()
+
+# 模块级快捷引用
+SUPPORTED_LLM_SERVERS = Config.SUPPORTED_LLM_SERVERS
+SUPPORTED_IMAGE_SERVERS = Config.SUPPORTED_IMAGE_SERVERS
+SUPPORTED_TTS_SERVERS = Config.SUPPORTED_TTS_SERVERS
+SUPPORTED_IMAGE_SIZES = Config.SUPPORTED_IMAGE_SIZES
+SUPPORTED_IMAGE_METHODS = Config.SUPPORTED_IMAGE_METHODS
 
 # 导出常用配置
 __all__ = [
@@ -301,5 +317,5 @@ __all__ = [
     'DEFAULT_GENERATION_PARAMS',
     'get_default_generation_params',
     'SUPPORTED_LLM_SERVERS', 'SUPPORTED_IMAGE_SERVERS', 'SUPPORTED_TTS_SERVERS',
-    'RECOMMENDED_MODELS', 'SUPPORTED_IMAGE_SIZES'
+    'RECOMMENDED_MODELS', 'SUPPORTED_IMAGE_SIZES', 'SUPPORTED_IMAGE_METHODS'
 ]

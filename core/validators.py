@@ -43,6 +43,7 @@ def validate_startup_args(
     llm_model: str,
     image_model: str,
     voice: str,
+    images_method: str = None,
 ) -> Tuple[str, str, str]:
     """Validate top-level args once at startup and return detected servers.
 
@@ -62,6 +63,7 @@ def validate_startup_args(
         image_server,
         tts_server,
         image_size,
+        images_method,
     )
 
     return llm_server, image_server, tts_server
