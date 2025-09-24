@@ -494,14 +494,26 @@ class VideoComposer:
 
             width = int(getattr(final_video, "w", 0) or 0)
             height = int(getattr(final_video, "h", 0) or 0)
-            # h264_videotoolbox 对 level 有更严格限制，1664x928 等超出 1280x720 的分辨率
-            # 会触发 "cannot prepare encoder"。根据尺寸动态选择更高的 level。
+            # 根据分辨率动态选择 profile/level，避免 videotoolbox 初始化失败（-12902）
+            # 720p 及以下: Main@3.1；1080p: Main@4.1；1440p: High@5.1；4K: High@5.2
             if width and height:
-                if width > 1280 or height > 720:
+                if width > 3840 or height > 2160:
+                    profile_param = ['-profile:v', 'high']
+                    level_param = ['-level', '5.2']
+                elif width > 2560 or height > 1440:
+                    profile_param = ['-profile:v', 'high']
+                    level_param = ['-level', '5.2']
+                elif width > 1920 or height > 1080:
+                    profile_param = ['-profile:v', 'high']
+                    level_param = ['-level', '5.1']
+                elif width > 1280 or height > 720:
+                    profile_param = ['-profile:v', 'main']
                     level_param = ['-level', '4.1']
                 else:
+                    profile_param = ['-profile:v', 'main']
                     level_param = ['-level', '3.1']
             else:
+                profile_param = ['-profile:v', 'main']
                 level_param = []
             print("🎞️ 使用硬件编码 (h264_videotoolbox) 导出视频…")
             final_video.write_videofile(
@@ -512,7 +524,8 @@ class VideoComposer:
                 audio_bitrate=audio_bitrate,
                 bitrate=bitrate,
                 ffmpeg_params=(
-                    ['-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-maxrate', bitrate, '-bufsize', bufsize, '-profile:v', 'main']
+                    ['-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-maxrate', bitrate, '-bufsize', bufsize]
+                    + profile_param
                     + level_param
                     + (['-vf', vf_filter] if vf_filter else [])
                 ),

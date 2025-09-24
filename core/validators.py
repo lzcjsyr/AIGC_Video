@@ -62,6 +62,7 @@ def validate_startup_args(
         llm_server,
         image_server,
         tts_server,
+        image_model,
         image_size,
         images_method,
     )

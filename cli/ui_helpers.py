@@ -396,7 +396,7 @@ def _select_entry_and_context(project_root: str, output_dir: str):
 
 def _run_specific_step(
     target_step, project_output_dir, llm_server, llm_model, image_server, image_model,
-    image_size, image_style_preset, opening_image_style, images_method, tts_server, voice,
+    image_size, video_size, image_style_preset, opening_image_style, images_method, tts_server, voice,
     num_segments, enable_subtitles, bgm_filename, opening_quote=True
 ):
     """执行指定步骤并返回结果"""
@@ -416,7 +416,8 @@ def _run_specific_step(
     elif target_step == 4:
         result = run_step_4(tts_server, voice, project_output_dir, opening_quote)
     elif target_step == 5:
-        result = run_step_5(project_output_dir, image_size, enable_subtitles, bgm_filename, voice, opening_quote)
+        # 第五步允许与生图尺寸解耦，优先使用 video_size
+        result = run_step_5(project_output_dir, video_size or image_size, enable_subtitles, bgm_filename, voice, opening_quote)
     else:
         result = {"success": False, "message": "无效的步骤"}
     
@@ -425,7 +426,7 @@ def _run_specific_step(
 
 def _run_step_by_step_loop(
     project_output_dir, initial_step, llm_server, llm_model, image_server, image_model,
-    image_size, image_style_preset, opening_image_style, images_method, tts_server, voice,
+    image_size, video_size, image_style_preset, opening_image_style, images_method, tts_server, voice,
     num_segments, enable_subtitles, bgm_filename, opening_quote=True
 ):
     """执行指定步骤，然后进入交互模式让用户选择下一步操作"""
@@ -435,7 +436,7 @@ def _run_step_by_step_loop(
     if initial_step > 0:
         result = _run_specific_step(
             initial_step, project_output_dir, llm_server, llm_model, image_server, image_model,
-            image_size, image_style_preset, opening_image_style, images_method, tts_server, voice,
+            image_size, video_size, image_style_preset, opening_image_style, images_method, tts_server, voice,
             num_segments, enable_subtitles, bgm_filename, opening_quote
         )
         
@@ -463,7 +464,7 @@ def _run_step_by_step_loop(
         # 执行选择的步骤
         result = _run_specific_step(
             selected_step, project_output_dir, llm_server, llm_model, image_server, image_model,
-            image_size, image_style_preset, opening_image_style, images_method, tts_server, voice,
+            image_size, video_size, image_style_preset, opening_image_style, images_method, tts_server, voice,
             num_segments, enable_subtitles, bgm_filename, opening_quote
         )
         
@@ -483,6 +484,7 @@ def run_cli_main(
     target_length: int = _UNSET,
     num_segments: int = _UNSET,
     image_size: Optional[str] = _UNSET,
+    video_size: Optional[str] = _UNSET,
     llm_model: str = _UNSET,
     image_model: str = _UNSET,
     voice: Optional[str] = _UNSET,
@@ -511,6 +513,7 @@ def run_cli_main(
             "target_length": target_length,
             "num_segments": num_segments,
             "image_size": image_size,
+            "video_size": video_size,
             "llm_model": llm_model,
             "image_model": image_model,
             "voice": voice,
@@ -528,6 +531,7 @@ def run_cli_main(
         target_length = params["target_length"]
         num_segments = params["num_segments"]
         image_size = params["image_size"]
+        video_size = params.get("video_size")
         llm_model = params["llm_model"]
         image_model = params["image_model"]
         voice = params["voice"]
@@ -539,6 +543,7 @@ def run_cli_main(
         opening_quote = params["opening_quote"]
 
         image_size = image_size or config.DEFAULT_IMAGE_SIZE
+        video_size = video_size or params.get("image_size") or config.DEFAULT_IMAGE_SIZE
         voice = voice or config.DEFAULT_VOICE
         output_dir = output_dir or config.DEFAULT_OUTPUT_DIR
         images_method = images_method or config.SUPPORTED_IMAGE_METHODS[0]
@@ -571,7 +576,7 @@ def run_cli_main(
             images_method = selection.get("image_method") or images_method
             return _run_step_by_step_loop(
                 project_output_dir, selection["selected_step"],
-                llm_server, llm_model, image_server, image_model, image_size, image_style_preset,
+                llm_server, llm_model, image_server, image_model, image_size, video_size, image_style_preset,
                 opening_image_style, images_method, tts_server, voice, num_segments,
                 enable_subtitles, bgm_filename, opening_quote
             )
@@ -586,6 +591,7 @@ def run_cli_main(
             image_style_preset, opening_image_style, images_method,
             enable_subtitles, bgm_filename,
             opening_quote,
+            video_size,
         )
         if result.get("success"):
             print_section("步骤 5/5 完成：视频合成", "🎬", "=")
@@ -615,7 +621,7 @@ def run_cli_main(
         
         return _run_step_by_step_loop(
             project_output_dir, 0,  # 不执行初始步骤，直接进入交互模式
-            llm_server, llm_model, image_server, image_model, image_size, image_style_preset,
+            llm_server, llm_model, image_server, image_model, image_size, video_size, image_style_preset,
             opening_image_style, images_method, tts_server, voice, num_segments,
             enable_subtitles, bgm_filename, opening_quote
         )

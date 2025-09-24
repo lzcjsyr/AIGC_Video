@@ -156,6 +156,7 @@ def run_auto(
     enable_subtitles: bool,
     bgm_filename: Optional[str] = None,
     opening_quote: bool = True,
+    video_size: Optional[str] = None,
 ) -> Dict[str, Any]:
     start_time = datetime.datetime.now()
 
@@ -249,7 +250,7 @@ def run_auto(
         opening_narration_audio_path=opening_narration_audio_path,
         bgm_volume=float(getattr(config, "BGM_DEFAULT_VOLUME", 0.2)),
         narration_volume=float(getattr(config, "NARRATION_DEFAULT_VOLUME", 1.0)),
-        image_size=image_size,
+        image_size=(video_size or image_size),
         opening_quote=opening_quote,
     )
 

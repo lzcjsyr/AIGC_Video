@@ -20,20 +20,24 @@ load_dotenv()
 DEFAULT_GENERATION_PARAMS = {
     "target_length": 1500,                          # 目标字数
     "num_segments": 10,                             # 视频分段数量
-    "image_size": "1280x720",                      # 图像尺寸 (常用 16:9 横屏)
+    "image_size": "2560x1440",                      # 图像尺寸 (常用 16:9 横屏，Qwen-Image固定支持)
+    "video_size": "1280x720",                      # 最终视频导出尺寸（可与image_size不同）
     "llm_model": "moonshotai/Kimi-K2-Instruct-0905",          # 文本生成模型
-    "image_model": "doubao-seedream-4-0-250828",   # 图像生成模型
+    "image_model": "doubao-seedream-4-0-250828",              # 图像生成模型
     "voice": "zh_male_yuanboxiaoshu_moon_bigtts",  # 语音音色
     "image_style_preset": "style05",               # 图像风格预设 (详见 prompts.py)
     "opening_image_style": "des01",                # 开场图像风格 (详见 prompts.py)
-    "images_method": "description",                   # 配图生成方式: keywords / description
+    "images_method": "keywords",                   # 配图生成方式: keywords / description
     "enable_subtitles": True,                      # 是否启用字幕
     "opening_quote": True,                         # 是否加入开场金句
     "bgm_filename": "Under No Flag.mp3"  # 背景音乐文件名 (music/ 下，可为 None)
 }
 
 # 常用 LLM 模型: google/gemini-2.5-pro, anthropic/claude-sonnet-4, openai/gpt-5, moonshotai/Kimi-K2-Instruct-0905
-# 常用图像模型: Qwen/Qwen-Image, doubao-seedream-4-0-250828
+# 常用图像模型尺寸规则说明：
+# - doubao-seedream-4-0-250828：支持任意 WxH，范围 [1280x720, 4096x4096]，包含端点
+# - doubao-seedream-3-0-t2i-250415：支持任意 WxH，范围 [512x512, 2048x2048]，包含端点
+# - Qwen/Qwen-Image：仅支持固定尺寸集合（见 SUPPORTED_QWEN_IMAGE_SIZES）
 # 常用语音音色: zh_male_yuanboxiaoshu_moon_bigtts, zh_male_haoyuxiaoge_moon_bigtts, zh_female_sajiaonvyou_moon_bigtts
 
 # ==================== LLM 模型生成参数 ====================
@@ -159,7 +163,7 @@ class Config:
     ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
     
     # ==================== 默认模型配置 ====================
-    DEFAULT_IMAGE_SIZE = "1024x1024"  # 默认图像尺寸
+    DEFAULT_IMAGE_SIZE = "1664x928"  # 默认图像尺寸（与 Qwen-Image 固定尺寸一致）
     DEFAULT_VOICE = "zh_male_yuanboxiaoshu_moon_bigtts"  # 默认语音
     
     # ==================== 支持的服务商配置 ====================
@@ -197,27 +201,24 @@ class Config:
     
     # ==================== 文件格式支持 ====================
     SUPPORTED_INPUT_FORMATS = [".epub", ".pdf", ".mobi", ".azw3", ".docx", ".doc"]
-    
-    # 支持的图像尺寸（包含豆包Seedream与Qwen-Image常用尺寸）
-    SUPPORTED_IMAGE_SIZES = [
-        # Seedream 常用
-        "1024x1024",  # 1:1 - 方形
-        "864x1152",   # 3:4 - 竖屏
-        "1152x864",   # 4:3 - 横屏
-        "1280x720",   # 16:9 - 宽屏
-        "720x1280",   # 9:16 - 竖屏视频
-        "832x1248",   # 2:3 - 竖屏海报
-        "1248x832",   # 3:2 - 横屏摄影
-        "1512x648",   # 21:9 - 超宽屏
-        # Qwen-Image 常用
-        "1328x1328",  # 1:1
-        "1664x928",   # 16:9
-        "928x1664",   # 9:16
-        "1472x1140",  # 4:3
-        "1140x1472",  # 3:4
-        "1584x1056",  # 3:2
-        "1056x1584",  # 2:3
+
+    # Qwen-Image 固定支持的尺寸（用于强校验）
+    SUPPORTED_QWEN_IMAGE_SIZES = [
+        "1328x1328",
+        "1664x928",
+        "928x1664",
+        "1472x1140",
+        "1140x1472",
+        "1584x1056",
+        "1056x1584",
     ]
+
+    # Seedream V4 尺寸范围（包含端点）
+    SEEDREAM_V4_MIN_SIZE = (1280, 720)
+    SEEDREAM_V4_MAX_SIZE = (4096, 4096)
+    # Seedream V3 尺寸范围（包含端点）
+    SEEDREAM_V3_MIN_SIZE = (512, 512)
+    SEEDREAM_V3_MAX_SIZE = (2048, 2048)
     
     # ==================== 输出路径配置 ====================
     DEFAULT_OUTPUT_DIR = "output"
@@ -231,7 +232,7 @@ class Config:
     MIN_TARGET_LENGTH = 500
     MAX_TARGET_LENGTH = 3000
     MIN_NUM_SEGMENTS = 5
-    MAX_NUM_SEGMENTS = 20
+    MAX_NUM_SEGMENTS = 30
     
     # 内部计算参数
     SPEECH_SPEED_WPM = 250  # 中文语速估算 (每分钟字数)
@@ -240,6 +241,34 @@ class Config:
     # 系统配置验证方法（一般无需修改）
     # ================================================================================
     
+    @staticmethod
+    def _parse_image_size(size: str):
+        try:
+            w_str, h_str = size.lower().split("x", 1)
+            return int(w_str), int(h_str)
+        except Exception:
+            raise ValueError(f"图像尺寸格式不正确: {size}，应为 'WxH'，例如 1664x928")
+
+    @classmethod
+    def _validate_seedream_v4_size(cls, size: str) -> None:
+        w, h = cls._parse_image_size(size)
+        min_w, min_h = cls.SEEDREAM_V4_MIN_SIZE
+        max_w, max_h = cls.SEEDREAM_V4_MAX_SIZE
+        if not (min_w <= w <= max_w and min_h <= h <= max_h):
+            raise ValueError(
+                f"Doubao Seedream V4 尺寸必须在[{min_w}x{min_h}, {max_w}x{max_h}]范围内（包含端点），当前: {size}"
+            )
+
+    @classmethod
+    def _validate_seedream_v3_size(cls, size: str) -> None:
+        w, h = cls._parse_image_size(size)
+        min_w, min_h = cls.SEEDREAM_V3_MIN_SIZE
+        max_w, max_h = cls.SEEDREAM_V3_MAX_SIZE
+        if not (min_w <= w <= max_w and min_h <= h <= max_h):
+            raise ValueError(
+                f"Doubao Seedream V3 尺寸必须在[{min_w}x{min_h}, {max_w}x{max_h}]范围内（包含端点），当前: {size}"
+            )
+
     @classmethod
     def validate_api_keys(cls) -> Dict[str, bool]:
         """验证API密钥配置"""
@@ -274,8 +303,8 @@ class Config:
     
     @classmethod
     def validate_parameters(cls, target_length: int, num_segments: int, 
-                          llm_server: str, image_server: str, tts_server: str, image_size: str = None,
-                          images_method: str = None) -> None:
+                          llm_server: str, image_server: str, tts_server: str, image_model: str,
+                          image_size: str = None, images_method: str = None) -> None:
         """验证参数有效性"""
         if not cls.MIN_TARGET_LENGTH <= target_length <= cls.MAX_TARGET_LENGTH:
             raise ValueError(f"target_length必须在{cls.MIN_TARGET_LENGTH}-{cls.MAX_TARGET_LENGTH}之间")
@@ -292,9 +321,20 @@ class Config:
         if tts_server not in cls.SUPPORTED_TTS_SERVERS:
             raise ValueError(f"不支持的TTS服务商: {tts_server}，支持: {cls.SUPPORTED_TTS_SERVERS}")
         
-        if image_size and image_size not in cls.SUPPORTED_IMAGE_SIZES:
-            available_sizes = ", ".join(cls.SUPPORTED_IMAGE_SIZES)
-            raise ValueError(f"不支持的图像尺寸: {image_size}，支持的尺寸: {available_sizes}")
+        if image_size:
+            model_lower = (image_model or "").lower()
+            if image_server == "doubao":
+                if ("seedream-4" in model_lower or "doubao-seedream-4" in model_lower):
+                    # Doubao Seedream V4: 范围校验（包含端点）
+                    cls._validate_seedream_v4_size(image_size)
+                else:
+                    # Doubao Seedream V3: 范围校验（包含端点）
+                    cls._validate_seedream_v3_size(image_size)
+            elif image_server == "siliconflow" and (model_lower.startswith("qwen/") or "qwen-image" in model_lower):
+                # Qwen-Image: 固定集合
+                if image_size not in cls.SUPPORTED_QWEN_IMAGE_SIZES:
+                    available_sizes = ", ".join(cls.SUPPORTED_QWEN_IMAGE_SIZES)
+                    raise ValueError(f"Qwen-Image 不支持的图像尺寸: {image_size}，支持的尺寸: {available_sizes}")
 
         if images_method and images_method not in cls.SUPPORTED_IMAGE_METHODS:
             raise ValueError(
@@ -308,7 +348,6 @@ config = Config()
 SUPPORTED_LLM_SERVERS = Config.SUPPORTED_LLM_SERVERS
 SUPPORTED_IMAGE_SERVERS = Config.SUPPORTED_IMAGE_SERVERS
 SUPPORTED_TTS_SERVERS = Config.SUPPORTED_TTS_SERVERS
-SUPPORTED_IMAGE_SIZES = Config.SUPPORTED_IMAGE_SIZES
 SUPPORTED_IMAGE_METHODS = Config.SUPPORTED_IMAGE_METHODS
 
 # 导出常用配置
@@ -317,5 +356,5 @@ __all__ = [
     'DEFAULT_GENERATION_PARAMS',
     'get_default_generation_params',
     'SUPPORTED_LLM_SERVERS', 'SUPPORTED_IMAGE_SERVERS', 'SUPPORTED_TTS_SERVERS',
-    'RECOMMENDED_MODELS', 'SUPPORTED_IMAGE_SIZES', 'SUPPORTED_IMAGE_METHODS'
+    'RECOMMENDED_MODELS', 'SUPPORTED_IMAGE_METHODS'
 ]
