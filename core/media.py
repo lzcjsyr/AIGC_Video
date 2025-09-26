@@ -2,14 +2,14 @@
 Media-related logic: opening image, images per segment, and TTS synthesis.
 """
 
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 import os
 import concurrent.futures
 import threading
 import base64
 
 from config import config
-from prompts import OPENING_IMAGE_STYLES
+from prompts import OPENING_IMAGE_STYLES, COVER_IMAGE_STYLE_PRESETS, COVER_IMAGE_PROMPT_TEMPLATE
 from core.utils import logger, ensure_directory_exists
 from core.services import text_to_image_doubao, text_to_audio_bytedance, text_to_image_siliconflow
 from prompts import IMAGE_STYLE_PRESETS, IMAGE_DESCRIPTION_PROMPT_TEMPLATE
@@ -92,6 +92,104 @@ def generate_opening_image(image_server: str, model: str, opening_style: str,
     except Exception as e:
         logger.warning(f"开场图像生成失败: {e}")
         return None
+
+
+def _ensure_cover_style(style_id: str) -> Tuple[str, str]:
+    """获取封面风格描述，返回(风格id, style_text)。"""
+    if style_id in COVER_IMAGE_STYLE_PRESETS:
+        return style_id, COVER_IMAGE_STYLE_PRESETS[style_id]
+    default_key = next(iter(COVER_IMAGE_STYLE_PRESETS))
+    return default_key, COVER_IMAGE_STYLE_PRESETS[default_key]
+
+
+def generate_cover_images(
+    project_output_dir: str,
+    image_server: str,
+    model: str,
+    image_size: str,
+    style_id: str,
+    count: int,
+    video_title: str,
+    content_title: str,
+    cover_subtitle: str,
+) -> Dict[str, Any]:
+    """生成封面图像，保存到项目根目录，文件名 cover_XX.png。"""
+    try:
+        if count < 1:
+            count = 1
+
+        os.makedirs(project_output_dir, exist_ok=True)
+        style_key, style_text = _ensure_cover_style(style_id)
+        prompt = COVER_IMAGE_PROMPT_TEMPLATE.format(
+            video_title=video_title,
+            content_title=content_title,
+            cover_subtitle=cover_subtitle or video_title,
+            style_block=style_text,
+        )
+
+        generated_paths: List[str] = []
+        failures: List[str] = []
+
+        for idx in range(1, count + 1):
+            result = _generate_single_cover(
+                image_server,
+                model,
+                image_size,
+                prompt,
+                project_output_dir,
+                idx,
+            )
+            if result.get("success"):
+                generated_paths.append(result["image_path"])
+            else:
+                failures.append(result.get("error", f"封面{idx}生成失败"))
+
+        return {
+            "success": len(generated_paths) > 0,
+            "cover_paths": generated_paths,
+            "failures": failures,
+            "style_id": style_key,
+        }
+    except Exception as e:
+        raise ValueError(f"封面图像生成错误: {e}")
+
+
+def _generate_single_cover(
+    image_server: str,
+    model: str,
+    image_size: str,
+    prompt: str,
+    project_output_dir: str,
+    index: int,
+) -> Dict[str, Any]:
+    filename = f"cover_{index:02d}.png"
+    image_path = os.path.join(project_output_dir, filename)
+
+    try:
+        if image_server == "siliconflow":
+            image_result = text_to_image_siliconflow(
+                prompt=prompt,
+                size=image_size,
+                model=model,
+            )
+            _persist_image_result(image_result, image_path, f"保存封面图像 {filename} 失败")
+        else:
+            image_url = text_to_image_doubao(
+                prompt=prompt,
+                size=image_size,
+                model=model,
+            )
+            if not image_url:
+                raise ValueError("封面图像生成返回空URL")
+            _persist_image_result({"type": "url", "data": image_url}, image_path, f"下载封面图像 {filename} 失败")
+
+        logger.info(f"封面图像已保存: {image_path}")
+        print(f"封面图像已保存: {image_path}")
+        return {"success": True, "image_path": image_path}
+    except Exception as e:
+        logger.warning(f"封面图像生成失败: {e}")
+        print(f"封面图像生成失败: {e}")
+        return {"success": False, "error": str(e)}
 
 
 def _generate_single_image(args) -> Dict[str, Any]:
@@ -444,3 +542,11 @@ def _format_srt_time(seconds: float) -> str:
     secs = int(seconds % 60)
     millisecs = int((seconds % 1) * 1000)
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millisecs:03d}"
+
+__all__ = [
+    'generate_opening_image',
+    'generate_images_for_segments',
+    'generate_cover_images',
+    'synthesize_voice_for_segments',
+    'export_srt_subtitles'
+]

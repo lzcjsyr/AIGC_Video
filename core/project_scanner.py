@@ -128,6 +128,11 @@ def detect_project_progress(project_dir: str) -> Dict[str, Any]:
     images_dir = os.path.join(project_dir, "images")
     voice_dir = os.path.join(project_dir, "voice")
     final_video_path = os.path.join(project_dir, "final_video.mp4")
+    cover_images = []
+    for fname in os.listdir(project_dir) if os.path.isdir(project_dir) else []:
+        if fname.lower().startswith("cover_") and fname.lower().endswith(('.png', '.jpg', '.jpeg')):
+            cover_images.append(os.path.join(project_dir, fname))
+    cover_images.sort()
 
     # 检测raw数据 - 支持json或docx任一存在即可
     raw_json = _read_json_if_exists(os.path.join(text_dir, "raw.json"))
@@ -206,6 +211,9 @@ def detect_project_progress(project_dir: str) -> Dict[str, Any]:
     if has_final_video:
         current_step = 5
         current_step_name = "5"
+    if cover_images:
+        current_step = max(current_step, 6)
+        current_step_name = "6"
 
     # 向前推导逻辑：调整为支持并行步骤3和4
     if has_final_video:
@@ -229,14 +237,16 @@ def detect_project_progress(project_dir: str) -> Dict[str, Any]:
         'images_ok': images_ok,
         'audio_ok': audio_ok,
         'has_final_video': has_final_video,
+        'has_cover': len(cover_images) > 0,
         'current_step': current_step,
         'current_step_name': current_step_name,
-        'current_step_display': max(1, min(5, int(current_step))),
+        'current_step_display': max(1, min(6, int(current_step))),
         'raw_json': raw_json,
         'script': script,
         'keywords': keywords,
         'mini_summary': image_description,
         'final_video_path': final_video_path,
+        'cover_images': cover_images,
         'images_dir': images_dir,
         'voice_dir': voice_dir,
         'text_dir': text_dir,

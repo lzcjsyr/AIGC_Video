@@ -16,7 +16,7 @@ import json
 import datetime
 from typing import Dict, Any, List, Optional
 
-from config import config
+from config import config, Config
 from core.utils import load_json_file, logger
 from core.document_processor import export_raw_to_docx
 from core.routers import (
@@ -28,10 +28,12 @@ from core.routers import (
 from core.media import (
     generate_opening_image,
     generate_images_for_segments,
+    generate_cover_images,
     synthesize_voice_for_segments,
 )
 from core.video_composer import VideoComposer
 from core.services import text_to_audio_bytedance
+from core.validators import auto_detect_server_from_model
 
 
 def _initialize_project(raw_data: Dict[str, Any], output_dir: str) -> tuple:
@@ -157,6 +159,10 @@ def run_auto(
     bgm_filename: Optional[str] = None,
     opening_quote: bool = True,
     video_size: Optional[str] = None,
+    cover_image_size: Optional[str] = None,
+    cover_image_model: Optional[str] = None,
+    cover_image_style: Optional[str] = None,
+    cover_image_count: int = 1,
 ) -> Dict[str, Any]:
     start_time = datetime.datetime.now()
 
@@ -254,7 +260,22 @@ def run_auto(
         opening_quote=opening_quote,
     )
 
-    # 12) 汇总结果
+    # 12) 封面图像生成
+    cover_result = None
+    try:
+        cover_result = _run_cover_generation(
+            project_output_dir,
+            cover_image_size or image_size,
+            cover_image_model or image_model,
+            cover_image_style or "cover01",
+            max(1, int(cover_image_count or 1)),
+            script_data,
+            raw_data,
+        )
+    except Exception as e:
+        logger.warning(f"封面生成失败: {e}")
+
+    # 13) 汇总结果
     end_time = datetime.datetime.now()
     execution_time = (end_time - start_time).total_seconds()
     compression_ratio = (1 - (script_data['total_length'] / original_length)) * 100 if original_length > 0 else 0.0
@@ -272,6 +293,7 @@ def run_auto(
         'images': image_paths,
         'audio_files': audio_paths,
         'final_video': final_video_path,
+        'cover_images': (cover_result or {}).get('cover_paths', []),
         'statistics': {
             'original_length': original_length,
             'compression_ratio': f"{compression_ratio:.1f}%",
@@ -298,6 +320,9 @@ def run_auto(
             'file_path': description_path,
             'summary_length': description_data.get('total_length', len(description_data.get('summary', ''))),
         }
+
+    if cover_result:
+        result['cover_generation'] = cover_result
 
     return result
 
@@ -652,6 +677,40 @@ def run_step_5(project_output_dir: str, image_size: str, enable_subtitles: bool,
     return {"success": True, "final_video": final_video_path}
 
 
+def run_step_6(
+    project_output_dir: str,
+    cover_image_size: str,
+    cover_image_model: str,
+    cover_image_style: str,
+    cover_image_count: int,
+) -> Dict[str, Any]:
+    text_dir = os.path.join(project_output_dir, 'text')
+    raw_path = os.path.join(text_dir, 'raw.json')
+    if not os.path.exists(raw_path):
+        return {"success": False, "message": "缺少 raw.json，请先完成步骤1"}
+
+    raw_data = load_json_file(raw_path)
+    if raw_data is None:
+        return {"success": False, "message": "raw.json 加载失败"}
+
+    script_path = os.path.join(project_output_dir, 'text', 'script.json')
+    script_data = load_json_file(script_path) if os.path.exists(script_path) else None
+
+    try:
+        cover_result = _run_cover_generation(
+            project_output_dir,
+            cover_image_size,
+            cover_image_model,
+            cover_image_style,
+            cover_image_count,
+            script_data,
+            raw_data,
+        )
+        return {"success": True, **cover_result}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
 __all__ += [
     "run_step_1",
     "run_step_1_5",
@@ -660,3 +719,54 @@ __all__ += [
     "run_step_4",
     "run_step_5",
 ]
+
+
+def _run_cover_generation(
+    project_output_dir: str,
+    cover_image_size: Optional[str],
+    cover_image_model: Optional[str],
+    cover_image_style: Optional[str],
+    cover_image_count: int,
+    script_data: Optional[Dict[str, Any]],
+    raw_data: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    if not script_data and not raw_data:
+        raise ValueError("缺少脚本或原始数据")
+
+    base = script_data or raw_data or {}
+    video_title = base.get("title") or "未命名视频"
+    content_title = base.get("content_title") or video_title
+    cover_subtitle = base.get("cover_subtitle") or ""
+
+    cover_image_size = cover_image_size or config.DEFAULT_IMAGE_SIZE
+    cover_image_model = cover_image_model or config.RECOMMENDED_MODELS["image"].get("doubao", ["doubao-seedream-4-0-250828"])[0]
+    cover_image_style = cover_image_style or "cover01"
+
+    image_server = auto_detect_server_from_model(cover_image_model, "image")
+    try:
+        Config.validate_parameters(
+            target_length=config.MIN_TARGET_LENGTH,
+            num_segments=config.MIN_NUM_SEGMENTS,
+            llm_server=config.SUPPORTED_LLM_SERVERS[0],
+            image_server=image_server,
+            tts_server=config.SUPPORTED_TTS_SERVERS[0],
+            image_model=cover_image_model,
+            image_size=cover_image_size,
+        )
+    except Exception as e:
+        raise ValueError(f"封面参数校验失败: {e}")
+
+    return generate_cover_images(
+        project_output_dir,
+        image_server,
+        cover_image_model,
+        cover_image_size,
+        cover_image_style,
+        max(1, int(cover_image_count or 1)),
+        video_title,
+        content_title,
+        cover_subtitle,
+    )
+
+
+__all__.append("run_step_6")

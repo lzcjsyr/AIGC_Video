@@ -18,19 +18,27 @@ load_dotenv()
 
 # ==================== 默认生成参数 ====================
 DEFAULT_GENERATION_PARAMS = {
-    "target_length": 1500,                          # 目标字数
-    "num_segments": 10,                             # 视频分段数量
+    "target_length": 2000,                          # 目标字数
+    "num_segments": 20,                             # 视频分段数量
+    "llm_model": "google/gemini-2.5-pro",           # 文本生成模型
+
     "image_size": "2560x1440",                      # 图像尺寸 (常用 16:9 横屏，Qwen-Image固定支持)
-    "video_size": "1280x720",                      # 最终视频导出尺寸（可与image_size不同）
-    "llm_model": "moonshotai/Kimi-K2-Instruct-0905",          # 文本生成模型
-    "image_model": "doubao-seedream-4-0-250828",              # 图像生成模型
-    "voice": "zh_male_yuanboxiaoshu_moon_bigtts",  # 语音音色
-    "image_style_preset": "style05",               # 图像风格预设 (详见 prompts.py)
-    "opening_image_style": "des01",                # 开场图像风格 (详见 prompts.py)
-    "images_method": "keywords",                   # 配图生成方式: keywords / description
-    "enable_subtitles": True,                      # 是否启用字幕
-    "opening_quote": True,                         # 是否加入开场金句
-    "bgm_filename": "Under No Flag.mp3"  # 背景音乐文件名 (music/ 下，可为 None)
+    "image_model": "doubao-seedream-4-0-250828",    # 图像生成模型
+    "image_style_preset": "style03",                # 图像风格预设 (详见 prompts.py)
+    "opening_image_style": "des01",                 # 开场图像风格 (详见 prompts.py)
+    "images_method": "description",                 # 配图生成方式: keywords / description
+
+    "voice": "zh_male_yuanboxiaoshu_moon_bigtts",   # 语音音色
+    
+    "video_size": "1280x720",                       # 最终视频导出尺寸（可与image_size不同）
+    "enable_subtitles": True,                       # 是否启用字幕
+    "opening_quote": True,                          # 是否加入开场金句
+    "bgm_filename": "Ramin Djawadi - Light of the Seven.mp3",  # 背景音乐文件名 (music/ 下，可为 None)
+    
+    "cover_image_size": "2500x2500",                # 封面图像尺寸
+    "cover_image_model": "doubao-seedream-4-0-250828",  # 封面图像生成模型
+    "cover_image_style": "cover01",                 # 封面图像风格预设 (详见 prompts.py)
+    "cover_image_count": 1,                         # 封面图像生成数量
 }
 
 # 常用 LLM 模型: google/gemini-2.5-pro, anthropic/claude-sonnet-4, openai/gpt-5, moonshotai/Kimi-K2-Instruct-0905
@@ -59,22 +67,22 @@ ENDING_FADE_SECONDS = 2.5                       # 片尾淡出时长 (秒)
 # ==================== 字幕样式配置 ====================
 SUBTITLE_CONFIG = {
     "enabled": True,                       # 是否启用字幕
-    "font_size": 36,                       # 字体大小
+    "font_size": 38,                       # 字体大小
     # 字体路径建议：
     # macOS 苹方字体: /System/Library/Fonts/PingFang.ttc
     # macOS 宋体: /System/Library/Fonts/Supplemental/Songti.ttc
     # Windows 微软雅黑: C:/Windows/Fonts/msyh.ttc
-    "font_family": "/System/Library/Fonts/PingFang.ttc",
+    "font_family": "/System/Library/Fonts/STHeiti Light.ttc",
     "color": "white",                      # 文字颜色
     "stroke_color": "black",               # 描边颜色
-    "stroke_width": 3,                     # 描边粗细
+    "stroke_width": 2,                     # 描边粗细
     "position": ("center", "bottom"),      # 位置 (水平, 垂直)
     "margin_bottom": 50,                   # 距底部距离 (像素)
     "max_chars_per_line": 25,              # 每行最大字符数
     "max_lines": 1,                        # 最大行数
     "line_spacing": 15,                    # 行间距 (像素)
     "background_color": (0, 0, 0),         # 背景色 (RGB, None=透明)
-    "background_opacity": 0.8,             # 背景不透明度 (0-1)
+    "background_opacity": 0.5,             # 背景不透明度 (0-1)
     "background_horizontal_padding": 20,   # 背景水平内边距 (像素)
     "background_vertical_padding": 10,     # 背景垂直内边距 (像素)
     "shadow_enabled": False,               # 是否启用文字阴影
@@ -85,16 +93,16 @@ SUBTITLE_CONFIG = {
 # ==================== 开场金句样式配置 ====================
 OPENING_QUOTE_STYLE = {
     "enabled": True,                              # 是否显示开场金句
-    "font_family": "/System/Library/Fonts/PingFang.ttc",  # 字体路径
-    "font_size": 48,                              # 基础字体大小
+    "font_family": "/System/Library/Fonts/STHeiti Light.ttc",  # 字体路径
+    "font_size": 50,                              # 基础字体大小
     "font_scale": 1.3,                            # 相对字幕字体的缩放倍数
     "color": "white",                             # 文字颜色
     "stroke_color": "black",                      # 描边颜色
-    "stroke_width": 4,                            # 描边粗细
+    "stroke_width": 3,                            # 描边粗细
     "position": ("center", "center"),             # 位置 (居中显示)
     "max_lines": 6,                               # 最大行数
     "max_chars_per_line": 20,                     # 每行最大字符数
-    "line_spacing": 20,                           # 行间距 (像素)
+    "line_spacing": 25,                           # 行间距 (像素)
     "letter_spacing": 0,                          # 字间距 (0=正常)
 }
 
@@ -117,8 +125,8 @@ IMAGE_MATERIAL_CONFIG = {
 }
 
 # ████████████████████████████████████████████████████████████████████████████████
-# ██                            系统配置区域                                     ██
-# ██                     (一般无需修改的系统参数)                                  ██
+# ██                            系统配置区域                                      ██
+# ██                     (一般无需修改的系统参数)                                   ██
 # ████████████████████████████████████████████████████████████████████████████████
 
 def get_default_generation_params() -> Dict[str, object]:

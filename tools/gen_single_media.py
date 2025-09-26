@@ -11,7 +11,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from core.services import text_to_image_doubao, text_to_audio_bytedance
+from core.services import text_to_image_doubao, text_to_image_siliconflow, text_to_audio_bytedance
 
 
 def ensure_temp_dir(project_root: str) -> str:
@@ -115,21 +115,37 @@ def get_text_input() -> str:
 def generate_image(prompt: str, save_dir: str, size: str = "1024x1024", model: str = "doubao-seedream-3-0-t2i-250415") -> str:
     os.makedirs(save_dir, exist_ok=True)
 
-    image_url = text_to_image_doubao(prompt=prompt, size=size, model=model)
-    if not image_url or not isinstance(image_url, str):
-        raise RuntimeError("图像生成失败：未返回URL")
-    if not is_valid_http_url(image_url):
-        raise RuntimeError(f"图像生成失败：URL无效或不受支持 -> {image_url}")
+    model_lower = (model or "").lower()
+    if model_lower.startswith("qwen/") or "qwen-image" in model_lower:
+        image_result = text_to_image_siliconflow(prompt=prompt, size=size, model=model)
+        if not image_result:
+            raise RuntimeError("图像生成失败：未返回内容")
+        data_type = image_result.get("type")
+        data_value = image_result.get("data")
+        if data_type == "url":
+            image_url = data_value
+            if not is_valid_http_url(image_url):
+                raise RuntimeError(f"图像生成失败：URL无效或不受支持 -> {image_url}")
+            content_bytes = requests.get(image_url, timeout=60).content
+        elif data_type == "b64":
+            import base64
+            content_bytes = base64.b64decode(data_value)
+        else:
+            raise RuntimeError("图像生成失败：返回类型不支持")
+    else:
+        image_url = text_to_image_doubao(prompt=prompt, size=size, model=model)
+        if not image_url or not isinstance(image_url, str):
+            raise RuntimeError("图像生成失败：未返回URL")
+        if not is_valid_http_url(image_url):
+            raise RuntimeError(f"图像生成失败：URL无效或不受支持 -> {image_url}")
+        content_bytes = requests.get(image_url, timeout=60).content
 
     # 强制保存为 PNG（无论返回URL的原始扩展名）
     filename = build_filename(prompt, ".png")
     output_path = os.path.join(save_dir, filename)
 
-    resp = requests.get(image_url, timeout=60)
-    resp.raise_for_status()
-
     try:
-        with Image.open(BytesIO(resp.content)) as img_loaded:
+        with Image.open(BytesIO(content_bytes)) as img_loaded:
             # 强制解码，尽早暴露错误
             img_loaded.load()
             # 统一转换到适合PNG的模式（保持透明度）
@@ -223,7 +239,7 @@ def main(
 if __name__ == "__main__":
     # ================= 可在下方调整主要参数（便于修改） =================
     # 可选尺寸：1024x1024 | 864x1152 | 1152x864 | 1280x720 | 720x1280 | 832x1248 | 1248x832 | 1512x648
-    IMAGE_SIZE = "1280x720"
+    IMAGE_SIZE = "2560x1440"
     # 可选图片模型：
     # - doubao-seedream-3-0-t2i-250415 (V3模型，支持guidance_scale参数)
     # - doubao-seedream-4-0-250828 (V4模型，新版API，不支持guidance_scale)

@@ -81,6 +81,8 @@ def export_raw_to_docx(raw_data: Dict[str, Any], docx_path: str) -> str:
     # 添加各个字段的标记和内容
     markers_and_content = [
         ("===TITLE_START===", raw_data.get('title', ''), "===TITLE_END==="),
+        ("===CONTENT_TITLE_START===", raw_data.get('content_title', ''), "===CONTENT_TITLE_END==="),
+        ("===COVER_SUBTITLE_START===", raw_data.get('cover_subtitle', ''), "===COVER_SUBTITLE_END==="),
         ("===GOLDEN_QUOTE_START===", raw_data.get('golden_quote', ''), "===GOLDEN_QUOTE_END==="),
         ("===CONTENT_START===", raw_data.get('content', ''), "===CONTENT_END===")
     ]
@@ -141,12 +143,21 @@ def parse_raw_from_docx(docx_path: str) -> Dict[str, Any]:
         
         # 查找标记位置
         title_start = title_end = quote_start = quote_end = content_start = content_end = -1
+        content_title_start = content_title_end = cover_subtitle_start = cover_subtitle_end = -1
         
         for i, para_text in enumerate(paragraphs):
             if para_text == "===TITLE_START===":
                 title_start = i
             elif para_text == "===TITLE_END===":
                 title_end = i
+            elif para_text == "===CONTENT_TITLE_START===":
+                content_title_start = i
+            elif para_text == "===CONTENT_TITLE_END===":
+                content_title_end = i
+            elif para_text == "===COVER_SUBTITLE_START===":
+                cover_subtitle_start = i
+            elif para_text == "===COVER_SUBTITLE_END===":
+                cover_subtitle_end = i
             elif para_text == "===GOLDEN_QUOTE_START===":
                 quote_start = i
             elif para_text == "===GOLDEN_QUOTE_END===":
@@ -168,9 +179,17 @@ def parse_raw_from_docx(docx_path: str) -> Dict[str, Any]:
         title = '\n'.join(paragraphs[title_start + 1:title_end]).strip()
         golden_quote = '\n'.join(paragraphs[quote_start + 1:quote_end]).strip()
         content = '\n'.join(paragraphs[content_start + 1:content_end]).strip()
+        content_title = ''
+        if content_title_start != -1 and content_title_end != -1 and content_title_end > content_title_start:
+            content_title = '\n'.join(paragraphs[content_title_start + 1:content_title_end]).strip()
+        cover_subtitle = ''
+        if cover_subtitle_start != -1 and cover_subtitle_end != -1 and cover_subtitle_end > cover_subtitle_start:
+            cover_subtitle = '\n'.join(paragraphs[cover_subtitle_start + 1:cover_subtitle_end]).strip()
         
         result = {
             'title': title,
+            'content_title': content_title,
+            'cover_subtitle': cover_subtitle,
             'golden_quote': golden_quote,
             'content': content
         }

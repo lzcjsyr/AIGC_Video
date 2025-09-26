@@ -82,6 +82,20 @@ def parse_json_robust(raw_text: str) -> Dict[str, Any]:
             raise ValueError(f"JSON解析失败: {e2}")
 
 
+def _ensure_book_title_format(content_title: str, fallback: str) -> str:
+    """确保内容标题带有中文书名号《》且不为空。"""
+    title = (content_title or "").strip()
+    if not title:
+        title = (fallback or "").strip()
+    if not title:
+        return "《未命名作品》"
+
+    if not (title.startswith("《") and title.endswith("》")):
+        stripped = title.strip("《》")
+        title = f"《{stripped}》"
+    return title
+
+
 def intelligent_summarize(server: str, model: str, content: str, target_length: int, num_segments: int) -> Dict[str, Any]:
     """
     智能缩写 - 第一次LLM处理
@@ -119,6 +133,8 @@ def intelligent_summarize(server: str, model: str, content: str, target_length: 
 
         title = parsed.get("title", "untitled")
         golden_quote = parsed.get("golden_quote", "")
+        content_title = _ensure_book_title_format(parsed.get("content_title", ""), title)
+        cover_subtitle = (parsed.get("cover_subtitle") or "").strip()
         full_text = (parsed.get("content") or "").strip()
         if not full_text:
             raise ValueError("生成的 content 为空")
@@ -126,6 +142,8 @@ def intelligent_summarize(server: str, model: str, content: str, target_length: 
         # 返回原始数据，不进行分段
         raw_data: Dict[str, Any] = {
             "title": title,
+            "content_title": content_title,
+            "cover_subtitle": cover_subtitle,
             "golden_quote": golden_quote,
             "content": full_text,
             "total_length": len(full_text),
@@ -348,6 +366,8 @@ def process_raw_to_script(raw_data: Dict[str, Any], num_segments: int, split_mod
     """
     try:
         title = raw_data.get("title", "untitled")
+        content_title = _ensure_book_title_format(raw_data.get("content_title", ""), title)
+        cover_subtitle = raw_data.get("cover_subtitle", "")
         golden_quote = raw_data.get("golden_quote", "")
         full_text = raw_data.get("content", "").strip()
 
@@ -362,6 +382,8 @@ def process_raw_to_script(raw_data: Dict[str, Any], num_segments: int, split_mod
         total_length = len(full_text)
         enhanced_data: Dict[str, Any] = {
             "title": title,
+            "content_title": content_title,
+            "cover_subtitle": cover_subtitle,
             "golden_quote": golden_quote,
             "total_length": total_length,
             "target_segments": num_segments,

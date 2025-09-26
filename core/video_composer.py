@@ -162,9 +162,9 @@ class VideoComposer:
     def _add_opening_quote(self, opening_base, opening_golden_quote: str, opening_seconds: float):
         """添加开场金句文字叠加"""
         subtitle_config = config.SUBTITLE_CONFIG.copy()
-        resolved_font = self.resolve_font_path(subtitle_config.get("font_family"))
-        
         quote_style = getattr(config, "OPENING_QUOTE_STYLE", {}) or {}
+        preferred_font_path = quote_style.get("font_family") or subtitle_config.get("font_family")
+        resolved_font = self.resolve_font_path(preferred_font_path)
         base_font = int(config.SUBTITLE_CONFIG.get("font_size", 36))
         scale = float(quote_style.get("font_scale", 1.3))
         font_size = int(quote_style.get("font_size", base_font * scale))
@@ -198,7 +198,7 @@ class VideoComposer:
                     text=line,
                     font_size=font_size,
                     color=text_color,
-                    font=resolved_font or config.SUBTITLE_CONFIG.get("font_family"),
+                    font=resolved_font or preferred_font_path,
                     stroke_color=stroke_color,
                     stroke_width=stroke_width
                 ).with_start(0).with_duration(opening_seconds).with_position(("center", y_abs))

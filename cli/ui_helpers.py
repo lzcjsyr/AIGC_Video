@@ -133,7 +133,8 @@ def display_project_progress_and_select_step(progress) -> Optional[float]:
         (2, "要点提取", step2_done),
         (3, "图像生成", progress.get('images_ok', False)),
         (4, "语音合成", progress.get('audio_ok', False)),
-        (5, "视频合成", progress.get('has_final_video', False))
+        (5, "视频合成", progress.get('has_final_video', False)),
+        (6, "封面生成", progress.get('has_cover', False))
     ]
     
     current_step = progress.get('current_step', 0)
@@ -185,6 +186,8 @@ def display_project_progress_and_select_step(progress) -> Optional[float]:
         allowed_steps.append(4)    # 可执行语音合成（只需script.json）
     if not progress.get('has_final_video', False) and progress.get('images_ok', False) and progress.get('audio_ok', False):
         allowed_steps.append(5)    # 可执行视频合成（需要图像和音频都完成）
+    if progress.get('has_raw', False):
+        allowed_steps.append(6)    # 内容生成完成后即可生成封面
     
     allowed_steps.sort()
     
@@ -397,10 +400,11 @@ def _select_entry_and_context(project_root: str, output_dir: str):
 def _run_specific_step(
     target_step, project_output_dir, llm_server, llm_model, image_server, image_model,
     image_size, video_size, image_style_preset, opening_image_style, images_method, tts_server, voice,
-    num_segments, enable_subtitles, bgm_filename, opening_quote=True
+    num_segments, enable_subtitles, bgm_filename, cover_image_size, cover_image_model,
+    cover_image_style, cover_image_count, opening_quote=True
 ):
     """执行指定步骤并返回结果"""
-    from core.pipeline import run_step_1_5, run_step_2, run_step_3, run_step_4, run_step_5
+    from core.pipeline import run_step_1_5, run_step_2, run_step_3, run_step_4, run_step_5, run_step_6
     
     print(f"\n正在执行步骤 {target_step}...")
     
@@ -418,6 +422,14 @@ def _run_specific_step(
     elif target_step == 5:
         # 第五步允许与生图尺寸解耦，优先使用 video_size
         result = run_step_5(project_output_dir, video_size or image_size, enable_subtitles, bgm_filename, voice, opening_quote)
+    elif target_step == 6:
+        result = run_step_6(
+            project_output_dir,
+            cover_image_size,
+            cover_image_model,
+            cover_image_style,
+            cover_image_count,
+        )
     else:
         result = {"success": False, "message": "无效的步骤"}
     
@@ -427,7 +439,8 @@ def _run_specific_step(
 def _run_step_by_step_loop(
     project_output_dir, initial_step, llm_server, llm_model, image_server, image_model,
     image_size, video_size, image_style_preset, opening_image_style, images_method, tts_server, voice,
-    num_segments, enable_subtitles, bgm_filename, opening_quote=True
+    num_segments, enable_subtitles, bgm_filename, cover_image_size, cover_image_model,
+    cover_image_style, cover_image_count, opening_quote=True
 ):
     """执行指定步骤，然后进入交互模式让用户选择下一步操作"""
     from core.project_scanner import detect_project_progress
@@ -437,7 +450,8 @@ def _run_step_by_step_loop(
         result = _run_specific_step(
             initial_step, project_output_dir, llm_server, llm_model, image_server, image_model,
             image_size, video_size, image_style_preset, opening_image_style, images_method, tts_server, voice,
-            num_segments, enable_subtitles, bgm_filename, opening_quote
+            num_segments, enable_subtitles, bgm_filename, cover_image_size, cover_image_model,
+            cover_image_style, cover_image_count, opening_quote
         )
         
         # 显示执行结果
@@ -465,7 +479,8 @@ def _run_step_by_step_loop(
         result = _run_specific_step(
             selected_step, project_output_dir, llm_server, llm_model, image_server, image_model,
             image_size, video_size, image_style_preset, opening_image_style, images_method, tts_server, voice,
-            num_segments, enable_subtitles, bgm_filename, opening_quote
+            num_segments, enable_subtitles, bgm_filename, cover_image_size, cover_image_model,
+            cover_image_style, cover_image_count, opening_quote
         )
         
         # 显示结果
@@ -494,6 +509,10 @@ def run_cli_main(
     images_method: str = _UNSET,
     enable_subtitles: bool = _UNSET,
     bgm_filename: Optional[str] = _UNSET,
+    cover_image_size: Optional[str] = _UNSET,
+    cover_image_model: Optional[str] = _UNSET,
+    cover_image_style: str = _UNSET,
+    cover_image_count: Optional[int] = _UNSET,
     run_mode: str = "auto",
     opening_quote: bool = _UNSET,
 ) -> Dict[str, Any]:
@@ -522,6 +541,10 @@ def run_cli_main(
             "images_method": images_method,
             "enable_subtitles": enable_subtitles,
             "bgm_filename": bgm_filename,
+            "cover_image_size": cover_image_size,
+            "cover_image_model": cover_image_model,
+            "cover_image_style": cover_image_style,
+            "cover_image_count": cover_image_count,
             "opening_quote": opening_quote,
         }
         for key, value in overrides.items():
@@ -541,6 +564,15 @@ def run_cli_main(
         enable_subtitles = params["enable_subtitles"]
         bgm_filename = params["bgm_filename"]
         opening_quote = params["opening_quote"]
+        cover_image_size = params.get("cover_image_size", image_size)
+        cover_image_model = params.get("cover_image_model", image_model)
+        cover_image_style = params.get("cover_image_style", "cover01")
+        try:
+            cover_image_count = int(params.get("cover_image_count", 1))
+        except Exception:
+            cover_image_count = 1
+        if cover_image_count < 1:
+            cover_image_count = 1
 
         image_size = image_size or config.DEFAULT_IMAGE_SIZE
         video_size = video_size or params.get("image_size") or config.DEFAULT_IMAGE_SIZE
@@ -578,7 +610,8 @@ def run_cli_main(
                 project_output_dir, selection["selected_step"],
                 llm_server, llm_model, image_server, image_model, image_size, video_size, image_style_preset,
                 opening_image_style, images_method, tts_server, voice, num_segments,
-                enable_subtitles, bgm_filename, opening_quote
+                enable_subtitles, bgm_filename, cover_image_size, cover_image_model,
+                cover_image_style, cover_image_count, opening_quote
             )
 
     if input_file is not None and not os.path.isabs(input_file):
@@ -592,6 +625,10 @@ def run_cli_main(
             enable_subtitles, bgm_filename,
             opening_quote,
             video_size,
+            cover_image_size,
+            cover_image_model,
+            cover_image_style,
+            cover_image_count,
         )
         if result.get("success"):
             print_section("步骤 5/5 完成：视频合成", "🎬", "=")
@@ -613,15 +650,12 @@ def run_cli_main(
         from core.project_scanner import detect_project_progress
         
         progress = detect_project_progress(project_output_dir)
-        current_step = progress.get('current_step', 1)
         images_method = progress.get('image_method') or images_method
-        
-        print(f"\n📍 当前进度：已完成到第{current_step}步")
-        print("💡 如需修改生成的内容，可编辑对应文件后再继续")
-        
+
         return _run_step_by_step_loop(
             project_output_dir, 0,  # 不执行初始步骤，直接进入交互模式
             llm_server, llm_model, image_server, image_model, image_size, video_size, image_style_preset,
             opening_image_style, images_method, tts_server, voice, num_segments,
-            enable_subtitles, bgm_filename, opening_quote
+            enable_subtitles, bgm_filename, cover_image_size, cover_image_model,
+            cover_image_style, cover_image_count, opening_quote
         )
