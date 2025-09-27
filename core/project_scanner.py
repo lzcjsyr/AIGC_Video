@@ -33,7 +33,7 @@ def scan_input_files(input_dir: str = "input") -> List[Dict[str, Any]]:
         logger.warning(f"输入目录不存在: {input_dir}")
         return []
     
-    supported_extensions = ['.pdf', '.epub', '.mobi']
+    supported_extensions = ['.pdf', '.epub', '.mobi', '.azw3']
     files = []
     
     logger.info(f"正在扫描 {input_dir} 文件夹...")
@@ -63,7 +63,11 @@ def scan_input_files(input_dir: str = "input") -> List[Dict[str, Any]]:
     pdf_count = sum(1 for f in files if f['extension'] == '.pdf')
     epub_count = sum(1 for f in files if f['extension'] == '.epub')
     mobi_count = sum(1 for f in files if f['extension'] == '.mobi')
-    logger.info(f"共找到 {len(files)} 个文件 (PDF: {pdf_count}, EPUB: {epub_count}, MOBI: {mobi_count})")
+    azw3_count = sum(1 for f in files if f['extension'] == '.azw3')
+    logger.info(
+        "共找到 %d 个文件 (PDF: %d, EPUB: %d, MOBI: %d, AZW3: %d)",
+        len(files), pdf_count, epub_count, mobi_count, azw3_count
+    )
     
     return files
 

@@ -9,9 +9,98 @@
 """
 
 import os
-from typing import Dict, Any
+import re
+from typing import Dict, Any, List
 
 from core.utils import logger, ensure_directory_exists, FileProcessingError
+
+
+OPTION_LABELS = {
+    "cover_subtitle": {
+        "label": "COVER_SUBTITLE",
+        "display": "封面副标题",
+    },
+    "golden_quote": {
+        "label": "GOLDEN_QUOTE",
+        "display": "开场金句",
+    },
+}
+OPTION_HEADER_TEMPLATE = ">>> {label} OPTION {index:02d} >>>"
+
+
+def _dedupe_options(values: List[str]) -> List[str]:
+    result: List[str] = []
+    for value in values or []:
+        if isinstance(value, str):
+            candidate = value.strip()
+            if candidate and candidate not in result:
+                result.append(candidate)
+    return result
+
+
+def _prepare_option_values(raw_data: Dict[str, Any], field: str) -> List[str]:
+    options = raw_data.get(f"{field}_options")
+    prepared = _dedupe_options(options if isinstance(options, list) else [])
+    fallback = raw_data.get(field, "")
+    if isinstance(fallback, str):
+        fallback_value = fallback.strip()
+        if fallback_value and fallback_value not in prepared:
+            prepared.insert(0, fallback_value)
+    return prepared if prepared else [""]
+
+
+def _write_option_block(document, field: str, options: List[str]):
+    meta = OPTION_LABELS[field]
+    header_label = meta["label"]
+    display_label = meta["display"]
+    instruction = document.add_paragraph(f"请保留以下 '>>> {header_label} OPTION XX >>>' 作为{display_label}的分隔符，可调整文本或顺序；系统默认使用第一条作为主用内容。")
+    _setup_docx_paragraph(instruction)
+
+    for idx, option in enumerate(options, 1):
+        header_text = OPTION_HEADER_TEMPLATE.format(label=header_label, index=idx)
+        header_para = document.add_paragraph(header_text)
+        _setup_docx_paragraph(header_para)
+
+        value_para = document.add_paragraph(option)
+        _setup_docx_paragraph(value_para)
+
+
+def _extract_option_values(paragraphs: List[str], start_idx: int, end_idx: int, field: str) -> List[str]:
+    if start_idx == -1 or end_idx == -1 or end_idx <= start_idx + 1:
+        return []
+
+    label = OPTION_LABELS[field]["label"]
+    pattern = re.compile(rf"^>>> {label} OPTION \d{{1,2}} >>>$")
+
+    collected: List[str] = []
+    buffer: List[str] = []
+    collecting = False
+
+    for text in paragraphs[start_idx + 1:end_idx]:
+        if pattern.match(text):
+            if collecting:
+                option_text = "\n".join(buffer).strip()
+                if option_text:
+                    collected.append(option_text)
+                buffer = []
+            collecting = True
+            continue
+
+        if collecting:
+            buffer.append(text)
+
+    if collecting:
+        option_text = "\n".join(buffer).strip()
+        if option_text:
+            collected.append(option_text)
+
+    if not collected:
+        raw_block = [line for line in paragraphs[start_idx + 1:end_idx] if not line.startswith("请保留以下 ")]
+        fallback_text = "\n".join(raw_block).strip()
+        if fallback_text:
+            collected.append(fallback_text)
+
+    return _dedupe_options(collected)
 
 
 def export_script_to_docx(script_data: Dict[str, Any], docx_path: str) -> str:
@@ -78,29 +167,49 @@ def export_raw_to_docx(raw_data: Dict[str, Any], docx_path: str) -> str:
     _setup_docx_run(instruction_run)
     _setup_docx_paragraph(instruction_para)
     
-    # 添加各个字段的标记和内容
-    markers_and_content = [
+    # 标题与内容标题
+    for start_marker, content, end_marker in [
         ("===TITLE_START===", raw_data.get('title', ''), "===TITLE_END==="),
         ("===CONTENT_TITLE_START===", raw_data.get('content_title', ''), "===CONTENT_TITLE_END==="),
-        ("===COVER_SUBTITLE_START===", raw_data.get('cover_subtitle', ''), "===COVER_SUBTITLE_END==="),
-        ("===GOLDEN_QUOTE_START===", raw_data.get('golden_quote', ''), "===GOLDEN_QUOTE_END==="),
-        ("===CONTENT_START===", raw_data.get('content', ''), "===CONTENT_END===")
-    ]
-    
-    for start_marker, content, end_marker in markers_and_content:
-        document.add_paragraph()  # 空行分隔
-        
-        # 开始标记
+    ]:
+        document.add_paragraph()
+
         start_para = document.add_paragraph(start_marker)
         _setup_docx_paragraph(start_para)
-        
-        # 内容
+
         content_para = document.add_paragraph(content)
         _setup_docx_paragraph(content_para)
-        
-        # 结束标记
+
         end_para = document.add_paragraph(end_marker)
         _setup_docx_paragraph(end_para)
+
+    # 多选字段：封面副标题与开场金句
+    for field in ("cover_subtitle", "golden_quote"):
+        document.add_paragraph()
+
+        start_marker = f"==={field.upper()}_START==="
+        end_marker = f"==={field.upper()}_END==="
+
+        start_para = document.add_paragraph(start_marker)
+        _setup_docx_paragraph(start_para)
+
+        options = _prepare_option_values(raw_data, field)
+        _write_option_block(document, field, options)
+
+        end_para = document.add_paragraph(end_marker)
+        _setup_docx_paragraph(end_para)
+
+    # 正文内容
+    document.add_paragraph()
+
+    content_start = document.add_paragraph("===CONTENT_START===")
+    _setup_docx_paragraph(content_start)
+
+    content_para = document.add_paragraph(raw_data.get('content', ''))
+    _setup_docx_paragraph(content_para)
+
+    content_end = document.add_paragraph("===CONTENT_END===")
+    _setup_docx_paragraph(content_end)
 
     # 统一设置所有段落的字体
     for para in document.paragraphs:
@@ -177,20 +286,25 @@ def parse_raw_from_docx(docx_path: str) -> Dict[str, Any]:
             
         # 提取各字段内容
         title = '\n'.join(paragraphs[title_start + 1:title_end]).strip()
-        golden_quote = '\n'.join(paragraphs[quote_start + 1:quote_end]).strip()
         content = '\n'.join(paragraphs[content_start + 1:content_end]).strip()
+
         content_title = ''
         if content_title_start != -1 and content_title_end != -1 and content_title_end > content_title_start:
             content_title = '\n'.join(paragraphs[content_title_start + 1:content_title_end]).strip()
-        cover_subtitle = ''
-        if cover_subtitle_start != -1 and cover_subtitle_end != -1 and cover_subtitle_end > cover_subtitle_start:
-            cover_subtitle = '\n'.join(paragraphs[cover_subtitle_start + 1:cover_subtitle_end]).strip()
-        
+
+        cover_subtitle_options = _extract_option_values(paragraphs, cover_subtitle_start, cover_subtitle_end, "cover_subtitle")
+        golden_quote_options = _extract_option_values(paragraphs, quote_start, quote_end, "golden_quote")
+
+        cover_subtitle = cover_subtitle_options[0] if cover_subtitle_options else ''
+        golden_quote = golden_quote_options[0] if golden_quote_options else ''
+
         result = {
             'title': title,
             'content_title': content_title,
             'cover_subtitle': cover_subtitle,
+            'cover_subtitle_options': cover_subtitle_options,
             'golden_quote': golden_quote,
+            'golden_quote_options': golden_quote_options,
             'content': content
         }
         

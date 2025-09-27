@@ -80,6 +80,7 @@ def _ensure_opening_narration(
     voice: str,
     opening_quote: bool,
     announce: bool = False,
+    force_regenerate: bool = False,
 ) -> Optional[str]:
     """Generate or reuse opening narration audio when required."""
     opening_golden_quote = (script_data or {}).get("golden_quote", "")
@@ -89,6 +90,13 @@ def _ensure_opening_narration(
     try:
         os.makedirs(voice_dir, exist_ok=True)
         opening_path = os.path.join(voice_dir, "opening.wav")
+        if force_regenerate and os.path.exists(opening_path):
+            try:
+                os.remove(opening_path)
+            except Exception:
+                if announce:
+                    print("⚠️ 开场音频删除失败，尝试直接覆盖")
+
         if os.path.exists(opening_path):
             if announce:
                 print(f"✅ 开场音频已存在: {opening_path}")
@@ -574,7 +582,7 @@ def run_step_4(tts_server: str, voice: str, project_output_dir: str, opening_quo
     audio_paths = synthesize_voice_for_segments(tts_server, voice, script_data, voice_dir)
 
     _ensure_opening_narration(
-        script_data, voice_dir, voice, opening_quote, announce=True
+        script_data, voice_dir, voice, opening_quote, announce=True, force_regenerate=True
     )
 
     return {"success": True, "audio_paths": audio_paths}

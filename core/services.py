@@ -51,6 +51,7 @@ def text_to_text(server, model, prompt, system_message="", max_tokens=4000, temp
             "presence_penalty": 0,
             "seed": random.randint(1, 1000000000)
         }
+
         response = client.chat.completions.create(**request_params)
         result = response.choices[0].message.content
         logger.info(f"{server} API调用成功，返回内容长度: {len(result)}字符")

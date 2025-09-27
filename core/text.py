@@ -119,7 +119,7 @@ def intelligent_summarize(server: str, model: str, content: str, target_length: 
             prompt=user_message,
             system_message=summarize_system_prompt,
             max_tokens=4096,
-            temperature=config.LLM_TEMPERATURE_SCRIPT
+            temperature=config.LLM_TEMPERATURE_SCRIPT,
         )
 
         if output is None:
@@ -132,9 +132,38 @@ def intelligent_summarize(server: str, model: str, content: str, target_length: 
             raise ValueError("生成的 JSON 缺少必需字段：title 或 content")
 
         title = parsed.get("title", "untitled")
-        golden_quote = parsed.get("golden_quote", "")
         content_title = _ensure_book_title_format(parsed.get("content_title", ""), title)
+
+        def _normalize_options(raw_options, fallback_value: str) -> List[str]:
+            options: List[str] = []
+            if isinstance(raw_options, list):
+                for item in raw_options:
+                    if isinstance(item, str):
+                        candidate = item.strip()
+                        if candidate and candidate not in options:
+                            options.append(candidate)
+            elif isinstance(raw_options, str):
+                candidate = raw_options.strip()
+                if candidate:
+                    options.append(candidate)
+
+            fallback_candidate = fallback_value.strip() if isinstance(fallback_value, str) else ""
+            if fallback_candidate and fallback_candidate not in options:
+                options.append(fallback_candidate)
+
+            return options
+
+        raw_cover_subtitle_options = parsed.get("cover_subtitle_options", [])
+        raw_golden_quote_options = parsed.get("golden_quote_options", [])
         cover_subtitle = (parsed.get("cover_subtitle") or "").strip()
+        golden_quote = (parsed.get("golden_quote") or "").strip()
+
+        cover_subtitle_options = _normalize_options(raw_cover_subtitle_options, cover_subtitle)
+        golden_quote_options = _normalize_options(raw_golden_quote_options, golden_quote)
+
+        cover_subtitle = cover_subtitle_options[0] if cover_subtitle_options else ""
+        golden_quote = golden_quote_options[0] if golden_quote_options else ""
+
         full_text = (parsed.get("content") or "").strip()
         if not full_text:
             raise ValueError("生成的 content 为空")
@@ -144,7 +173,9 @@ def intelligent_summarize(server: str, model: str, content: str, target_length: 
             "title": title,
             "content_title": content_title,
             "cover_subtitle": cover_subtitle,
+            "cover_subtitle_options": cover_subtitle_options,
             "golden_quote": golden_quote,
+            "golden_quote_options": golden_quote_options,
             "content": full_text,
             "total_length": len(full_text),
             "target_segments": num_segments,
@@ -369,6 +400,23 @@ def process_raw_to_script(raw_data: Dict[str, Any], num_segments: int, split_mod
         content_title = _ensure_book_title_format(raw_data.get("content_title", ""), title)
         cover_subtitle = raw_data.get("cover_subtitle", "")
         golden_quote = raw_data.get("golden_quote", "")
+
+        def _sanitize_script_options(values: Any, primary: str) -> List[str]:
+            options: List[str] = []
+            if isinstance(values, list):
+                for value in values:
+                    if isinstance(value, str):
+                        candidate = value.strip()
+                        if candidate and candidate not in options:
+                            options.append(candidate)
+            if isinstance(primary, str):
+                primary_value = primary.strip()
+                if primary_value and primary_value not in options:
+                    options.insert(0, primary_value)
+            return options
+
+        cover_subtitle_options = _sanitize_script_options(raw_data.get("cover_subtitle_options"), cover_subtitle)
+        golden_quote_options = _sanitize_script_options(raw_data.get("golden_quote_options"), golden_quote)
         full_text = raw_data.get("content", "").strip()
 
         if not full_text:
@@ -384,7 +432,9 @@ def process_raw_to_script(raw_data: Dict[str, Any], num_segments: int, split_mod
             "title": title,
             "content_title": content_title,
             "cover_subtitle": cover_subtitle,
+            "cover_subtitle_options": cover_subtitle_options,
             "golden_quote": golden_quote,
+            "golden_quote_options": golden_quote_options,
             "total_length": total_length,
             "target_segments": num_segments,
             "actual_segments": actual_segments,

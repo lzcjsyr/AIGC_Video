@@ -255,8 +255,8 @@ def display_file_menu(files: List[Dict[str, Any]]) -> None:
     print_section("发现以下可处理的文件", "📚", "=")
     
     if not files:
-        print("❌ 在input文件夹中未找到PDF、EPUB或MOBI文件")
-        print("请将要处理的PDF、EPUB或MOBI文件放入input文件夹中")
+        print("❌ 在input文件夹中未找到PDF、EPUB、MOBI或AZW3文件")
+        print("请将要处理的PDF、EPUB、MOBI或AZW3文件放入input文件夹中")
         return
     
     for i, file_info in enumerate(files, 1):
@@ -266,6 +266,8 @@ def display_file_menu(files: List[Dict[str, Any]]) -> None:
             file_type = "📄 PDF"
         elif file_info['extension'] == '.mobi':
             file_type = "📱 MOBI"
+        elif file_info['extension'] == '.azw3':
+            file_type = "📗 AZW3"
         else:
             file_type = "📄 FILE"
         modified_date = file_info['modified_time'].strftime('%Y-%m-%d %H:%M')

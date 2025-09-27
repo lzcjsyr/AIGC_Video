@@ -19,12 +19,12 @@ load_dotenv()
 # ==================== 默认生成参数 ====================
 DEFAULT_GENERATION_PARAMS = {
     "target_length": 2000,                          # 目标字数
-    "num_segments": 20,                             # 视频分段数量
+    "num_segments": 25,                             # 视频分段数量
     "llm_model": "google/gemini-2.5-pro",           # 文本生成模型
 
     "image_size": "2560x1440",                      # 图像尺寸 (常用 16:9 横屏，Qwen-Image固定支持)
     "image_model": "doubao-seedream-4-0-250828",    # 图像生成模型
-    "image_style_preset": "style03",                # 图像风格预设 (详见 prompts.py)
+    "image_style_preset": "style09",                # 图像风格预设 (详见 prompts.py)
     "opening_image_style": "des01",                 # 开场图像风格 (详见 prompts.py)
     "images_method": "description",                 # 配图生成方式: keywords / description
 
@@ -35,18 +35,18 @@ DEFAULT_GENERATION_PARAMS = {
     "opening_quote": True,                          # 是否加入开场金句
     "bgm_filename": "Ramin Djawadi - Light of the Seven.mp3",  # 背景音乐文件名 (music/ 下，可为 None)
     
-    "cover_image_size": "2500x2500",                # 封面图像尺寸
+    "cover_image_size": "2250x3000",                # 封面图像尺寸
     "cover_image_model": "doubao-seedream-4-0-250828",  # 封面图像生成模型
-    "cover_image_style": "cover01",                 # 封面图像风格预设 (详见 prompts.py)
-    "cover_image_count": 1,                         # 封面图像生成数量
+    "cover_image_style": "cover03",                 # 封面图像风格预设 (详见 prompts.py)
+    "cover_image_count": 3,                         # 封面图像生成数量
 }
 
-# 常用 LLM 模型: google/gemini-2.5-pro, anthropic/claude-sonnet-4, openai/gpt-5, moonshotai/Kimi-K2-Instruct-0905
+# 常用 LLM 模型: google/gemini-2.5-pro, anthropic/claude-sonnet-4, openai/gpt-5, 
 # 常用图像模型尺寸规则说明：
 # - doubao-seedream-4-0-250828：支持任意 WxH，范围 [1280x720, 4096x4096]，包含端点
 # - doubao-seedream-3-0-t2i-250415：支持任意 WxH，范围 [512x512, 2048x2048]，包含端点
 # - Qwen/Qwen-Image：仅支持固定尺寸集合（见 SUPPORTED_QWEN_IMAGE_SIZES）
-# 常用语音音色: zh_male_yuanboxiaoshu_moon_bigtts, zh_male_haoyuxiaoge_moon_bigtts, zh_female_sajiaonvyou_moon_bigtts
+# 常用语音音色: zh_male_yuanboxiaoshu_moon_bigtts, zh_male_haoyuxiaoge_moon_bigtts, zh_female_wenrouxiaoya_moon_bigtts, zh_female_daimengchuanmei_moon_bigtts, zh_female_zhixingnvsheng_mars_bigtts
 
 # ==================== LLM 模型生成参数 ====================
 LLM_TEMPERATURE_SCRIPT = 0.7            # 脚本生成随机性 (0-1，越大越随机)
@@ -82,7 +82,7 @@ SUBTITLE_CONFIG = {
     "max_lines": 1,                        # 最大行数
     "line_spacing": 15,                    # 行间距 (像素)
     "background_color": (0, 0, 0),         # 背景色 (RGB, None=透明)
-    "background_opacity": 0.5,             # 背景不透明度 (0-1)
+    "background_opacity": 0.8,             # 背景不透明度 (0-1)
     "background_horizontal_padding": 20,   # 背景水平内边距 (像素)
     "background_vertical_padding": 10,     # 背景垂直内边距 (像素)
     "shadow_enabled": False,               # 是否启用文字阴影
