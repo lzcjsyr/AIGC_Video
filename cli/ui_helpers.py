@@ -14,6 +14,8 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
+from core.utils import load_json_file
+
 
 _UNSET = object()
 
@@ -399,6 +401,99 @@ def _select_entry_and_context(project_root: str, output_dir: str):
         return {"entry": "existing", "project_dir": project_dir, "selected_step": step_val, "image_method": progress.get('image_method')}
 
 
+def _prompt_segment_generation_scope(
+    project_output_dir: str,
+    step_label: str,
+    opening_label: str,
+    allow_opening: bool = True,
+) -> Optional[Dict[str, Any]]:
+    """提示用户选择全量或部分生成段落资源"""
+    script_path = os.path.join(project_output_dir, 'text', 'script.json')
+    script_data = load_json_file(script_path)
+    segments = (script_data or {}).get('segments') or []
+    total_segments = len(segments)
+
+    if total_segments == 0:
+        print(f"⚠️ 未找到脚本分段，默认执行全部{step_label}生成。")
+        return {"mode": "full", "segments": [], "regenerate_opening": False, "total_segments": 0}
+
+    print(f"当前脚本共 {total_segments} 个段落。")
+    choice = prompt_choice(
+        f"请选择{step_label}生成方式",
+        ["全量生成（覆盖全部段落）", "部分生成（手动选择段落）"],
+        default_index=0,
+    )
+    if choice is None:
+        return None
+    if choice.startswith("全量"):
+        return {"mode": "full", "segments": [], "regenerate_opening": False, "total_segments": total_segments}
+
+    if allow_opening:
+        print(
+            f"输入 0 可重新生成{opening_label}；输入 1-{total_segments} 选择段落，可用空格或逗号分隔多个数字。输入 q 返回上一级。"
+        )
+    else:
+        print(
+            f"输入 1-{total_segments} 选择段落，可用空格或逗号分隔多个数字。输入 q 返回上一级。"
+        )
+
+    while True:
+        try:
+            raw = input("请输入段落编号: ").strip()
+        except KeyboardInterrupt:
+            print("\n操作已取消")
+            return None
+
+        if raw.lower() == 'q':
+            return None
+        if not raw:
+            print("❌ 未输入任何内容，请重新输入。")
+            continue
+
+        tokens = raw.replace('，', ' ').replace(',', ' ').split()
+        regenerate_opening = False
+        selected_indices: List[int] = []
+        invalid_token: Optional[str] = None
+
+        for token in tokens:
+            if token == '0' and allow_opening:
+                regenerate_opening = True
+                continue
+            try:
+                idx = int(token)
+            except ValueError:
+                invalid_token = token
+                break
+            if idx < 1 or idx > total_segments:
+                invalid_token = token
+                break
+            selected_indices.append(idx)
+
+        if invalid_token is not None:
+            if allow_opening:
+                print(f"❌ 输入 {invalid_token} 超出范围，请输入 0 或 1-{total_segments} 的数字。")
+            else:
+                print(f"❌ 输入 {invalid_token} 超出范围，请输入 1-{total_segments} 的数字。")
+            continue
+
+        selected_indices = sorted(set(selected_indices))
+        if selected_indices:
+            seg_text = '、'.join(str(i) for i in selected_indices)
+            print(f"✅ 已选择第 {seg_text} 段")
+        if allow_opening and regenerate_opening:
+            print(f"✅ 将重新生成{opening_label}")
+        if not selected_indices and not (allow_opening and regenerate_opening):
+            print("❌ 未选择任何段落，请重新输入。")
+            continue
+
+        return {
+            "mode": "partial",
+            "segments": selected_indices,
+            "regenerate_opening": regenerate_opening if allow_opening else False,
+            "total_segments": total_segments,
+        }
+
+
 def _run_specific_step(
     target_step, project_output_dir, llm_server, llm_model, image_server, image_model,
     image_size, video_size, image_style_preset, opening_image_style, images_method, tts_server, voice,
@@ -415,12 +510,62 @@ def _run_specific_step(
     elif target_step == 2:
         result = run_step_2(llm_server, llm_model, project_output_dir, images_method=images_method)
     elif target_step == 3:
-        result = run_step_3(
-            image_server, image_model, image_size, image_style_preset,
-            project_output_dir, opening_image_style, images_method, opening_quote
+        selection = _prompt_segment_generation_scope(
+            project_output_dir,
+            step_label="图像",
+            opening_label="开场图",
+            allow_opening=opening_quote,
         )
+        if selection is None:
+            return {"success": False, "message": "用户取消", "cancelled": True}
+        if selection["mode"] == "partial":
+            result = run_step_3(
+                image_server,
+                image_model,
+                image_size,
+                image_style_preset,
+                project_output_dir,
+                opening_image_style,
+                images_method,
+                opening_quote,
+                target_segments=selection["segments"],
+                regenerate_opening=selection.get("regenerate_opening", False),
+                llm_model=llm_model,
+                llm_server=llm_server,
+            )
+        else:
+            result = run_step_3(
+                image_server,
+                image_model,
+                image_size,
+                image_style_preset,
+                project_output_dir,
+                opening_image_style,
+                images_method,
+                opening_quote,
+                llm_model=llm_model,
+                llm_server=llm_server,
+            )
     elif target_step == 4:
-        result = run_step_4(tts_server, voice, project_output_dir, opening_quote)
+        selection = _prompt_segment_generation_scope(
+            project_output_dir,
+            step_label="语音",
+            opening_label="开场金句音频",
+            allow_opening=opening_quote,
+        )
+        if selection is None:
+            return {"success": False, "message": "用户取消", "cancelled": True}
+        if selection["mode"] == "partial":
+            result = run_step_4(
+                tts_server,
+                voice,
+                project_output_dir,
+                opening_quote,
+                target_segments=selection["segments"],
+                regenerate_opening=selection.get("regenerate_opening", False),
+            )
+        else:
+            result = run_step_4(tts_server, voice, project_output_dir, opening_quote)
     elif target_step == 5:
         # 第五步允许与生图尺寸解耦，优先使用 video_size
         result = run_step_5(project_output_dir, video_size or image_size, enable_subtitles, bgm_filename, voice, opening_quote)
@@ -459,8 +604,14 @@ def _run_step_by_step_loop(
         # 显示执行结果
         if result.get("success"):
             print(f"✅ 步骤 {initial_step} 执行成功")
+            msg = result.get("message")
+            if isinstance(msg, str) and msg.strip():
+                print(msg)
         else:
-            print(f"❌ 步骤 {initial_step} 执行失败: {result.get('message', '未知错误')}")
+            if result.get("cancelled"):
+                print("👋 已取消当前步骤")
+            else:
+                print(f"❌ 步骤 {initial_step} 执行失败: {result.get('message', '未知错误')}")
             return result
     
     # 进入交互循环
@@ -488,11 +639,17 @@ def _run_step_by_step_loop(
         # 显示结果
         if result.get("success"):
             print(f"✅ 步骤 {selected_step} 执行成功")
+            msg = result.get("message")
+            if isinstance(msg, str) and msg.strip():
+                print(msg)
             if selected_step == 5:
                 print(f"\n🎉 视频制作完成！")
                 if result.get("final_video"):
                     print(f"最终视频: {result.get('final_video')}")
         else:
+            if result.get("cancelled"):
+                print("👋 已取消当前步骤")
+                continue
             print(f"❌ 步骤 {selected_step} 执行失败: {result.get('message', '未知错误')}")
 
 

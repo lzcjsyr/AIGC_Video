@@ -2,17 +2,28 @@
 Media-related logic: opening image, images per segment, and TTS synthesis.
 """
 
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List, Tuple, Iterable, Set
 import os
 import concurrent.futures
-import threading
 import base64
 
 from config import config
-from prompts import OPENING_IMAGE_STYLES, COVER_IMAGE_STYLE_PRESETS, COVER_IMAGE_PROMPT_TEMPLATE
-from core.utils import logger, ensure_directory_exists
-from core.services import text_to_image_doubao, text_to_audio_bytedance, text_to_image_siliconflow
-from prompts import IMAGE_STYLE_PRESETS, IMAGE_DESCRIPTION_PROMPT_TEMPLATE
+from prompts import (
+    OPENING_IMAGE_STYLES,
+    COVER_IMAGE_STYLE_PRESETS,
+    COVER_IMAGE_PROMPT_TEMPLATE,
+    IMAGE_STYLE_PRESETS,
+    IMAGE_DESCRIPTION_PROMPT_TEMPLATE,
+    IMAGE_PROMPT_SAFETY_TEMPLATE,
+)
+from core.utils import logger, ensure_directory_exists, APIError
+from core.services import (
+    text_to_image_doubao,
+    text_to_audio_bytedance,
+    text_to_image_siliconflow,
+    text_to_text,
+)
+from core.validators import auto_detect_server_from_model
 
 import requests
 
@@ -50,6 +61,73 @@ def _persist_image_result(image_result: Dict[str, str], output_path: str, error_
             raise ValueError(f"未知的图像数据类型: {data_type}")
     except Exception as e:
         raise ValueError(f"{error_msg}: {e}")
+
+
+def _strip_code_fences(text: str) -> str:
+    cleaned = (text or "").strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else ""
+    if cleaned.endswith("```"):
+        cleaned = cleaned.rsplit("```", 1)[0]
+    return cleaned.strip().strip('"').strip()
+
+
+def _desensitize_image_prompt(original_prompt: str, safety_options: Optional[Dict[str, Any]]) -> Optional[str]:
+    """使用LLM对图像提示词进行脱敏，必要时回退主模型。"""
+    if not original_prompt or not safety_options:
+        return None
+
+    safety_model = safety_options.get("safety_model")
+    primary_model = safety_options.get("llm_model")
+    primary_server = safety_options.get("llm_server")
+    max_tokens = safety_options.get("max_tokens", 800)
+    temperature = safety_options.get("temperature", 0.2)
+
+    candidates: List[Tuple[str, str]] = []
+    if safety_model:
+        safety_server = safety_options.get("safety_server") or auto_detect_server_from_model(safety_model, "llm")
+        if safety_server:
+            candidates.append((safety_server, safety_model))
+
+    if primary_model:
+        server = primary_server or auto_detect_server_from_model(primary_model, "llm")
+        if server:
+            candidates.append((server, primary_model))
+
+    seen: Set[Tuple[str, str]] = set()
+    for server, model in candidates:
+        if not server or not model:
+            continue
+        key = (server, model)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        try:
+            response = text_to_text(
+                server=server,
+                model=model,
+                prompt=IMAGE_PROMPT_SAFETY_TEMPLATE.format(prompt=original_prompt),
+                system_message="",
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+            cleaned = _strip_code_fences(response)
+            if cleaned:
+                logger.info(f"提示词脱敏成功，使用模型 {model}")
+                return cleaned
+        except APIError as api_error:
+            message = str(api_error)
+            if "未配置" in message or "API_KEY" in message.upper():
+                logger.warning(f"提示词脱敏模型 {model} 缺少可用的 API Key，尝试回退模型")
+                continue
+            logger.warning(f"提示词脱敏调用失败: {api_error}")
+            return None
+        except Exception as exc:
+            logger.warning(f"提示词脱敏出现异常: {exc}")
+            return None
+
+    return None
 
 
 def generate_opening_image(image_server: str, model: str, opening_style: str,
@@ -194,53 +272,82 @@ def _generate_single_cover(
 
 def _generate_single_image(args) -> Dict[str, Any]:
     """生成单个图像的辅助函数（用于多线程）"""
-    segment_index, final_prompt, model, image_size, output_dir, image_server = args
+    (
+        segment_index,
+        initial_prompt,
+        model,
+        image_size,
+        output_dir,
+        image_server,
+        safety_options,
+    ) = args
 
     print(f"正在生成第{segment_index}段图像...")
-    logger.debug(f"第{segment_index}段图像提示词: {final_prompt}")
+    logger.debug(f"第{segment_index}段图像初始提示词: {initial_prompt}")
 
-    for attempt in range(3):
+    prompt_in_use = initial_prompt
+    desensitize_attempts = 0
+    max_desensitize = safety_options.get("max_attempts", MAX_PROMPT_SAFETY_ATTEMPTS) if safety_options else 0
+
+    attempt = 0
+    max_attempts = 3
+    while attempt < max_attempts:
         try:
             image_path = os.path.join(output_dir, f"segment_{segment_index}.png")
 
             if image_server == "siliconflow":
                 image_result = text_to_image_siliconflow(
-                    prompt=final_prompt,
+                    prompt=prompt_in_use,
                     size=image_size,
                     model=model
                 )
                 _persist_image_result(image_result, image_path, f"保存第{segment_index}段图像失败")
             else:
                 image_url = text_to_image_doubao(
-                    prompt=final_prompt,
+                    prompt=prompt_in_use,
                     size=image_size,
                     model=model
                 )
                 if not image_url:
                     raise ValueError("图像生成返回空URL")
                 _persist_image_result({"type": "url", "data": image_url}, image_path, f"下载第{segment_index}段图像失败")
+
             print(f"第{segment_index}段图像已保存: {image_path}")
             logger.info(f"第{segment_index}段图像生成成功: {image_path}")
             return {"success": True, "segment_index": segment_index, "image_path": image_path}
-        except Exception as e:
-            error_msg = str(e)
+
+        except Exception as exc:  # 捕获所有异常，包含 APIError
+            error_msg = str(exc)
+            lower_error = error_msg.lower()
             is_sensitive_error = (
-                "OutputImageSensitiveContentDetected" in error_msg or
-                "sensitive" in error_msg.lower() or
-                "content" in error_msg.lower()
+                "outputimagesensitivecontentdetected" in lower_error
+                or "sensitive" in lower_error
+                or "content policy" in lower_error
             )
-            if attempt < 2:
-                if is_sensitive_error:
-                    logger.warning(f"第{segment_index}段图像涉及敏感内容，准备重试（第{attempt + 2}/3次）")
+
+            if is_sensitive_error and safety_options and desensitize_attempts < max_desensitize:
+                desensitize_attempts += 1
+                print(f"第{segment_index}段提示词触发敏感审核，尝试自动脱敏（第{desensitize_attempts}/{max_desensitize}次）")
+                logger.warning(f"第{segment_index}段提示词涉及敏感内容，尝试自动脱敏：{error_msg}")
+                sanitized = _desensitize_image_prompt(prompt_in_use, safety_options)
+                if sanitized:
+                    prompt_in_use = sanitized
+                    logger.debug(f"第{segment_index}段图像提示词已脱敏: {prompt_in_use}")
+                    continue
                 else:
-                    logger.warning(f"第{segment_index}段图像生成失败：{error_msg}，准备重试（第{attempt + 2}/3次）")
+                    logger.warning(f"第{segment_index}段提示词脱敏失败")
+
+            attempt += 1
+
+            if attempt < max_attempts:
+                logger.warning(
+                    f"第{segment_index}段图像生成失败：{error_msg}，准备重试（第{attempt + 1}/{max_attempts}次）"
+                )
                 continue
-            else:
-                if is_sensitive_error:
-                    logger.warning(f"第{segment_index}段图像生成失败（敏感内容），已跳过。错误：{error_msg}")
-                else:
-                    logger.warning(f"第{segment_index}段图像生成失败，已跳过。错误：{error_msg}")
-                print(f"第{segment_index}段图像生成失败，已跳过")
+
+            logger.warning(f"第{segment_index}段图像生成失败，已跳过。错误：{error_msg}")
+            print(f"第{segment_index}段图像生成失败，已跳过")
+            break
 
     return {"success": False, "segment_index": segment_index, "image_path": ""}
 
@@ -255,6 +362,9 @@ def generate_images_for_segments(
     images_method: str = "keywords",
     keywords_data: Optional[Dict[str, Any]] = None,
     description_data: Optional[Dict[str, Any]] = None,
+    target_segments: Optional[Iterable[int]] = None,
+    llm_model: Optional[str] = None,
+    llm_server: Optional[str] = None,
 ) -> Dict[str, Any]:
     """为每个段落生成图像（支持多线程并发）"""
     try:
@@ -274,6 +384,21 @@ def generate_images_for_segments(
         if not segments:
             raise ValueError("脚本数据为空，无法生成图像")
 
+        segment_count = len(segments)
+        has_specific_selection = target_segments is not None
+        target_set: Set[int] = set()
+        if has_specific_selection:
+            normalized_targets = list(target_segments or [])
+            parsed_targets: Set[int] = set()
+            for idx in normalized_targets:
+                try:
+                    parsed_targets.add(int(idx))
+                except (TypeError, ValueError):
+                    continue
+            target_set = {idx for idx in parsed_targets if 1 <= idx <= segment_count}
+            if not target_set and parsed_targets:
+                raise ValueError("未找到需要生成图像的有效段落")
+
         prompt_payload: List[tuple[int, str]] = []
 
         if images_method == "description":
@@ -288,6 +413,11 @@ def generate_images_for_segments(
             )
             for segment in segments:
                 segment_index = int(segment.get("index") or len(prompt_payload) + 1)
+                if target_set:
+                    if segment_index not in target_set:
+                        continue
+                elif has_specific_selection:
+                    continue
                 segment_content = segment.get("content", "")
                 style_block = image_style or default_style
                 final_prompt = template.format(
@@ -318,23 +448,44 @@ def generate_images_for_segments(
                 if not final_prompt:
                     final_prompt = f"[内容] {segment.get('content', '')}".strip()
                 segment_index = segment.get('index') or idx
+                if target_set:
+                    if segment_index not in target_set:
+                        continue
+                elif has_specific_selection:
+                    continue
                 prompt_payload.append((segment_index, final_prompt))
 
         if not prompt_payload:
             raise ValueError("未生成有效的提示词")
 
         max_workers = getattr(config, "MAX_CONCURRENT_IMAGE_GENERATION", 3)
-        print(f"使用 {max_workers} 个并发线程生成图像...")
+        print(f"使用 {max_workers} 个并发线程生成图像... (本次处理 {len(prompt_payload)} 段)")
 
-        segment_count = len(segments)
         image_paths: List[str] = [""] * segment_count
+        for idx, segment in enumerate(segments, 1):
+            segment_index = int(segment.get("index") or idx)
+            position = segment_index - 1
+            if 0 <= position < segment_count:
+                existing_path = os.path.join(output_dir, f"segment_{segment_index}.png")
+                if os.path.exists(existing_path):
+                    image_paths[position] = existing_path
         failed_segments: List[int] = []
+
+        safety_options: Optional[Dict[str, Any]] = None
+        if llm_model:
+            safety_options = {
+                "llm_model": llm_model,
+                "llm_server": llm_server,
+                "max_attempts": MAX_PROMPT_SAFETY_ATTEMPTS,
+                "max_tokens": 800,
+                "temperature": 0.2,
+            }
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_index = {
                 executor.submit(
                     _generate_single_image,
-                    (int(idx), prompt, model, image_size, output_dir, image_server)
+                    (int(idx), prompt, model, image_size, output_dir, image_server, safety_options or {})
                 ): int(idx)
                 for idx, prompt in prompt_payload
             }
@@ -353,10 +504,23 @@ def generate_images_for_segments(
         return {
             "image_paths": image_paths,
             "failed_segments": failed_segments,
+            "processed_segments": sorted(target_set) if target_set else list(range(1, segment_count + 1)),
         }
 
     except Exception as e:
         raise ValueError(f"图像生成错误: {e}")
+
+
+def _resolve_existing_voice_path(output_dir: str, segment_index: int) -> Optional[str]:
+    """查找已存在的段落语音文件，优先返回wav版本"""
+    candidates = [
+        os.path.join(output_dir, f"voice_{segment_index}.wav"),
+        os.path.join(output_dir, f"voice_{segment_index}.mp3"),
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    return None
 
 
 def _synthesize_single_voice(args) -> Dict[str, Any]:
@@ -390,37 +554,94 @@ def _synthesize_single_voice(args) -> Dict[str, Any]:
         return {"success": False, "segment_index": segment_index, "error": str(e)}
 
 
-def synthesize_voice_for_segments(server: str, voice: str, script_data: Dict[str, Any], output_dir: str) -> List[str]:
+def synthesize_voice_for_segments(
+    server: str,
+    voice: str,
+    script_data: Dict[str, Any],
+    output_dir: str,
+    target_segments: Optional[Iterable[int]] = None,
+) -> List[str]:
     """
     为每个段落合成语音（支持多线程并发）
     """
     try:
-        # 准备并发任务参数
-        task_args = []
-        for segment in script_data["segments"]:
-            segment_index = segment["index"]
-            content = segment["content"]
+        segments = script_data.get("segments", [])
+        if not segments:
+            raise ValueError("脚本数据为空，无法生成语音")
+
+        segment_count = len(segments)
+        has_specific_selection = target_segments is not None
+        target_set: Set[int] = set()
+        if has_specific_selection:
+            normalized_targets = list(target_segments or [])
+            parsed_targets: Set[int] = set()
+            for idx in normalized_targets:
+                try:
+                    parsed_targets.add(int(idx))
+                except (TypeError, ValueError):
+                    continue
+            target_set = {idx for idx in parsed_targets if 1 <= idx <= segment_count}
+            if not target_set and parsed_targets:
+                raise ValueError("未找到需要生成语音的有效段落")
+
+        audio_paths: List[str] = [""] * segment_count
+        task_args: List[Tuple[int, str, str, str, str]] = []
+
+        for idx, segment in enumerate(segments, 1):
+            segment_index = int(segment.get("index") or idx)
+            position = segment_index - 1
+            if not (0 <= position < segment_count):
+                continue
+
+            if has_specific_selection:
+                if target_set:
+                    if segment_index not in target_set:
+                        existing = _resolve_existing_voice_path(output_dir, segment_index)
+                        if existing:
+                            audio_paths[position] = existing
+                        continue
+                else:
+                    existing = _resolve_existing_voice_path(output_dir, segment_index)
+                    if existing:
+                        audio_paths[position] = existing
+                    continue
+
+            content = segment.get("content", "")
             task_args.append((segment_index, content, server, voice, output_dir))
 
-        # 使用线程池并发合成语音
-        max_workers = getattr(config, "MAX_CONCURRENT_VOICE_SYNTHESIS", 2)
-        print(f"使用 {max_workers} 个并发线程合成语音...")
-        
-        audio_paths: List[str] = [""] * len(task_args)  # 预分配位置
-        
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # 提交所有任务
-            future_to_index = {executor.submit(_synthesize_single_voice, args): args[0] for args in task_args}
-            
-            # 等待任务完成
-            for future in concurrent.futures.as_completed(future_to_index):
-                result = future.result()
-                segment_index = result["segment_index"]
-                if result["success"]:
-                    audio_paths[segment_index - 1] = result["audio_path"]
-                else:
-                    error_msg = result.get("error", f"生成第{segment_index}段语音失败")
-                    raise ValueError(error_msg)
+        if task_args:
+            max_workers = getattr(config, "MAX_CONCURRENT_VOICE_SYNTHESIS", 2)
+            print(f"使用 {max_workers} 个并发线程合成语音... (本次处理 {len(task_args)} 段)")
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_index = {
+                    executor.submit(_synthesize_single_voice, args): args[0]
+                    for args in task_args
+                }
+
+                for future in concurrent.futures.as_completed(future_to_index):
+                    result = future.result()
+                    segment_index = result["segment_index"]
+                    if result["success"]:
+                        position = segment_index - 1
+                        if 0 <= position < segment_count:
+                            audio_paths[position] = result["audio_path"]
+                    else:
+                        error_msg = result.get("error", f"生成第{segment_index}段语音失败")
+                        raise ValueError(error_msg)
+        else:
+            print("本次未选择任何段落生成语音，保持现有音频。")
+
+        # 补全未处理段落的音频路径并进行完整性校验
+        for idx in range(1, segment_count + 1):
+            position = idx - 1
+            if audio_paths[position]:
+                continue
+            existing = _resolve_existing_voice_path(output_dir, idx)
+            if existing:
+                audio_paths[position] = existing
+            else:
+                raise ValueError(f"第{idx}段语音缺失，请先完成整体合成")
 
         # 语音合成完成后，立即导出SRT字幕文件
         print("🎬 开始导出SRT字幕文件...")
@@ -542,6 +763,9 @@ def _format_srt_time(seconds: float) -> str:
     secs = int(seconds % 60)
     millisecs = int((seconds % 1) * 1000)
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millisecs:03d}"
+
+MAX_PROMPT_SAFETY_ATTEMPTS = 3
+
 
 __all__ = [
     'generate_opening_image',

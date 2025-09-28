@@ -225,7 +225,11 @@ def run_auto(
     )
     image_result = generate_images_for_segments(
         image_server, image_model, script_data, image_style_preset, image_size, images_dir,
-        images_method=images_method, keywords_data=keywords_data, description_data=description_data
+        images_method=images_method,
+        keywords_data=keywords_data,
+        description_data=description_data,
+        llm_model=llm_model,
+        llm_server=llm_server,
     )
     image_paths: List[str] = image_result.get('image_paths', [])
     failed_image_segments: List[int] = image_result.get('failed_segments', [])
@@ -519,6 +523,10 @@ def run_step_3(
     opening_image_style: str,
     images_method: str = "keywords",
     opening_quote: bool = True,
+    target_segments: Optional[List[int]] = None,
+    regenerate_opening: bool = True,
+    llm_model: Optional[str] = None,
+    llm_server: Optional[str] = None,
 ) -> Dict[str, Any]:
     images_dir = os.path.join(project_output_dir, 'images')
     os.makedirs(images_dir, exist_ok=True)
@@ -528,7 +536,31 @@ def run_step_3(
     if script_data is None:
         return {"success": False, "message": "未找到脚本数据，请先完成步骤1.5"}
 
+    segments = script_data.get('segments', [])
+    total_segments = len(segments)
+    if total_segments == 0:
+        return {"success": False, "message": "脚本中缺少段落内容"}
+
+    selected_segments: Optional[List[int]] = None
+    if target_segments is not None:
+        raw_targets = list(target_segments)
+        parsed_targets: List[int] = []
+        for value in raw_targets:
+            try:
+                parsed_targets.append(int(value))
+            except (TypeError, ValueError):
+                continue
+        selected_segments = sorted({idx for idx in parsed_targets if 1 <= idx <= total_segments})
+        if raw_targets and not selected_segments:
+            return {
+                "success": False,
+                "message": f"段落选择无效，请输入 1-{total_segments} 之间的数字",
+            }
+
     images_method = images_method or getattr(config, "SUPPORTED_IMAGE_METHODS", ["keywords"])[0]
+
+    if llm_model and not llm_server:
+        llm_server = auto_detect_server_from_model(llm_model, "llm")
 
     keywords_data = None
     description_data = None
@@ -543,20 +575,50 @@ def run_step_3(
         if keywords_data is None:
             return {"success": False, "message": "未找到关键词数据，请先执行步骤2生成关键词"}
 
-    opening_image_path = generate_opening_image(
-        image_server, image_model, opening_image_style, image_size, images_dir, opening_quote
-    )
-    image_result = generate_images_for_segments(
-        image_server,
-        image_model,
-        script_data,
-        image_style_preset,
-        image_size,
-        images_dir,
-        images_method=images_method,
-        keywords_data=keywords_data,
-        description_data=description_data,
-    )
+    opening_image_path = None
+    opening_image_file = os.path.join(images_dir, 'opening.png')
+    opening_previously_exists = os.path.exists(opening_image_file)
+    opening_regenerated = False
+    if opening_quote:
+        need_refresh = regenerate_opening or not opening_previously_exists
+        if need_refresh:
+            opening_image_path = generate_opening_image(
+                image_server, image_model, opening_image_style, image_size, images_dir, opening_quote
+            )
+            opening_regenerated = bool(opening_image_path)
+        elif opening_previously_exists:
+            opening_image_path = opening_image_file
+            print(f"保持现有开场图像: {opening_image_path}")
+
+    should_generate_segments = selected_segments is None or len(selected_segments) > 0
+
+    if should_generate_segments:
+        generation_targets = None if selected_segments is None else selected_segments
+        image_result = generate_images_for_segments(
+            image_server,
+            image_model,
+            script_data,
+            image_style_preset,
+            image_size,
+            images_dir,
+            images_method=images_method,
+            keywords_data=keywords_data,
+            description_data=description_data,
+            target_segments=generation_targets,
+            llm_model=llm_model,
+            llm_server=llm_server,
+        )
+    else:
+        image_paths = []
+        for idx in range(1, total_segments + 1):
+            segment_path = os.path.join(images_dir, f"segment_{idx}.png")
+            image_paths.append(segment_path if os.path.exists(segment_path) else "")
+        image_result = {
+            'image_paths': image_paths,
+            'failed_segments': [],
+            'processed_segments': [],
+        }
+
     failed_segments = image_result.get('failed_segments', [])
 
     if failed_segments:
@@ -569,23 +631,118 @@ def run_step_3(
             'opening_image_path': opening_image_path,
         }
 
-    return {'success': True, 'opening_image_path': opening_image_path, **image_result}
+    processed_segments = image_result.get('processed_segments', [])
+    if selected_segments is None:
+        message = "段落图像生成完成"
+        if opening_regenerated:
+            message += "，开场图像已更新"
+    elif processed_segments:
+        seg_text = '、'.join(str(idx) for idx in processed_segments)
+        message = f"已生成第 {seg_text} 段图像"
+        if opening_regenerated:
+            message += " 并刷新开场图像"
+    else:
+        message = "未生成新的段落图像"
+        if opening_regenerated:
+            message = "已重新生成开场图像"
+
+    result_payload = {
+        'success': True,
+        'opening_image_path': opening_image_path,
+        'processed_segments': processed_segments,
+        'message': message,
+    }
+    for key, value in image_result.items():
+        if key != 'processed_segments':
+            result_payload[key] = value
+    return result_payload
 
 
-def run_step_4(tts_server: str, voice: str, project_output_dir: str, opening_quote: bool = True) -> Dict[str, Any]:
+def run_step_4(
+    tts_server: str,
+    voice: str,
+    project_output_dir: str,
+    opening_quote: bool = True,
+    target_segments: Optional[List[int]] = None,
+    regenerate_opening: bool = True,
+) -> Dict[str, Any]:
     # 确保必要的文件夹存在
-    os.makedirs(f"{project_output_dir}/voice", exist_ok=True)
+    voice_dir = os.path.join(project_output_dir, 'voice')
+    os.makedirs(voice_dir, exist_ok=True)
 
     script_path = os.path.join(project_output_dir, 'text', 'script.json')
     script_data = load_json_file(script_path)
-    voice_dir = os.path.join(project_output_dir, 'voice')
-    audio_paths = synthesize_voice_for_segments(tts_server, voice, script_data, voice_dir)
+    if script_data is None:
+        return {"success": False, "message": "未找到脚本数据，请先完成步骤1.5"}
 
-    _ensure_opening_narration(
-        script_data, voice_dir, voice, opening_quote, announce=True, force_regenerate=True
+    segments = script_data.get('segments', [])
+    total_segments = len(segments)
+    if total_segments == 0:
+        return {"success": False, "message": "脚本中缺少段落内容"}
+
+    selected_segments: Optional[List[int]] = None
+    if target_segments is not None:
+        raw_targets = list(target_segments)
+        parsed_targets: List[int] = []
+        for value in raw_targets:
+            try:
+                parsed_targets.append(int(value))
+            except (TypeError, ValueError):
+                continue
+        selected_segments = sorted({idx for idx in parsed_targets if 1 <= idx <= total_segments})
+        if raw_targets and not selected_segments:
+            return {
+                "success": False,
+                "message": f"段落选择无效，请输入 1-{total_segments} 之间的数字",
+            }
+
+    generation_targets = None if selected_segments is None else selected_segments
+    audio_paths = synthesize_voice_for_segments(
+        tts_server,
+        voice,
+        script_data,
+        voice_dir,
+        target_segments=generation_targets,
     )
 
-    return {"success": True, "audio_paths": audio_paths}
+    opening_audio_file = os.path.join(voice_dir, 'opening.wav')
+    opening_previously_exists = os.path.exists(opening_audio_file)
+    narration_path = _ensure_opening_narration(
+        script_data,
+        voice_dir,
+        voice,
+        opening_quote,
+        announce=True,
+        force_regenerate=regenerate_opening,
+    )
+
+    opening_refreshed = bool(
+        opening_quote and narration_path and (regenerate_opening or not opening_previously_exists)
+    )
+
+    processed_segments = (
+        list(range(1, total_segments + 1)) if selected_segments is None else list(selected_segments)
+    )
+    if selected_segments is None:
+        message = "段落语音生成完成"
+        if opening_refreshed:
+            message += "，开场金句音频已更新"
+    elif processed_segments:
+        seg_text = '、'.join(str(idx) for idx in processed_segments)
+        message = f"已生成第 {seg_text} 段语音"
+        if opening_refreshed:
+            message += " 并刷新开场金句音频"
+    else:
+        message = "未生成新的段落语音"
+        if opening_refreshed:
+            message = "已重新生成开场金句音频"
+
+    return {
+        "success": True,
+        "audio_paths": audio_paths,
+        "processed_segments": processed_segments,
+        "message": message,
+    }
 
 
 def run_step_5(project_output_dir: str, image_size: str, enable_subtitles: bool, bgm_filename: str, voice: str, opening_quote: bool = True) -> Dict[str, Any]:

@@ -160,6 +160,10 @@ def detect_project_progress(project_dir: str) -> Dict[str, Any]:
 
     images_ok = False
     audio_ok = False
+    images_started = False
+    audio_started = False
+    images_in_progress = False
+    audio_in_progress = False
     if has_script:
         try:
             num_segments = len(script.get('segments', []))
@@ -172,6 +176,8 @@ def detect_project_progress(project_dir: str) -> Dict[str, Any]:
                 if m:
                     image_indices.append(int(m.group(1)))
             images_ok = (len(image_indices) == num_segments) and (set(image_indices) == set(range(1, num_segments+1)))
+            images_started = len(image_indices) > 0
+            images_in_progress = images_started and not images_ok
             
             # 音频检查
             audio_files = [f for f in os.listdir(voice_dir) if os.path.isfile(os.path.join(voice_dir, f))] if os.path.isdir(voice_dir) else []
@@ -181,9 +187,15 @@ def detect_project_progress(project_dir: str) -> Dict[str, Any]:
                 if m:
                     audio_indices.append(int(m.group(1)))
             audio_ok = (len(audio_indices) == num_segments) and (set(audio_indices) == set(range(1, num_segments+1)))
+            audio_started = len(audio_indices) > 0
+            audio_in_progress = audio_started and not audio_ok
         except Exception:
             images_ok = False
             audio_ok = False
+            images_started = False
+            audio_started = False
+            images_in_progress = False
+            audio_in_progress = False
 
     has_final_video = os.path.exists(final_video_path) and os.path.getsize(final_video_path) > 0
 
@@ -205,12 +217,18 @@ def detect_project_progress(project_dir: str) -> Dict[str, Any]:
     if images_ok and audio_ok:
         current_step = 4
         current_step_name = "3+4"
-    elif images_ok:
-        current_step = 3
-        current_step_name = "3"
     elif audio_ok:
         current_step = 4
         current_step_name = "4"
+    elif audio_in_progress:
+        current_step = max(current_step, 4)
+        current_step_name = "4（进行中）"
+    elif images_ok:
+        current_step = 3
+        current_step_name = "3"
+    elif images_in_progress:
+        current_step = max(current_step, 3)
+        current_step_name = "3（进行中）"
 
     if has_final_video:
         current_step = 5
@@ -240,6 +258,10 @@ def detect_project_progress(project_dir: str) -> Dict[str, Any]:
         'has_description': has_description,
         'images_ok': images_ok,
         'audio_ok': audio_ok,
+        'images_started': images_started,
+        'audio_started': audio_started,
+        'images_in_progress': images_in_progress,
+        'audio_in_progress': audio_in_progress,
         'has_final_video': has_final_video,
         'has_cover': len(cover_images) > 0,
         'current_step': current_step,

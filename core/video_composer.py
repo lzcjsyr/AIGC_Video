@@ -69,23 +69,32 @@ class VideoComposer:
             # 解析目标尺寸
             target_size = self._parse_image_size(image_size)
             print(f"目标视频尺寸: {target_size[0]}x{target_size[1]}")
-            
+
             # 检测是否包含视频素材，决定输出帧率
             has_videos = self._has_video_materials(image_paths)
             target_fps = 30 if has_videos else 15
             print(f"检测到{'视频' if has_videos else '图片'}素材，使用{target_fps}fps输出")
-            
+
+            narration_speed_factor = float(getattr(config, "NARRATION_SPEED_FACTOR", 1.0) or 1.0)
+            if narration_speed_factor <= 0:
+                narration_speed_factor = 1.0
+            if abs(narration_speed_factor - 1.0) > 1e-3:
+                print(f"🎙️ 口播变速系数: {narration_speed_factor:.3f}")
+
             video_clips = []
             audio_clips = []
-            
+
             # 创建开场片段
             opening_seconds = self._create_opening_segment(
                 opening_image_path, opening_golden_quote,
-                opening_narration_audio_path, video_clips, target_size, opening_quote
+                opening_narration_audio_path, video_clips, target_size, opening_quote,
+                narration_speed_factor
             )
-            
+
             # 创建主要视频片段
-            self._create_main_segments(image_paths, audio_paths, video_clips, audio_clips, target_size)
+            self._create_main_segments(
+                image_paths, audio_paths, video_clips, audio_clips, target_size, narration_speed_factor
+            )
             
             # 连接所有视频片段
             print("正在合成最终视频...")
@@ -121,7 +130,8 @@ class VideoComposer:
                               opening_golden_quote: Optional[str],
                               opening_narration_audio_path: Optional[str],
                               video_clips: List, target_size: Tuple[int, int],
-                              opening_quote: bool = True) -> float:
+                              opening_quote: bool = True,
+                              narration_speed_factor: float = 1.0) -> float:
         """创建开场片段"""
         opening_seconds = 0.0
         opening_voice_clip = None
@@ -133,6 +143,8 @@ class VideoComposer:
         # 计算开场时长
         if opening_narration_audio_path and os.path.exists(opening_narration_audio_path):
             opening_voice_clip = AudioFileClip(opening_narration_audio_path)
+            if abs(narration_speed_factor - 1.0) > 1e-3:
+                opening_voice_clip = opening_voice_clip.with_speed_scaled(narration_speed_factor)
             hold_after = float(getattr(config, "OPENING_HOLD_AFTER_NARRATION_SECONDS", 2.0))
             opening_seconds = float(opening_voice_clip.duration) + max(0.0, hold_after)
 
@@ -235,12 +247,15 @@ class VideoComposer:
         return opening_clip
     
     def _create_main_segments(self, image_paths: List[str], audio_paths: List[str], 
-                            video_clips: List, audio_clips: List, target_size: Tuple[int, int]):
+                            video_clips: List, audio_clips: List, target_size: Tuple[int, int],
+                            narration_speed_factor: float):
         """创建主要视频片段（支持图片和视频混合）"""
         for i, (media_path, audio_path) in enumerate(zip(image_paths, audio_paths)):
             print(f"正在处理第{i+1}段素材...")
             
             audio_clip = AudioFileClip(audio_path)
+            if abs(narration_speed_factor - 1.0) > 1e-3:
+                audio_clip = audio_clip.with_speed_scaled(narration_speed_factor)
             
             if self._is_video_file(media_path):
                 # 视频素材处理
