@@ -497,7 +497,7 @@ def _prompt_segment_generation_scope(
 def _run_specific_step(
     target_step, project_output_dir, llm_server, llm_model, image_server, image_model,
     image_size, video_size, image_style_preset, opening_image_style, images_method, tts_server, voice,
-    num_segments, enable_subtitles, bgm_filename, cover_image_size, cover_image_model,
+    speed_ratio, loudness_ratio, num_segments, enable_subtitles, bgm_filename, cover_image_size, cover_image_model,
     cover_image_style, cover_image_count, opening_quote=True
 ):
     """执行指定步骤并返回结果"""
@@ -563,12 +563,30 @@ def _run_specific_step(
                 opening_quote,
                 target_segments=selection["segments"],
                 regenerate_opening=selection.get("regenerate_opening", False),
+                speed_ratio=speed_ratio,
+                loudness_ratio=loudness_ratio,
             )
         else:
-            result = run_step_4(tts_server, voice, project_output_dir, opening_quote)
+            result = run_step_4(
+                tts_server,
+                voice,
+                project_output_dir,
+                opening_quote,
+                speed_ratio=speed_ratio,
+                loudness_ratio=loudness_ratio,
+            )
     elif target_step == 5:
         # 第五步允许与生图尺寸解耦，优先使用 video_size
-        result = run_step_5(project_output_dir, video_size or image_size, enable_subtitles, bgm_filename, voice, opening_quote)
+        result = run_step_5(
+            project_output_dir,
+            video_size or image_size,
+            enable_subtitles,
+            bgm_filename,
+            voice,
+            opening_quote,
+            speed_ratio=speed_ratio,
+            loudness_ratio=loudness_ratio,
+        )
     elif target_step == 6:
         result = run_step_6(
             project_output_dir,
@@ -586,7 +604,7 @@ def _run_specific_step(
 def _run_step_by_step_loop(
     project_output_dir, initial_step, llm_server, llm_model, image_server, image_model,
     image_size, video_size, image_style_preset, opening_image_style, images_method, tts_server, voice,
-    num_segments, enable_subtitles, bgm_filename, cover_image_size, cover_image_model,
+    speed_ratio, loudness_ratio, num_segments, enable_subtitles, bgm_filename, cover_image_size, cover_image_model,
     cover_image_style, cover_image_count, opening_quote=True
 ):
     """执行指定步骤，然后进入交互模式让用户选择下一步操作"""
@@ -597,7 +615,7 @@ def _run_step_by_step_loop(
         result = _run_specific_step(
             initial_step, project_output_dir, llm_server, llm_model, image_server, image_model,
             image_size, video_size, image_style_preset, opening_image_style, images_method, tts_server, voice,
-            num_segments, enable_subtitles, bgm_filename, cover_image_size, cover_image_model,
+            speed_ratio, loudness_ratio, num_segments, enable_subtitles, bgm_filename, cover_image_size, cover_image_model,
             cover_image_style, cover_image_count, opening_quote
         )
         
@@ -632,7 +650,7 @@ def _run_step_by_step_loop(
         result = _run_specific_step(
             selected_step, project_output_dir, llm_server, llm_model, image_server, image_model,
             image_size, video_size, image_style_preset, opening_image_style, images_method, tts_server, voice,
-            num_segments, enable_subtitles, bgm_filename, cover_image_size, cover_image_model,
+            speed_ratio, loudness_ratio, num_segments, enable_subtitles, bgm_filename, cover_image_size, cover_image_model,
             cover_image_style, cover_image_count, opening_quote
         )
         
@@ -662,6 +680,8 @@ def run_cli_main(
     llm_model: str = _UNSET,
     image_model: str = _UNSET,
     voice: Optional[str] = _UNSET,
+    speed_ratio: Optional[float] = _UNSET,
+    loudness_ratio: Optional[float] = _UNSET,
     output_dir: Optional[str] = None,
     image_style_preset: str = _UNSET,
     opening_image_style: str = _UNSET,
@@ -695,6 +715,8 @@ def run_cli_main(
             "llm_model": llm_model,
             "image_model": image_model,
             "voice": voice,
+            "speed_ratio": speed_ratio,
+            "loudness_ratio": loudness_ratio,
             "image_style_preset": image_style_preset,
             "opening_image_style": opening_image_style,
             "images_method": images_method,
@@ -717,6 +739,16 @@ def run_cli_main(
         llm_model = params["llm_model"]
         image_model = params["image_model"]
         voice = params["voice"]
+        speed_ratio = params["speed_ratio"]
+        loudness_ratio = params["loudness_ratio"]
+        try:
+            speed_ratio = float(speed_ratio)
+        except Exception:
+            speed_ratio = 1.0
+        try:
+            loudness_ratio = float(loudness_ratio)
+        except Exception:
+            loudness_ratio = 1.0
         image_style_preset = params["image_style_preset"]
         opening_image_style = params["opening_image_style"]
         images_method = params.get("images_method", config.SUPPORTED_IMAGE_METHODS[0])
@@ -768,7 +800,7 @@ def run_cli_main(
             return _run_step_by_step_loop(
                 project_output_dir, selection["selected_step"],
                 llm_server, llm_model, image_server, image_model, image_size, video_size, image_style_preset,
-                opening_image_style, images_method, tts_server, voice, num_segments,
+                opening_image_style, images_method, tts_server, voice, speed_ratio, loudness_ratio, num_segments,
                 enable_subtitles, bgm_filename, cover_image_size, cover_image_model,
                 cover_image_style, cover_image_count, opening_quote
             )
@@ -778,16 +810,30 @@ def run_cli_main(
 
     if run_mode == "auto":
         result = run_auto(
-            input_file, output_dir, target_length, num_segments, image_size,
-            llm_server, llm_model, image_server, image_model, tts_server, voice,
-            image_style_preset, opening_image_style, images_method,
-            enable_subtitles, bgm_filename,
-            opening_quote,
-            video_size,
-            cover_image_size,
-            cover_image_model,
-            cover_image_style,
-            cover_image_count,
+            input_file,
+            output_dir,
+            target_length,
+            num_segments,
+            image_size,
+            llm_server,
+            llm_model,
+            image_server,
+            image_model,
+            tts_server,
+            voice,
+            image_style_preset,
+            opening_image_style,
+            images_method,
+            enable_subtitles,
+            bgm_filename=bgm_filename,
+            opening_quote=opening_quote,
+            video_size=video_size,
+            cover_image_size=cover_image_size,
+            cover_image_model=cover_image_model,
+            cover_image_style=cover_image_style,
+            cover_image_count=cover_image_count,
+            speed_ratio=speed_ratio,
+            loudness_ratio=loudness_ratio,
         )
         if result.get("success"):
             print_section("步骤 5/5 完成：视频合成", "🎬", "=")
@@ -814,7 +860,7 @@ def run_cli_main(
         return _run_step_by_step_loop(
             project_output_dir, 0,  # 不执行初始步骤，直接进入交互模式
             llm_server, llm_model, image_server, image_model, image_size, video_size, image_style_preset,
-            opening_image_style, images_method, tts_server, voice, num_segments,
+            opening_image_style, images_method, tts_server, voice, speed_ratio, loudness_ratio, num_segments,
             enable_subtitles, bgm_filename, cover_image_size, cover_image_model,
             cover_image_style, cover_image_count, opening_quote
         )

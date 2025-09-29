@@ -527,7 +527,7 @@ def _synthesize_single_voice(args) -> Dict[str, Any]:
     """
     合成单个语音的辅助函数（用于多线程）
     """
-    segment_index, content, server, voice, output_dir = args
+    segment_index, content, server, voice, output_dir, speed_ratio, loudness_ratio = args
     
     print(f"正在生成第{segment_index}段语音...")
     
@@ -539,7 +539,9 @@ def _synthesize_single_voice(args) -> Dict[str, Any]:
             success = text_to_audio_bytedance(
                 text=content,
                 output_filename=audio_path,
-                voice=voice
+                voice=voice,
+                speed_ratio=speed_ratio,
+                loudness_ratio=loudness_ratio,
             )
         else:
             return {"success": False, "segment_index": segment_index, "error": f"不支持的TTS服务商: {server}"}
@@ -560,6 +562,8 @@ def synthesize_voice_for_segments(
     script_data: Dict[str, Any],
     output_dir: str,
     target_segments: Optional[Iterable[int]] = None,
+    speed_ratio: float = 1.0,
+    loudness_ratio: float = 1.0,
 ) -> List[str]:
     """
     为每个段落合成语音（支持多线程并发）
@@ -585,7 +589,7 @@ def synthesize_voice_for_segments(
                 raise ValueError("未找到需要生成语音的有效段落")
 
         audio_paths: List[str] = [""] * segment_count
-        task_args: List[Tuple[int, str, str, str, str]] = []
+        task_args: List[Tuple[int, str, str, str, str, float, float]] = []
 
         for idx, segment in enumerate(segments, 1):
             segment_index = int(segment.get("index") or idx)
@@ -607,7 +611,7 @@ def synthesize_voice_for_segments(
                     continue
 
             content = segment.get("content", "")
-            task_args.append((segment_index, content, server, voice, output_dir))
+            task_args.append((segment_index, content, server, voice, output_dir, speed_ratio, loudness_ratio))
 
         if task_args:
             max_workers = getattr(config, "MAX_CONCURRENT_VOICE_SYNTHESIS", 2)

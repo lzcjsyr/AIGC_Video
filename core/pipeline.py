@@ -81,6 +81,8 @@ def _ensure_opening_narration(
     opening_quote: bool,
     announce: bool = False,
     force_regenerate: bool = False,
+    speed_ratio: float = 1.0,
+    loudness_ratio: float = 1.0,
 ) -> Optional[str]:
     """Generate or reuse opening narration audio when required."""
     opening_golden_quote = (script_data or {}).get("golden_quote", "")
@@ -102,7 +104,14 @@ def _ensure_opening_narration(
                 print(f"✅ 开场音频已存在: {opening_path}")
             return opening_path
 
-        ok = text_to_audio_bytedance(opening_golden_quote, opening_path, voice=voice, encoding="wav")
+        ok = text_to_audio_bytedance(
+            opening_golden_quote,
+            opening_path,
+            voice=voice,
+            encoding="wav",
+            speed_ratio=speed_ratio,
+            loudness_ratio=loudness_ratio,
+        )
         if ok:
             if announce:
                 print(f"✅ 开场音频已生成: {opening_path}")
@@ -113,6 +122,46 @@ def _ensure_opening_narration(
         if announce:
             print("❌ 开场音频生成失败")
     return None
+
+
+def _invoke_opening_narration(
+    script_data: Optional[Dict[str, Any]],
+    voice_dir: str,
+    voice: str,
+    opening_quote: bool,
+    *,
+    announce: bool = False,
+    force_regenerate: bool = False,
+    speed_ratio: float = 1.0,
+    loudness_ratio: float = 1.0,
+) -> Optional[str]:
+    """Call _ensure_opening_narration with graceful fallback for legacy mocks."""
+    func = _ensure_opening_narration
+    try:
+        return func(
+            script_data,
+            voice_dir,
+            voice,
+            opening_quote,
+            announce=announce,
+            force_regenerate=force_regenerate,
+            speed_ratio=speed_ratio,
+            loudness_ratio=loudness_ratio,
+        )
+    except TypeError as exc:
+        message = str(exc)
+        if "unexpected keyword argument" in message and (
+            "speed_ratio" in message or "loudness_ratio" in message
+        ):
+            return func(
+                script_data,
+                voice_dir,
+                voice,
+                opening_quote,
+                announce=announce,
+                force_regenerate=force_regenerate,
+            )
+        raise
 
 
 def _resolve_description_source_text(
@@ -164,6 +213,7 @@ def run_auto(
     opening_image_style: str,
     images_method: str,
     enable_subtitles: bool,
+    *,
     bgm_filename: Optional[str] = None,
     opening_quote: bool = True,
     video_size: Optional[str] = None,
@@ -171,6 +221,8 @@ def run_auto(
     cover_image_model: Optional[str] = None,
     cover_image_style: Optional[str] = None,
     cover_image_count: int = 1,
+    speed_ratio: float = 1.0,
+    loudness_ratio: float = 1.0,
 ) -> Dict[str, Any]:
     start_time = datetime.datetime.now()
 
@@ -246,15 +298,27 @@ def run_auto(
         }
 
     # 8) 语音合成（含SRT导出）
-    audio_paths = synthesize_voice_for_segments(tts_server, voice, script_data, voice_dir)
+    audio_paths = synthesize_voice_for_segments(
+        tts_server,
+        voice,
+        script_data,
+        voice_dir,
+        speed_ratio=speed_ratio,
+        loudness_ratio=loudness_ratio,
+    )
 
     # 9) BGM路径解析
     bgm_audio_path = _resolve_bgm_audio_path(bgm_filename, project_root)
 
     # 10) 开场金句口播（可选）
     opening_golden_quote = (script_data or {}).get("golden_quote", "")
-    opening_narration_audio_path = _ensure_opening_narration(
-        script_data, voice_dir, voice, opening_quote
+    opening_narration_audio_path = _invoke_opening_narration(
+        script_data,
+        voice_dir,
+        voice,
+        opening_quote,
+        speed_ratio=speed_ratio,
+        loudness_ratio=loudness_ratio,
     )
 
     # 11) 视频合成
@@ -665,6 +729,8 @@ def run_step_4(
     opening_quote: bool = True,
     target_segments: Optional[List[int]] = None,
     regenerate_opening: bool = True,
+    speed_ratio: float = 1.0,
+    loudness_ratio: float = 1.0,
 ) -> Dict[str, Any]:
     # 确保必要的文件夹存在
     voice_dir = os.path.join(project_output_dir, 'voice')
@@ -703,17 +769,21 @@ def run_step_4(
         script_data,
         voice_dir,
         target_segments=generation_targets,
+        speed_ratio=speed_ratio,
+        loudness_ratio=loudness_ratio,
     )
 
     opening_audio_file = os.path.join(voice_dir, 'opening.wav')
     opening_previously_exists = os.path.exists(opening_audio_file)
-    narration_path = _ensure_opening_narration(
+    narration_path = _invoke_opening_narration(
         script_data,
         voice_dir,
         voice,
         opening_quote,
         announce=True,
         force_regenerate=regenerate_opening,
+        speed_ratio=speed_ratio,
+        loudness_ratio=loudness_ratio,
     )
 
     opening_refreshed = bool(
@@ -745,7 +815,16 @@ def run_step_4(
     }
 
 
-def run_step_5(project_output_dir: str, image_size: str, enable_subtitles: bool, bgm_filename: str, voice: str, opening_quote: bool = True) -> Dict[str, Any]:
+def run_step_5(
+    project_output_dir: str,
+    image_size: str,
+    enable_subtitles: bool,
+    bgm_filename: str,
+    voice: str,
+    opening_quote: bool = True,
+    speed_ratio: float = 1.0,
+    loudness_ratio: float = 1.0,
+) -> Dict[str, Any]:
     project_root = os.path.dirname(os.path.dirname(__file__))
     images_dir = os.path.join(project_output_dir, 'images')
     voice_dir = os.path.join(project_output_dir, 'voice')
@@ -821,8 +900,13 @@ def run_step_5(project_output_dir: str, image_size: str, enable_subtitles: bool,
     opening_image_candidate = os.path.join(images_dir, "opening.png")
     opening_image_candidate = opening_image_candidate if os.path.exists(opening_image_candidate) else None
     opening_golden_quote = (script_data or {}).get("golden_quote", "")
-    opening_narration_audio_path = _ensure_opening_narration(
-        script_data, voice_dir, voice, opening_quote
+    opening_narration_audio_path = _invoke_opening_narration(
+        script_data,
+        voice_dir,
+        voice,
+        opening_quote,
+        speed_ratio=speed_ratio,
+        loudness_ratio=loudness_ratio,
     )
 
     composer = VideoComposer()

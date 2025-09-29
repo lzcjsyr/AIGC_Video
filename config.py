@@ -29,6 +29,8 @@ DEFAULT_GENERATION_PARAMS = {
     "images_method": "description",                 # 配图生成方式: keywords / description
 
     "voice": "zh_male_yuanboxiaoshu_moon_bigtts",   # 语音音色
+    "speed_ratio": 1.2,                           # 语速调节系数 (0.8-2.0)
+    "loudness_ratio": 1.0,                       # 音量调节系数 (0.5-2.0)
     
     "video_size": "1280x720",                       # 最终视频导出尺寸（可与image_size不同）
     "enable_subtitles": True,                       # 是否启用字幕

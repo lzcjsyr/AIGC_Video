@@ -113,6 +113,8 @@ DEFAULT_GENERATION_PARAMS = {
     "llm_model": "google/gemini-2.5-pro",        # LLM 模型
     "image_model": "Qwen/Qwen-Image",            # 图像生成模型
     "voice": "zh_male_yuanboxiaoshu_moon_bigtts",# 语音音色
+    "speed_ratio": 1.0,          # 语速调节 (0.8-2.0)
+    "loudness_ratio": 1.0,       # 音量调节 (0.5-2.0)
 
     # 风格参数
     "image_style_preset": "style05",             # 图像风格预设

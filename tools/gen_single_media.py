@@ -165,7 +165,14 @@ def generate_image(prompt: str, save_dir: str, size: str = "1024x1024", model: s
     return output_path
 
 
-def generate_audio(prompt: str, save_dir: str, voice: str = "zh_male_yuanboxiaoshu_moon_bigtts", encoding: str = "wav") -> str:
+def generate_audio(
+    prompt: str,
+    save_dir: str,
+    voice: str = "zh_male_yuanboxiaoshu_moon_bigtts",
+    encoding: str = "wav",
+    speed_ratio: float = 1.0,
+    loudness_ratio: float = 1.0,
+) -> str:
     os.makedirs(save_dir, exist_ok=True)
 
     enc_norm = encoding.lower().lstrip(".")
@@ -176,7 +183,14 @@ def generate_audio(prompt: str, save_dir: str, voice: str = "zh_male_yuanboxiaos
     ext = f".{enc_norm}"
     filename = build_filename(prompt, ext)
     output_path = os.path.join(save_dir, filename)
-    ok = text_to_audio_bytedance(text=prompt, output_filename=output_path, voice=voice, encoding=enc_norm)
+    ok = text_to_audio_bytedance(
+        text=prompt,
+        output_filename=output_path,
+        voice=voice,
+        encoding=enc_norm,
+        speed_ratio=speed_ratio,
+        loudness_ratio=loudness_ratio,
+    )
     if not ok or not os.path.exists(output_path):
         raise RuntimeError("语音合成失败")
     return output_path
@@ -253,5 +267,4 @@ if __name__ == "__main__":
         tts_voice=TTS_VOICE,
         audio_encoding=AUDIO_ENCODING,
     ))
-
 

@@ -257,20 +257,57 @@ def _get_cluster(voice: str) -> str:
 
 
 @retry_on_failure(max_retries=2, delay=1.0)
-def text_to_audio_bytedance(text, output_filename, voice="zh_male_yuanboxiaoshu_moon_bigtts", encoding="wav"):
+def text_to_audio_bytedance(
+    text,
+    output_filename,
+    voice="zh_male_yuanboxiaoshu_moon_bigtts",
+    encoding="wav",
+    speed_ratio: float = 1.0,
+    loudness_ratio: float = 1.0,
+):
     if not config.BYTEDANCE_TTS_APPID or not config.BYTEDANCE_TTS_ACCESS_TOKEN:
         raise APIError("字节语音合成大模型配置不完整，请检查BYTEDANCE_TTS_APPID和BYTEDANCE_TTS_ACCESS_TOKEN")
     APPID = config.BYTEDANCE_TTS_APPID
     ACCESS_TOKEN = config.BYTEDANCE_TTS_ACCESS_TOKEN
     logger.info(f"使用字节语音合成大模型WebSocket，音色: {voice}，文本长度: {len(text)}字符")
     try:
-        return asyncio.run(_async_text_to_audio(text, output_filename, voice, encoding, APPID, ACCESS_TOKEN))
+        speed_ratio = max(0.8, min(2.0, float(speed_ratio)))
+    except Exception:
+        speed_ratio = 1.0
+    try:
+        loudness_ratio = max(0.5, min(2.0, float(loudness_ratio)))
+    except Exception:
+        loudness_ratio = 1.0
+    speed_ratio = round(speed_ratio, 1)
+    loudness_ratio = round(loudness_ratio, 1)
+    try:
+        return asyncio.run(
+            _async_text_to_audio(
+                text,
+                output_filename,
+                voice,
+                encoding,
+                APPID,
+                ACCESS_TOKEN,
+                speed_ratio,
+                loudness_ratio,
+            )
+        )
     except Exception as e:
         logger.error(f"字节语音合成失败: {str(e)}")
         raise APIError(f"字节语音合成失败: {str(e)}")
 
 
-async def _async_text_to_audio(text, output_filename, voice, encoding, appid, access_token):
+async def _async_text_to_audio(
+    text,
+    output_filename,
+    voice,
+    encoding,
+    appid,
+    access_token,
+    speed_ratio: float,
+    loudness_ratio: float,
+):
     endpoint = "wss://openspeech.bytedance.com/api/v1/tts/ws_binary"
     cluster = _get_cluster(voice)
     headers = {
@@ -288,7 +325,12 @@ async def _async_text_to_audio(text, output_filename, voice, encoding, appid, ac
         request_data = {
             "app": {"appid": appid, "token": access_token, "cluster": cluster},
             "user": {"uid": str(uuid.uuid4())},
-            "audio": {"voice_type": voice, "encoding": encoding},
+            "audio": {
+                "voice_type": voice,
+                "encoding": encoding,
+                "speed_ratio": speed_ratio,
+                "loudness_ratio": loudness_ratio,
+            },
             "request": {
                 "reqid": str(uuid.uuid4()),
                 "text": text,
