@@ -5,6 +5,10 @@
 
 import os
 import re
+import shutil
+import subprocess
+import tempfile
+from contextlib import suppress
 import numpy as np
 from typing import List, Dict, Any, Optional, Tuple
 
@@ -22,7 +26,7 @@ from moviepy import (
 )
 
 from config import config
-from core.utils import logger, FileProcessingError, VideoProcessingError, handle_video_operation
+from core.utils import logger, VideoProcessingError, handle_video_operation
 
 
 class VideoComposer:
@@ -62,6 +66,11 @@ class VideoComposer:
         Returns:
             str: 输出视频路径
         """
+        video_clips: List = []
+        audio_clips: List = []
+        temp_audio_paths: List[str] = []
+        final_video = None
+
         try:
             if len(image_paths) != len(audio_paths):
                 raise ValueError("图像文件数量与音频文件数量不匹配")
@@ -77,23 +86,38 @@ class VideoComposer:
 
             narration_speed_factor = float(getattr(config, "NARRATION_SPEED_FACTOR", 1.0) or 1.0)
             if narration_speed_factor <= 0:
-                narration_speed_factor = 1.0
+                raise ValueError("口播变速系数必须大于0")
             if abs(narration_speed_factor - 1.0) > 1e-3:
                 print(f"🎙️ 口播变速系数: {narration_speed_factor:.3f}")
+                print("🎧 使用 FFmpeg atempo 保持音高进行口播变速")
 
-            video_clips = []
-            audio_clips = []
+            processed_opening_audio_path = None
+            if opening_narration_audio_path and os.path.exists(opening_narration_audio_path):
+                processed_opening_audio_path = self._ensure_speed_adjusted_audio(
+                    opening_narration_audio_path,
+                    narration_speed_factor,
+                    temp_audio_paths
+                )
 
             # 创建开场片段
             opening_seconds = self._create_opening_segment(
-                opening_image_path, opening_golden_quote,
-                opening_narration_audio_path, video_clips, target_size, opening_quote,
-                narration_speed_factor
+                opening_image_path,
+                opening_golden_quote,
+                processed_opening_audio_path,
+                video_clips,
+                target_size,
+                opening_quote
             )
 
             # 创建主要视频片段
             self._create_main_segments(
-                image_paths, audio_paths, video_clips, audio_clips, target_size, narration_speed_factor
+                image_paths,
+                audio_paths,
+                video_clips,
+                audio_clips,
+                target_size,
+                narration_speed_factor,
+                temp_audio_paths
             )
             
             # 连接所有视频片段
@@ -116,22 +140,20 @@ class VideoComposer:
             # 输出视频
             self._export_video(final_video, output_path, target_fps)
             
-            # 释放资源
-            self._cleanup_resources(video_clips, audio_clips, final_video)
-            
             print(f"最终视频已保存: {output_path}")
             return output_path
             
         except Exception as e:
             raise ValueError(f"视频合成错误: {e}")
+        finally:
+            self._cleanup_resources(video_clips, audio_clips, final_video, temp_audio_paths)
     
     @handle_video_operation("开场片段生成", critical=False, fallback_value=0.0)
     def _create_opening_segment(self, opening_image_path: Optional[str],
                               opening_golden_quote: Optional[str],
                               opening_narration_audio_path: Optional[str],
                               video_clips: List, target_size: Tuple[int, int],
-                              opening_quote: bool = True,
-                              narration_speed_factor: float = 1.0) -> float:
+                              opening_quote: bool = True) -> float:
         """创建开场片段"""
         opening_seconds = 0.0
         opening_voice_clip = None
@@ -143,8 +165,6 @@ class VideoComposer:
         # 计算开场时长
         if opening_narration_audio_path and os.path.exists(opening_narration_audio_path):
             opening_voice_clip = AudioFileClip(opening_narration_audio_path)
-            if abs(narration_speed_factor - 1.0) > 1e-3:
-                opening_voice_clip = opening_voice_clip.with_speed_scaled(narration_speed_factor)
             hold_after = float(getattr(config, "OPENING_HOLD_AFTER_NARRATION_SECONDS", 2.0))
             opening_seconds = float(opening_voice_clip.duration) + max(0.0, hold_after)
 
@@ -168,9 +188,81 @@ class VideoComposer:
             opening_clip = self._add_opening_fade_effect(opening_clip, opening_voice_clip, opening_seconds)
             
             video_clips.append(opening_clip)
-        
+
         return opening_seconds
-    
+
+    def _ensure_speed_adjusted_audio(self, audio_path: str, speed_factor: float,
+                                     temp_audio_paths: List[str]) -> str:
+        """使用FFmpeg执行变速并保持音高，返回处理后的音频路径"""
+        if not audio_path or not os.path.exists(audio_path):
+            raise VideoProcessingError(f"口播音频不存在: {audio_path}")
+
+        if speed_factor <= 0:
+            raise VideoProcessingError("口播变速系数必须大于0")
+
+        if abs(speed_factor - 1.0) <= 1e-3:
+            return audio_path
+
+        ffmpeg_path = shutil.which("ffmpeg")
+        if not ffmpeg_path:
+            raise VideoProcessingError("未找到FFmpeg，无法执行口播变速。请将变速系数设为1.0后重试。")
+
+        filter_chain = self._build_atempo_filter_chain(speed_factor)
+        if not filter_chain:
+            return audio_path
+
+        fd, temp_output = tempfile.mkstemp(suffix=".wav", prefix="narration_speed_")
+        os.close(fd)
+
+        command = [
+            ffmpeg_path,
+            "-y",
+            "-hide_banner",
+            "-loglevel", "error",
+            "-i", audio_path,
+            "-vn",
+            "-filter:a", filter_chain,
+            temp_output,
+        ]
+
+        try:
+            subprocess.run(command, check=True)
+            temp_audio_paths.append(temp_output)
+            return temp_output
+        except subprocess.CalledProcessError as exc:
+            with suppress(Exception):
+                os.remove(temp_output)
+            raise VideoProcessingError("口播变速处理失败，请将变速系数设为1.0后重试。") from exc
+
+    def _build_atempo_filter_chain(self, speed_factor: float) -> str:
+        """根据目标变速系数生成FFmpeg atempo滤镜链"""
+        if abs(speed_factor - 1.0) <= 1e-3:
+            return ""
+
+        factors: List[float] = []
+        remaining = speed_factor
+
+        while remaining > 2.0:
+            factors.append(2.0)
+            remaining /= 2.0
+
+        while remaining < 0.5:
+            factors.append(0.5)
+            remaining /= 0.5
+
+        factors.append(remaining)
+
+        normalized = [f for f in factors if abs(f - 1.0) > 1e-6]
+        if not normalized:
+            return ""
+
+        filter_parts = []
+        for factor in normalized:
+            factor = min(max(factor, 0.5), 2.0)
+            filter_parts.append(f"atempo={factor:.6f}".rstrip('0').rstrip('.'))
+
+        return ",".join(filter_parts)
+
     def _add_opening_quote(self, opening_base, opening_golden_quote: str, opening_seconds: float):
         """添加开场金句文字叠加"""
         subtitle_config = config.SUBTITLE_CONFIG.copy()
@@ -248,14 +340,18 @@ class VideoComposer:
     
     def _create_main_segments(self, image_paths: List[str], audio_paths: List[str], 
                             video_clips: List, audio_clips: List, target_size: Tuple[int, int],
-                            narration_speed_factor: float):
+                            narration_speed_factor: float, temp_audio_paths: List[str]):
         """创建主要视频片段（支持图片和视频混合）"""
         for i, (media_path, audio_path) in enumerate(zip(image_paths, audio_paths)):
             print(f"正在处理第{i+1}段素材...")
-            
-            audio_clip = AudioFileClip(audio_path)
-            if abs(narration_speed_factor - 1.0) > 1e-3:
-                audio_clip = audio_clip.with_speed_scaled(narration_speed_factor)
+
+            processed_audio_path = self._ensure_speed_adjusted_audio(
+                audio_path,
+                narration_speed_factor,
+                temp_audio_paths
+            )
+
+            audio_clip = AudioFileClip(processed_audio_path)
             
             if self._is_video_file(media_path):
                 # 视频素材处理
@@ -568,13 +664,23 @@ class VideoComposer:
                 logger=moviepy_logger
             )
     
-    def _cleanup_resources(self, video_clips: List, audio_clips: List, final_video):
-        """释放资源"""
+    def _cleanup_resources(self, video_clips: List, audio_clips: List,
+                           final_video, temp_audio_paths: Optional[List[str]] = None):
+        """释放资源并清理由变速生成的临时文件"""
         for clip in video_clips:
-            clip.close()
+            with suppress(Exception):
+                clip.close()
         for aclip in audio_clips:
-            aclip.close()
-        final_video.close()
+            with suppress(Exception):
+                aclip.close()
+        if final_video is not None:
+            with suppress(Exception):
+                final_video.close()
+        if temp_audio_paths:
+            for temp_path in temp_audio_paths:
+                if temp_path and os.path.exists(temp_path):
+                    with suppress(Exception):
+                        os.remove(temp_path)
     
     def create_subtitle_clips(self, script_data: Dict[str, Any], 
                             subtitle_config: Dict[str, Any] = None) -> List:

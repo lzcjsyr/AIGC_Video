@@ -53,7 +53,7 @@ LLM_TEMPERATURE_SCRIPT = 0.7            # 脚本生成随机性 (0-1，越大越
 LLM_TEMPERATURE_KEYWORDS = 0.5          # 要点提取随机性 (0-1，越大越随机)
 
 # ==================== 音频控制参数 ====================
-BGM_DEFAULT_VOLUME = 0.23                # 背景音乐音量 (0=静音, 1=原音, >1放大, 推荐0.03-0.20)
+BGM_DEFAULT_VOLUME = 0.23               # 背景音乐音量 (0=静音, 1=原音, >1放大, 推荐0.03-0.20)
 NARRATION_DEFAULT_VOLUME = 2.0          # 口播音量 (0.5-3.0, 推荐0.8-1.5, >2.0有削波风险)
 AUDIO_DUCKING_ENABLED = False           # 口播时是否压低BGM
 AUDIO_DUCKING_STRENGTH = 0.3            # BGM压低强度 (0-1)
