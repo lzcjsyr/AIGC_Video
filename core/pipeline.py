@@ -441,7 +441,7 @@ def run_step_1_5(project_output_dir: str, num_segments: int, is_new_project: boo
     Returns:
         Dict[str, Any]: 处理结果，包含成功状态和相关信息
     """
-    from core.utils import load_json_file, logger, logger
+    from core.utils import load_json_file, logger
     from core.document_processor import parse_raw_from_docx, export_script_to_docx
     
     try:
@@ -549,6 +549,7 @@ def run_step_2(
     script_path: str = None,
     images_method: str = "keywords",
 ) -> Dict[str, Any]:
+    # 加载脚本数据（注意：如果频繁调用，考虑添加缓存机制）
     script_data = load_json_file(script_path) if script_path else load_json_file(
         os.path.join(project_output_dir, 'text', 'script.json')
     )

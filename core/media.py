@@ -6,6 +6,7 @@ from typing import Optional, Dict, Any, List, Tuple, Iterable, Set
 import os
 import concurrent.futures
 import base64
+import datetime
 
 from config import config
 from prompts import (
@@ -26,6 +27,10 @@ from core.services import (
 from core.validators import auto_detect_server_from_model
 
 import requests
+
+
+# 常量定义
+MAX_PROMPT_SAFETY_ATTEMPTS = 3
 
 
 def _download_to_path(url: str, output_path: str, error_msg: str = "下载失败") -> None:
@@ -191,7 +196,7 @@ def generate_cover_images(
     content_title: str,
     cover_subtitle: str,
 ) -> Dict[str, Any]:
-    """生成封面图像，保存到项目根目录，文件名 cover_XX.png。"""
+    """生成封面图像，保存到项目根目录，文件名 cover_MMSS.png。"""
     try:
         if count < 1:
             count = 1
@@ -207,20 +212,22 @@ def generate_cover_images(
 
         generated_paths: List[str] = []
         failures: List[str] = []
+        base_time = datetime.datetime.now()
 
-        for idx in range(1, count + 1):
+        for offset in range(count):
+            suffix = (base_time + datetime.timedelta(seconds=offset)).strftime("%M%S")
             result = _generate_single_cover(
                 image_server,
                 model,
                 image_size,
                 prompt,
                 project_output_dir,
-                idx,
+                suffix,
             )
             if result.get("success"):
                 generated_paths.append(result["image_path"])
             else:
-                failures.append(result.get("error", f"封面{idx}生成失败"))
+                failures.append(result.get("error", f"封面{offset+1}生成失败"))
 
         return {
             "success": len(generated_paths) > 0,
@@ -238,9 +245,9 @@ def _generate_single_cover(
     image_size: str,
     prompt: str,
     project_output_dir: str,
-    index: int,
+    filename_suffix: str,
 ) -> Dict[str, Any]:
-    filename = f"cover_{index:02d}.png"
+    filename = f"cover_{filename_suffix}.png"
     image_path = os.path.join(project_output_dir, filename)
 
     try:
@@ -767,8 +774,6 @@ def _format_srt_time(seconds: float) -> str:
     secs = int(seconds % 60)
     millisecs = int((seconds % 1) * 1000)
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millisecs:03d}"
-
-MAX_PROMPT_SAFETY_ATTEMPTS = 3
 
 
 __all__ = [

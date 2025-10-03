@@ -113,12 +113,14 @@ def intelligent_summarize(server: str, model: str, content: str, target_length: 
 3. 总字数控制在{target_length}字左右
 """
 
+        # 使用4096 tokens以确保完整输出，足够容纳3000字中文内容和JSON结构
+        max_tokens = 4096
         output = text_to_text(
             server=server,
             model=model,
             prompt=user_message,
             system_message=summarize_system_prompt,
-            max_tokens=4096,
+            max_tokens=max_tokens,
             temperature=config.LLM_TEMPERATURE_SCRIPT,
         )
 
@@ -483,12 +485,12 @@ def _split_text_into_segments(full_text: str, num_segments: int, mode: str = "au
     if mode == "manual":
         return _split_text_by_newlines(full_text)
 
-    # 原有自动切分逻辑
+    # 自动切分逻辑
     text = (full_text or "").strip()
     if num_segments <= 1 or len(text) == 0:
         return [text] if text else [""]
 
-    # 1) 句子级切分：将标点（包括换行符）附着到前句
+    # 1) 句子级切分：将标点附着到前句
     raw_parts = re.split(r'([。！？；.!?\n])', text)
     sentences: List[str] = []
     i = 0
@@ -512,61 +514,65 @@ def _split_text_into_segments(full_text: str, num_segments: int, mode: str = "au
     total_len = sum(len(s) for s in sentences)
     if len(sentences) >= num_segments:
         ideal = total_len / float(num_segments)
-        cum = 0
-        boundaries: List[int] = []  # 选取 num_segments-1 个边界（句索引之后）
+        segments: List[str] = []
+        current: List[str] = []
+        current_len = 0
+
         for idx, s in enumerate(sentences):
-            prev = cum
-            cum += len(s)
-            target_k = len(boundaries) + 1
-            threshold = ideal * target_k
-            if prev < threshold <= cum or (abs(cum - threshold) <= len(s) // 2):
-                if len(boundaries) < num_segments - 1:
-                    boundaries.append(idx)
-            if len(boundaries) >= num_segments - 1:
+            current.append(s)
+            current_len += len(s)
+            
+            # 决策：是否应该断句
+            remaining = len(sentences) - idx - 1
+            needed = num_segments - len(segments) - 1
+            
+            # 如果当前段接近理想长度，且后续还有足够句子分配
+            if current_len >= ideal * 0.7 and remaining >= needed and needed > 0:
+                segments.append(''.join(current))
+                current = []
+                current_len = 0
+        
+        # 添加最后一段
+        if current:
+            segments.append(''.join(current))
+
+        # 3) 修正段数：拆分最长或合并最短
+        while len(segments) < num_segments and segments:
+            # 找最长段落，在标点处拆分
+            longest_idx = max(range(len(segments)), key=lambda i: len(segments[i]))
+            seg = segments[longest_idx]
+            if len(seg) < 2:
+                break
+            mid = len(seg) // 2
+            # 寻找附近的标点位置
+            for p in ['。', '！', '？', '\n']:
+                pos = seg.rfind(p, max(0, mid - 30), mid + 30)
+                if pos > 0:
+                    mid = pos + 1
+                    break
+            part1, part2 = seg[:mid].strip(), seg[mid:].strip()
+            if part1 and part2:  # 只有两部分都非空才拆分
+                segments[longest_idx:longest_idx+1] = [part1, part2]
+            else:
                 break
 
-        # 根据边界组装段落
-        segments: List[str] = []
-        start = 0
-        for b in boundaries:
-            segment_text = ''.join(sentences[start:b+1]).strip()
-            segments.append(segment_text if segment_text else '')
-            start = b + 1
-        last_text = ''.join(sentences[start:]).strip()
-        segments.append(last_text)
+        while len(segments) > num_segments:
+            # 合并相邻最短的两段
+            min_idx = min(range(len(segments) - 1), 
+                         key=lambda i: len(segments[i]) + len(segments[i+1]))
+            segments[min_idx:min_idx+2] = [segments[min_idx] + segments[min_idx+1]]
 
-        # 如因边界选择不充分导致段数不足或过多，做轻微修正
-        if len(segments) < num_segments:
-            while len(segments) < num_segments:
-                last = segments.pop() if segments else ''
-                if len(last) <= 1:
-                    segments.extend([last, ''])
-                else:
-                    mid = len(last) // 2
-                    segments.extend([last[:mid], last[mid:]])
-        elif len(segments) > num_segments:
-            while len(segments) > num_segments and len(segments) >= 2:
-                min_i = 0
-                min_sum = float('inf')
-                for i2 in range(len(segments) - 1):
-                    ssum = len(segments[i2]) + len(segments[i2+1])
-                    if ssum < min_sum:
-                        min_sum = ssum
-                        min_i = i2
-                merged = segments[min_i] + segments[min_i+1]
-                segments = segments[:min_i] + [merged] + segments[min_i+2:]
         return segments[:num_segments]
 
-    # 3) 若句子数量 < 段数：字符级等分，尽量均衡
+    # 3) 若句子数量 < 段数：字符级均分
     base = total_len // num_segments
     rem = total_len % num_segments
     result: List[str] = []
-    start_idx = 0
+    pos = 0
     for i in range(num_segments):
         length = base + (1 if i < rem else 0)
-        end_idx = start_idx + length
-        result.append(text[start_idx:end_idx])
-        start_idx = end_idx
+        result.append(text[pos:pos+length])
+        pos += length
     return result
 
 

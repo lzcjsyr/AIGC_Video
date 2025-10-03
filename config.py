@@ -20,17 +20,17 @@ load_dotenv()
 DEFAULT_GENERATION_PARAMS = {
     "target_length": 2000,                          # 目标字数
     "num_segments": 25,                             # 视频分段数量
-    "llm_model": "google/gemini-2.5-pro",           # 文本生成模型
+    "llm_model": "moonshotai/Kimi-K2-Instruct-0905",           # 文本生成模型
 
     "image_size": "2560x1440",                      # 图像尺寸 (常用 16:9 横屏，Qwen-Image固定支持)
     "image_model": "doubao-seedream-4-0-250828",    # 图像生成模型
-    "image_style_preset": "style09",                # 图像风格预设 (详见 prompts.py)
+    "image_style_preset": "style02",                # 图像风格预设 (详见 prompts.py)
     "opening_image_style": "des01",                 # 开场图像风格 (详见 prompts.py)
     "images_method": "description",                 # 配图生成方式: keywords / description
 
     "voice": "zh_male_yuanboxiaoshu_moon_bigtts",   # 语音音色
-    "speed_ratio": 1.2,                           # 语速调节系数 (0.8-2.0)
-    "loudness_ratio": 1.0,                       # 音量调节系数 (0.5-2.0)
+    "speed_ratio": 1.2,                             # 语速调节系数 (0.8-2.0)
+    "loudness_ratio": 1.0,                          # 音量调节系数 (0.5-2.0)
     
     "video_size": "1280x720",                       # 最终视频导出尺寸（可与image_size不同）
     "enable_subtitles": True,                       # 是否启用字幕
@@ -39,11 +39,11 @@ DEFAULT_GENERATION_PARAMS = {
     
     "cover_image_size": "2250x3000",                # 封面图像尺寸
     "cover_image_model": "doubao-seedream-4-0-250828",  # 封面图像生成模型
-    "cover_image_style": "cover03",                 # 封面图像风格预设 (详见 prompts.py)
-    "cover_image_count": 3,                         # 封面图像生成数量
+    "cover_image_style": "cover09",                 # 封面图像风格预设 (详见 prompts.py)
+    "cover_image_count": 1,                         # 封面图像生成数量
 }
 
-# 常用 LLM 模型: google/gemini-2.5-pro, anthropic/claude-sonnet-4, openai/gpt-5, 
+# 常用 LLM 模型: google/gemini-2.5-pro, anthropic/claude-sonnet-4, anthropic/claude-sonnet-4.5, openai/gpt-5, moonshotai/Kimi-K2-Instruct-0905
 # 常用图像模型尺寸规则说明：
 # - doubao-seedream-4-0-250828：支持任意 WxH，范围 [1280x720, 4096x4096]，包含端点
 # - doubao-seedream-3-0-t2i-250415：支持任意 WxH，范围 [512x512, 2048x2048]，包含端点
@@ -55,17 +55,17 @@ LLM_TEMPERATURE_SCRIPT = 0.7            # 脚本生成随机性 (0-1，越大越
 LLM_TEMPERATURE_KEYWORDS = 0.5          # 要点提取随机性 (0-1，越大越随机)
 
 # ==================== 音频控制参数 ====================
-BGM_DEFAULT_VOLUME = 0.23               # 背景音乐音量 (0=静音, 1=原音, >1放大, 推荐0.03-0.20)
+BGM_DEFAULT_VOLUME = 0.22               # 背景音乐音量 (0=静音, 1=原音, >1放大, 推荐0.03-0.20)
 NARRATION_DEFAULT_VOLUME = 2.0          # 口播音量 (0.5-3.0, 推荐0.8-1.5, >2.0有削波风险)
 AUDIO_DUCKING_ENABLED = False           # 口播时是否压低BGM
 AUDIO_DUCKING_STRENGTH = 0.3            # BGM压低强度 (0-1)
 AUDIO_DUCKING_SMOOTH_SECONDS = 0.12     # 音量过渡平滑时间 (秒)
-NARRATION_SPEED_FACTOR = 1.2            # 口播变速系数 (1.0=原速)
+NARRATION_SPEED_FACTOR = 1.0            # 口播变速系数 (1.0=原速)
 
 # ==================== 视觉效果时间参数 ====================
 OPENING_FADEIN_SECONDS = 2.0                    # 开场渐显时长 (秒)
-OPENING_HOLD_AFTER_NARRATION_SECONDS = 2.0      # 开场口播后停留时长 (秒)
-ENDING_FADE_SECONDS = 2.5                       # 片尾淡出时长 (秒)
+OPENING_HOLD_AFTER_NARRATION_SECONDS = 0.3      # 开场口播后停留时长 (秒)
+ENDING_FADE_SECONDS = 2.0                       # 片尾淡出时长 (秒)
 
 # ==================== 字幕样式配置 ====================
 SUBTITLE_CONFIG = {
@@ -191,11 +191,12 @@ class Config:
             "openrouter": [
                 "google/gemini-2.5-pro",
                 "anthropic/claude-sonnet-4",
+                "anthropic/claude-sonnet-4.5",
                 "anthropic/claude-3.7-sonnet:thinking"
             ],
             "siliconflow": [
                 "zai-org/GLM-4.5",
-                "moonshotai/Kimi-K2-Instruct",
+                "moonshotai/Kimi-K2-Instruct-0905",
                 "Qwen/Qwen3-235B-A22B-Thinking-2507"
             ]
         },
