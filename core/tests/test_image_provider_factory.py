@@ -26,14 +26,14 @@ def test_request_image_result_uses_registered_provider(monkeypatch):
         "google",
         "prompt",
         "1024x1024",
-        "gemini-3.1-flash-image-preview",
+        "gemini-3.1-flash-image",
     )
 
     assert result == {"type": "bytes", "data": b"png"}
     assert captured == {
         "prompt": "prompt",
         "size": "1024x1024",
-        "model": "gemini-3.1-flash-image-preview",
+        "model": "gemini-3.1-flash-image",
     }
 
 

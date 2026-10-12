@@ -1,13 +1,15 @@
 import json
 import os
+import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from core.config import config
 from core.domain.composer import VideoComposer
 from core.domain.metadata import get_primary_golden_quote, parse_marked_focus_text
-from core.infra.hyperframes.runtime import parse_size, subprocess_env
+from core.infra.hyperframes.runtime import hyperframes_command, parse_size, subprocess_env
 from core.shared import logger
 
 
@@ -142,7 +144,7 @@ def render_opening_video(
         "bookTitle": book_title,
         "quoteLines": quote_lines,
         "focusWords": marked_focus_words or _pick_focus_words(quote_lines),
-        "ipName": str(getattr(config, "OPENING_HYPERFRAMES_IP_NAME", "Cody叩底")).strip() or "Cody叩底",
+        "ipName": str(getattr(config, "OPENING_HYPERFRAMES_IP_NAME", "") or "").strip(),
         "lineAppearTimes": _build_line_appear_times(
             len(quote_lines),
             first_line_seconds=first_line_seconds,
@@ -152,54 +154,44 @@ def render_opening_video(
         "height": height,
         "durationSeconds": duration_seconds,
     }
-    temp_bg_file = None
-    if opening_bg_path and os.path.exists(opening_bg_path):
-        import shutil
-        temp_bg_file = app_dir / "opening_bg.png"
-        try:
-            shutil.copy2(opening_bg_path, temp_bg_file)
-            props["backgroundImage"] = "opening_bg.png"
-            logger.info("Copied opening background image to template app dir: %s", temp_bg_file)
-        except Exception as e:
-            logger.warning(f"Failed to copy opening background to app dir: {e}")
-
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # 运行 hyperframes 渲染命令
-    command = [
-        "npx",
-        "--yes",
-        "hyperframes@0.7.10",
-        "render",
-        "--output",
-        str(output_path),
-        "--variables",
-        json.dumps(props, ensure_ascii=False),
-    ]
-
-    try:
-        print("🎬 正在生成 HyperFrames 开场视频，这通常需要 10-15 秒左右...")
-        subprocess.run(
-            command,
-            cwd=app_dir,
-            check=True,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            env=subprocess_env(),
-        )
-        logger.info("Opening HyperFrames video rendered: %s", output_path)
-        return str(output_path)
-    except subprocess.CalledProcessError as exc:
-        logger.warning("Opening HyperFrames render failed: %s", exc)
-        if exc.output:
-            print(f"❌ 渲染日志:\n{exc.output}")
-        return None
-    finally:
-        if temp_bg_file and temp_bg_file.exists():
+    with tempfile.TemporaryDirectory(prefix="aigc-opening-") as temporary:
+        work_dir = Path(temporary) / "app"
+        shutil.copytree(app_dir, work_dir)
+        if opening_bg_path and os.path.exists(opening_bg_path):
             try:
-                temp_bg_file.unlink()
-                logger.info("Cleaned up temp opening background image: %s", temp_bg_file)
-            except Exception as e:
-                logger.warning(f"Failed to delete temp opening background: {e}")
+                shutil.copy2(opening_bg_path, work_dir / "opening_bg.png")
+                props["backgroundImage"] = "opening_bg.png"
+            except OSError as e:
+                logger.warning(f"Failed to copy opening background: {e}")
+
+        # 运行 hyperframes 渲染命令
+        command = [
+            *hyperframes_command(),
+            "render",
+            "--output",
+            str(output_path),
+            "--variables",
+            json.dumps(props, ensure_ascii=False),
+        ]
+
+        try:
+            print("🎬 正在生成 HyperFrames 开场视频，这通常需要 10-15 秒左右...")
+            subprocess.run(
+                command,
+                cwd=work_dir,
+                check=True,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                env=subprocess_env(),
+            )
+            logger.info("Opening HyperFrames video rendered: %s", output_path)
+            return str(output_path)
+        except subprocess.CalledProcessError as exc:
+            logger.warning("Opening HyperFrames render failed: %s", exc)
+            if exc.output:
+                print(f"❌ 渲染日志:\n{exc.output}")
+            return None

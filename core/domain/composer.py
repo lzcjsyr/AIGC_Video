@@ -35,12 +35,26 @@ from core.media_gateway import (
     export_video,
     normalize_bgm_loudness,
 )
-from core.infra.media.three_by_four import derive_output_path, export_three_by_four_video
+from core.infra.media.three_by_four import PanelOptions, derive_output_path, export_three_by_four_video
 from core.shared import logger, handle_video_operation
 
 # ==================== 系统常量 ====================
 # 支持的视频格式（系统技术限制，非用户配置项）
 SUPPORTED_VIDEO_FORMATS = [".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv", ".m4v"]
+
+
+def three_by_four_panel_options() -> PanelOptions:
+    """当前配置中的3:4贴片样式。"""
+    return PanelOptions.from_mapping({
+        "theme": getattr(config, "THREE_BY_FOUR_THEME", "ink"),
+        "top_share": getattr(config, "THREE_BY_FOUR_TOP_SHARE", 0.5),
+        "top_content": getattr(config, "THREE_BY_FOUR_TOP_CONTENT", "title_subtitle"),
+        "title_text": getattr(config, "THREE_BY_FOUR_TITLE_TEXT", ""),
+        "subtitle_text": getattr(config, "THREE_BY_FOUR_SUBTITLE_TEXT", ""),
+        "bottom_content": getattr(config, "THREE_BY_FOUR_BOTTOM_CONTENT", "quote"),
+        "bottom_text": getattr(config, "THREE_BY_FOUR_BOTTOM_TEXT", ""),
+        "accent_color": getattr(config, "THREE_BY_FOUR_ACCENT_COLOR", "#C45A47"),
+    })
 
 
 class VideoComposer:
@@ -168,21 +182,10 @@ class VideoComposer:
             self._export_video(final_video, output_path, target_fps)
 
             # 基于已完成的横屏母版向外扩展画布；不重复合成动态画面和字幕。
-            panel_font, panel_ttc_index = self.resolve_subtitle_font(
-                getattr(config, "SUBTITLE_FONT_FAMILY", "auto"),
-                int(getattr(config, "SUBTITLE_FONT_TTC_INDEX", 0) or 0),
-            )
-            three_by_four_path = derive_output_path(output_path)
-            export_three_by_four_video(
-                output_path,
-                three_by_four_path,
-                script_data,
-                font_path=panel_font,
-                font_ttc_index=panel_ttc_index,
-                video_codec=getattr(config, "VIDEO_CODEC", "h264"),
-                quality_level=int(getattr(config, "THREE_BY_FOUR_QUALITY_LEVEL", 86) or 86),
-            )
-            print(f"3:4贴片版已保存: {three_by_four_path}")
+            if getattr(config, "THREE_BY_FOUR_ENABLED", True):
+                self.export_three_by_four(output_path, script_data)
+            else:
+                print("已关闭3:4贴片版，仅导出横屏母版")
             
             print(f"最终视频已保存: {output_path}")
             return output_path
@@ -192,6 +195,26 @@ class VideoComposer:
         finally:
             self._cleanup_resources(video_clips, audio_clips, final_video, temp_audio_paths)
     
+    def export_three_by_four(self, master_path: str, script_data: Optional[Dict[str, Any]]) -> str:
+        """从横屏母版生成3:4贴片版；贴片样式读取 three_by_four 配置。"""
+        panel_font, panel_ttc_index = self.resolve_subtitle_font(
+            getattr(config, "SUBTITLE_FONT_FAMILY", "auto"),
+            int(getattr(config, "SUBTITLE_FONT_TTC_INDEX", 0) or 0),
+        )
+        three_by_four_path = derive_output_path(master_path)
+        export_three_by_four_video(
+            master_path,
+            three_by_four_path,
+            script_data,
+            font_path=panel_font,
+            font_ttc_index=panel_ttc_index,
+            video_codec=getattr(config, "VIDEO_CODEC", "h264"),
+            quality_level=int(getattr(config, "THREE_BY_FOUR_QUALITY_LEVEL", 86) or 86),
+            panel=three_by_four_panel_options(),
+        )
+        print(f"3:4贴片版已保存: {three_by_four_path}")
+        return str(three_by_four_path)
+
     @handle_video_operation("开场片段生成", critical=False, fallback_value=0.0)
     def _create_opening_segment(self, opening_image_path: Optional[str],
                               opening_narration_audio_path: Optional[str],

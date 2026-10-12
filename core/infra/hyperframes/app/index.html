@@ -6,7 +6,7 @@
     {"id":"bookTitle","type":"string","label":"Book Title","default":"——超个体时代——"},
     {"id":"quoteLines","type":"string","label":"Quote Lines","default":"[]"},
     {"id":"focusWords","type":"string","label":"Focus Words","default":"[]"},
-    {"id":"ipName","type":"string","label":"IP Name","default":"Cody叩底"},
+    {"id":"ipName","type":"string","label":"IP Name","default":""},
     {"id":"lineAppearTimes","type":"string","label":"Line Appear Times","default":"[]"},
     {"id":"backgroundImage","type":"string","label":"Background Image","default":""}
   ]'>
@@ -341,7 +341,7 @@
     <div id="masthead" class="masthead">
       <div class="ip-badge">
         <div class="glow-dot-line"></div>
-        <div class="ip-name">Cody叩底</div>
+        <div class="ip-name"></div>
       </div>
       <div id="divider-line" class="divider-line"></div>
     </div>
@@ -381,7 +381,7 @@
     }
 
     const bookTitle = vars.bookTitle || "—— 超级个体时代 ——";
-    const ipName = vars.ipName || "Cody叩底";
+    const ipName = String(vars.ipName || "").trim();
     const quoteLines = parseArrayVariable(vars.quoteLines, [
       "这个世界根本没有什么系统",
       "只有人与人之间的交易和强者定下的规则"
@@ -430,6 +430,8 @@
     document.body.style.height = height + "px";
 
     document.querySelector(".ip-name").textContent = ipName;
+    // Without a channel name the badge stays out of the frame; the layout does not move.
+    if (!ipName) document.querySelector(".ip-badge").style.visibility = "hidden";
     document.querySelector(".ip-name").style.fontSize = ipFontSize + "px";
 
     const bookTitleEl = document.querySelector(".book-title");

@@ -21,6 +21,7 @@ from claude_agent_sdk import (
 )
 
 from core.config import config
+from core.resources import library_root
 from core.infra.hyperframes.skill_loader import (
     build_step4_hyperframes_skill_path_context,
     default_step4_hyperframes_skill_dir,
@@ -69,7 +70,7 @@ def _load_step1_subagent_prompt(agent_config: dict[str, Any], name: str) -> str:
     if prompt_file:
         path = Path(prompt_file)
         if not path.is_absolute():
-            path = Path(__file__).resolve().parents[3] / path
+            path = library_root() / path
         return path.read_text(encoding="utf-8").strip()
     return _STEP1_SUBAGENT_PROMPTS.get(name, _STEP1_SUBAGENT_PROMPTS["fact-style-reviewer"])
 

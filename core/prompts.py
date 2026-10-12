@@ -8,21 +8,17 @@ import re
 import string
 import yaml
 
-def _get_project_root() -> str:
-    """获取项目根目录路径，不依赖 package 嵌套深度。"""
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+from core.resources import prompts_dir
 
 def _load_prompt_file(filename: str) -> str:
-    root = _get_project_root()
-    path = os.path.join(root, "prompts", filename)
+    path = os.path.join(prompts_dir(), filename)
     if not os.path.exists(path):
         raise FileNotFoundError(f"提示词模板文件未找到: {path}")
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
 
 def _load_yaml_file(filename: str) -> dict:
-    root = _get_project_root()
-    path = os.path.join(root, "prompts", filename)
+    path = os.path.join(prompts_dir(), filename)
     if not os.path.exists(path):
         raise FileNotFoundError(f"YAML配置文件未找到: {path}")
     with open(path, "r", encoding="utf-8") as f:
@@ -79,7 +75,10 @@ STEP4_IMAGE_DESCRIPTION_PROMPT_TEMPLATES = {
     name: definition["template"]
     for name, definition in STEP4_IMAGE_PROMPT_TEMPLATE_DEFINITIONS.items()
 }
-DEFAULT_STEP4_IMAGE_PROMPT_TEMPLATE = "keywords"
+DEFAULT_STEP4_IMAGE_PROMPT_TEMPLATE = (
+    "keywords" if "keywords" in STEP4_IMAGE_PROMPT_TEMPLATE_DEFINITIONS
+    else next(iter(STEP4_IMAGE_PROMPT_TEMPLATE_DEFINITIONS))
+)
 STEP4_IMAGE_DESCRIPTION_PROMPT_TEMPLATE = STEP4_IMAGE_DESCRIPTION_PROMPT_TEMPLATES[
     DEFAULT_STEP4_IMAGE_PROMPT_TEMPLATE
 ]

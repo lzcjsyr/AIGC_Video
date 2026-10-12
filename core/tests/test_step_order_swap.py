@@ -193,10 +193,10 @@ def test_auto_mode_runs_voice_before_visual_after_swap(monkeypatch, tmp_path: Pa
             llm_server_step2="siliconflow",
             llm_base_url_step2="https://example.test/v1",
             image_server="google",
-            image_model="gemini-3.1-flash-image-preview",
+            image_model="gemini-3.1-flash-image",
             image_size="1280x720",
             cover_image_server="google",
-            cover_image_model="gemini-3.1-flash-image-preview",
+            cover_image_model="gemini-3.1-flash-image",
         )
     )
 

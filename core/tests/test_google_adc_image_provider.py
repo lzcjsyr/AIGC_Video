@@ -11,7 +11,7 @@ def test_config_accepts_google_adc_without_google_api_key(monkeypatch):
     Config.validate_model_provider_pair(
         "image",
         "google_adc",
-        "gemini-3.1-flash-image-preview",
+        "gemini-3.1-flash-image",
     )
     assert "GOOGLE_CLOUD_API_KEY" not in Config.get_required_keys_for_config(
         "google_adc",
@@ -33,14 +33,14 @@ def test_google_adc_provider_uses_google_generator_with_adc(monkeypatch):
     result = image_providers.GoogleImageProvider(use_adc=True).generate(
         prompt="prompt",
         size="1024x1024",
-        model="gemini-3.1-flash-image-preview",
+        model="gemini-3.1-flash-image",
     )
 
     assert result == {"type": "bytes", "data": b"png"}
     assert captured == {
         "prompt": "prompt",
         "size": "1024x1024",
-        "model": "gemini-3.1-flash-image-preview",
+        "model": "gemini-3.1-flash-image",
         "use_adc": True,
     }
 
@@ -110,7 +110,7 @@ def test_text_to_image_google_adc_uses_project_and_location(monkeypatch):
     result = llm_client.text_to_image_google(
         "prompt",
         size="1024x1024",
-        model="gemini-3.1-flash-image-preview",
+        model="gemini-3.1-flash-image",
         use_adc=True,
     )
 

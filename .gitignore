@@ -53,6 +53,7 @@ input/*
 temp/*
 !temp/.gitkeep
 .recovery_backups/
+.studio-library/
 
 
 # tools临时目录（保留文件夹但忽略内容）

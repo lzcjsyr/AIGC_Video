@@ -48,6 +48,7 @@ from core.domain.summarizer import (
 )
 from core.infra.ai import text_to_audio_bytedance
 from core.infra.project_paths import ProjectPaths
+from core.resources import skills_dir
 from core.prompts import OPENING_BG_PROMPT_TEMPLATE
 from core.infra.hyperframes import render_opening_video
 from core.infra.hyperframes.segment_renderer import render_hyperframes_segments_with_agent
@@ -411,11 +412,11 @@ def run_step_1(
     else:
         project_output_dir, paths = _create_step1_project(input_file, output_dir)
     skill_name = getattr(config, "STEP1_AGENT_SKILL", "book-video-script")
-    skill_path = os.path.join(_get_project_root(), "skills", "step1", skill_name)
+    skill_path = os.path.join(skills_dir(), "step1", skill_name)
     if not os.path.isdir(skill_path):
         logger.warning(f"技能路径不存在: {skill_path}，切换到默认的 sample_writer 作为兜底。")
         skill_name = "sample_writer"
-        skill_path = os.path.join(_get_project_root(), "skills", "step1", skill_name)
+        skill_path = os.path.join(skills_dir(), "step1", skill_name)
     extract_path = os.path.join(paths.text, STEP1_EXTRACT_NAME)
     coverage_ledger_path = os.path.join(paths.text, STEP1_COVERAGE_LEDGER_NAME)
     session_log_path = os.path.join(paths.text, STEP1_SESSION_LOG_NAME)

@@ -20,8 +20,9 @@ global:
 step1:
   # 可选：mimo / kimi / volcengine / deepseek / siliconflow / openrouter
   llm_server: volcengine
-  # 按供应商要求填写完整模型名。火山第一步推荐：doubao-seed-2.0-code / doubao-seed-2.0-pro
-  llm_model: doubao-seed-2.0-pro
+  # 按供应商要求填写完整模型名。火山方舟按量付费接口需带日期的模型 ID，例如 doubao-seed-2-0-pro-260215；
+  # doubao-seed-2.0-pro 这类名称只适用于 Coding Plan 订阅接口，这里不可用。
+  llm_model: doubao-seed-2-0-pro-260215
   # 使用根目录 skills/step1/ 下的写作 skill；一般不需要改。
   agent_skill: book-commerce-video-script
   # 可选 subagent。当前读书带货 skill 固定采用一次性流程，不调用 subagent。
@@ -52,7 +53,7 @@ step1_5:
   # 可选：mimo / kimi / volcengine / deepseek / siliconflow / openrouter
   llm_server: volcengine
   # 仅 split_mode=agent 时使用；默认与步骤1保持一致即可。
-  llm_model: doubao-seed-2.0-pro
+  llm_model: doubao-seed-2-0-pro-260215
   # 视频分段数量。建议 5-100，越多视频节奏越碎、生成成本越高。
   num_segments: 50
   # 分段方式：
@@ -75,8 +76,9 @@ step2:
 # 步骤3：语音合成
 # =============================================================================
 step3:
-  # 音色 ID。留空时优先读取 .env 的 BYTEDANCE_TTS_VOICE_ID。
-  voice: ""
+  # 音色 ID。.env 的 BYTEDANCE_TTS_VOICE_ID 优先。声音复刻音色（S_ 开头）使用 seed-icl-2.0，
+  # 2.0 音色（*_uranus_bigtts）使用 seed-tts-2.0，1.0 音色（*_moon_bigtts）使用 seed-tts-1.0；资源会按音色自动匹配。
+  voice: zh_female_vv_uranus_bigtts
   # 资源 ID：seed-tts-2.0 (语音合成2.0) / seed-icl-2.0 (声音复刻2.0，默认)
   resource_id: seed-tts-2.0
   # TTS 模型示例：seed-tts-2.0-standard / seed-tts-2.0-expressive
@@ -118,7 +120,7 @@ step4:
   # - hyperframes_agent：用于驱动 Claude Agent 生成 HyperFrames HTML
   # - mixed：同时用于上述两类任务
   llm_server: volcengine
-  llm_model: doubao-seed-2.0-pro
+  llm_model: doubao-seed-2-0-pro-260215
 
   # 图像供应商（visual_mode=static_image，或 mixed 且段落 visualizer=image 时生效）：
   # - google：使用 GOOGLE_CLOUD_API_KEY
@@ -126,7 +128,7 @@ step4:
   # - doubao：火山引擎 Seedream
   image_server: doubao
   # 常用模型示例：
-  # - gemini-3.1-flash-image-preview
+  # - gemini-3.1-flash-image
   # - doubao-seedream-5-0-260128
   # - doubao-seedream-4-0-250828
   image_model: doubao-seedream-4-0-250828
@@ -145,8 +147,8 @@ step4:
 # HyperFrames 开场视频
 # =============================================================================
 hyperframes_opening:
-  # 开场左上角刊头。
-  ip_name: 你是个牛逼
+  # 开场左上角刊头（频道或作者名）。留空则不显示。
+  ip_name: ""
   duration_seconds: 5.0
   fps: 30
   # 金句逐行出现的时间范围。
@@ -214,6 +216,28 @@ step5:
   video_material_resize_method: crop
 
 # =============================================================================
+# 3:4 贴片版（在横屏母版上下加贴片，横屏母版始终导出）
+# =============================================================================
+three_by_four:
+  # 是否同时导出 3:4 贴片版。
+  enabled: true
+  # 贴片风格：ink（深色）/ paper（浅色纸张）/ blur（以模糊的主画面作背景）
+  theme: ink
+  # 主画面上方留白占全部留白的比例。0.5 居中；越小主画面越靠上。范围 0.15-0.85。
+  top_share: 0.5
+  # 上贴片内容：title_subtitle（标题+副标题）/ title（仅标题）/ none（留空）
+  top_content: title_subtitle
+  # 留空时使用选中的封面标题与封面副标题。
+  title_text: ""
+  subtitle_text: ""
+  # 下贴片内容：quote（开场金句，无金句时显示装饰）/ ornament（装饰）/ text（自定义文字）/ none（留空）
+  bottom_content: quote
+  # bottom_content=text 时显示的文字，可换行，最多三行。
+  bottom_text: ""
+  # 装饰线与菱形的强调色。
+  accent_color: "#C45A47"
+
+# =============================================================================
 # 字幕样式
 # =============================================================================
 subtitles:
@@ -258,7 +282,7 @@ step6:
     "1:1": 2500x2500
   # 封面尺寸预设 key。可选：16:9 / 9:16 / 4:3 / 3:4 / 1:1
   default_cover_image_size_key: "1:1"
-  cover_image_model: gemini-3.1-flash-image-preview
+  cover_image_model: gemini-3.1-flash-image
   # 可选：google / google_adc / doubao
   cover_image_server: google_adc
   # 封面风格预设，见 core/prompts.py 的 COVER_IMAGE_STYLE_PRESETS。

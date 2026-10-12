@@ -6,6 +6,8 @@ from pathlib import Path
 
 import yaml
 
+from core.resources import skills_dir
+
 
 STEP4_HYPERFRAMES_SKILL_DIR_NAMES = (
     "hyperframes",
@@ -22,11 +24,11 @@ FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*(?:\n|\Z)", re.DOTALL)
 
 
 def default_step4_hyperframes_skill_dir() -> Path:
-    return Path(__file__).resolve().parents[3] / "skills" / "step4" / "hyperframes"
+    return skills_dir() / "step4" / "hyperframes"
 
 
 def step4_hyperframes_skills_root() -> Path:
-    return Path(__file__).resolve().parents[3] / "skills" / "step4"
+    return skills_dir() / "step4"
 
 
 def step4_hyperframes_skill_dirs(skills_root: str | Path | None = None) -> list[Path]:

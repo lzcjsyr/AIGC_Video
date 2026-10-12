@@ -141,56 +141,62 @@ def test_cli_progress_bar_is_visible_and_finishes_at_100_percent():
     assert output.endswith("\n")
 
 
-def test_editorial_palette_uses_neutral_ink_and_restrained_vermilion():
-    assert three_by_four._PANEL_COLOR == (16, 19, 24)
-    assert three_by_four._TITLE_COLOR == (241, 238, 231)
-    assert three_by_four._SUBTITLE_COLOR == (201, 195, 184)
-    assert three_by_four._ACCENT_COLOR == (196, 90, 71)
+def test_default_style_is_ink_with_a_restrained_vermilion_accent():
+    options = three_by_four.PanelOptions()
+    assert options.theme == "ink"
+    assert options.accent == (196, 90, 71)
+    assert options.bottom_content == "quote"
+    # Ink panels are near-black and get lighter towards the video.
+    assert max(options.palette.outer[:3]) < 20
+    assert sum(options.palette.inner[:3]) > sum(options.palette.outer[:3])
 
 
-def test_both_copy_lines_are_drawn_in_top_panel_and_bottom_has_no_text(monkeypatch, tmp_path):
+def test_title_and_subtitle_are_drawn_in_the_top_panel_only(monkeypatch, tmp_path):
     layout = calculate_layout(1280, 720)
     calls = []
+    original = three_by_four._draw_tracked_line
 
-    def capture_text(_draw, text, **kwargs):
-        calls.append((text, kwargs["centre"]))
+    def capture(draw, text, x, y, *args):
+        calls.append((text, y))
+        original(draw, text, x, y, *args)
 
-    monkeypatch.setattr(three_by_four, "_draw_fitted_tracking_text", capture_text)
-    output = tmp_path / "panels.png"
+    monkeypatch.setattr(three_by_four, "_draw_tracked_line", capture)
     three_by_four._render_static_background(
-        output,
-        layout,
-        "主标题",
-        "原本位于下贴片的副标题",
-        font_path=None,
-        font_ttc_index=0,
+        tmp_path / "panels.png", layout, "主标题", "副标题", font_path=None, font_ttc_index=0,
     )
 
-    assert [text for text, _centre in calls] == ["主标题", "原本位于下贴片的副标题"]
-    assert all(centre[1] < layout.top_panel_height for _text, centre in calls)
+    assert [text for text, _y in calls] == ["主标题", "副标题"]
+    assert all(y < layout.top_panel_height for _text, y in calls)
 
 
-def test_bottom_panel_uses_local_glow_instead_of_flat_empty_fill(tmp_path):
+def test_bottom_panel_without_a_quote_shows_a_crisp_ornament(tmp_path):
     layout = calculate_layout(1280, 720)
     output = tmp_path / "panels.png"
-    three_by_four._render_static_background(
-        output,
-        layout,
-        "主标题",
-        "副标题",
-        font_path=None,
-        font_ttc_index=0,
-    )
+    three_by_four._render_static_background(output, layout, "主标题", "副标题", font_path=None, font_ttc_index=0)
 
     bottom_y = layout.main_y + layout.main_height
-    centre_y = bottom_y + int(layout.bottom_panel_height * 0.50)
+    centre_y = bottom_y + int(layout.bottom_panel_height * 0.47)
     with Image.open(output).convert("RGB") as image:
-        corner = image.getpixel((20, bottom_y + 20))
-        glow = image.getpixel((layout.canvas_width // 2, centre_y + 35))
+        corner = image.getpixel((20, layout.canvas_height - 20))
+        diamond = image.getpixel((layout.canvas_width // 2, centre_y))
+        beside = image.getpixel((layout.canvas_width // 2, centre_y + 40))
 
-    assert corner == three_by_four._PANEL_COLOR
-    assert glow != three_by_four._PANEL_COLOR
-    assert glow[0] > corner[0]
+    assert max(corner) < 30
+    assert diamond[0] > 150 and diamond[0] > diamond[2] + 60
+    assert max(beside) < 45
+
+
+def test_quote_breaks_at_a_phrase_and_never_starts_a_line_with_punctuation():
+    from PIL import ImageDraw
+
+    draw = ImageDraw.Draw(Image.new("RGB", (10, 10)))
+    font = three_by_four._load_font(None, 40, 0)
+    width = three_by_four._tracked_width(draw, "故事由谁来讲，谁就决定了谁是怪物。", font, 0)
+    lines = three_by_four._balanced_lines(draw, "故事由谁来讲，谁就决定了谁是怪物。", font, 0, int(width * 0.7), max_lines=3)
+
+    assert lines == ["故事由谁来讲，", "谁就决定了谁是怪物。"]
+    lines = three_by_four._balanced_lines(draw, "甲乙丙丁戊己庚辛壬癸。子丑寅卯", font, 0, int(width * 0.35), max_lines=3)
+    assert all(line[0] not in three_by_four._NO_LINE_START for line in lines)
 
 
 def test_hardware_command_reuses_existing_codec_and_quality_setting(tmp_path: Path):
@@ -428,3 +434,119 @@ def test_short_silent_video_preserves_frame_rate_and_visual_quality(tmp_path: Pa
     match = re.search(r"All:([0-9.]+)", comparison.stderr)
     assert match is not None
     assert float(match.group(1)) >= 0.98
+
+
+def test_video_position_moves_the_main_picture_and_keeps_panels_even():
+    higher = calculate_layout(1280, 720, 0.25)
+    lower = calculate_layout(1280, 720, 0.75)
+
+    assert higher.canvas_height == lower.canvas_height == 1708
+    assert higher.main_y < 494 < lower.main_y
+    for layout in (higher, lower):
+        assert layout.top_panel_height % 2 == 0
+        assert layout.bottom_panel_height % 2 == 0
+        assert layout.top_panel_height + layout.main_height + layout.bottom_panel_height == layout.canvas_height
+
+
+def test_panel_options_fall_back_to_defaults_for_unknown_values():
+    options = three_by_four.PanelOptions.from_mapping(
+        {"theme": "neon", "top_share": "x", "top_content": "TITLE", "bottom_content": None, "accent_color": "red"}
+    )
+
+    assert options.theme == "ink"
+    assert options.top_share == 0.5
+    assert options.top_content == "title"
+    assert options.bottom_content == "quote"
+    assert options.accent == three_by_four._ACCENT_COLOR
+    assert three_by_four.PanelOptions.from_mapping({"top_share": 3}).top_share == 0.85
+
+
+def test_panel_copy_follows_overrides_and_content_choices():
+    script = {"cover_titles": ["封面标题"], "cover_subtitles": ["封面副标题"], "golden_quotes": ["", "第一句\n第二句"]}
+    options = three_by_four.PanelOptions
+
+    assert three_by_four.select_panel_copy(script, options()) == ("封面标题", "封面副标题", "第一句\n第二句")
+    assert three_by_four.select_panel_copy(script, options(bottom_content="ornament")) == ("封面标题", "封面副标题", "")
+    assert three_by_four.select_panel_copy(script, options(title_text="自定义", top_content="title")) == ("自定义", "", "第一句\n第二句")
+    assert three_by_four.select_panel_copy(script, options(top_content="none", bottom_content="quote")) == ("", "", "第一句\n第二句")
+    assert three_by_four.select_panel_copy(script, options(bottom_content="text", bottom_text="关注我")) == (
+        "封面标题",
+        "封面副标题",
+        "关注我",
+    )
+
+
+def test_blurred_theme_fills_panels_from_the_video_without_scaling_the_main_picture(tmp_path: Path):
+    layout = calculate_layout(1280, 720)
+    command = build_export_command(
+        ffmpeg_path="/usr/bin/ffmpeg",
+        source_path=tmp_path / "source.mp4",
+        background_path=tmp_path / "background.png",
+        output_path=tmp_path / "output.mp4",
+        layout=layout,
+        video_codec="h264",
+        quality_level=70,
+        blurred_background=True,
+    )
+    graph = command[command.index("-filter_complex") + 1]
+
+    assert "split=2[main][source]" in graph
+    # Only the caption-free upper part of the frame feeds the blurred background.
+    assert "[source]crop=iw:trunc(ih*0.68/2)*2:0:0,scale=1280:1708" in graph
+    assert "boxblur" in graph
+    assert "[blurred][main]overlay=0:494" in graph
+    assert "[main]scale" not in graph
+
+
+def test_paper_theme_and_bottom_text_are_drawn(monkeypatch, tmp_path):
+    layout = calculate_layout(1280, 720)
+    lines = []
+    original = three_by_four._draw_tracked_line
+
+    def capture(draw, text, *args):
+        lines.append(text)
+        original(draw, text, *args)
+
+    monkeypatch.setattr(three_by_four, "_draw_tracked_line", capture)
+    output = tmp_path / "panels.png"
+    three_by_four._render_static_background(
+        output,
+        layout,
+        "标题",
+        "",
+        font_path=None,
+        font_ttc_index=0,
+        panel=three_by_four.PanelOptions(theme="paper", bottom_content="text"),
+        bottom_text="关注我，读更多好书",
+    )
+
+    assert "".join(lines) == "标题关注我，读更多好书"
+    with Image.open(output).convert("RGB") as image:
+        assert min(image.getpixel((20, 20))) > 190
+
+
+def test_blurred_theme_leaves_panels_translucent(tmp_path):
+    layout = calculate_layout(1280, 720)
+    output = tmp_path / "panels.png"
+    three_by_four._render_static_background(
+        output, layout, "", "", font_path=None, font_ttc_index=0,
+        panel=three_by_four.PanelOptions(theme="blur", top_content="none", bottom_content="none"),
+    )
+    with Image.open(output) as image:
+        alpha = image.getpixel((20, 20))[3]
+
+    assert 0 < alpha < 255
+
+
+def test_layout_preview_places_the_frame_inside_the_panels(tmp_path):
+    frame = tmp_path / "frame.png"
+    Image.new("RGB", (321, 180), (220, 20, 20)).save(frame)
+    output = three_by_four.render_layout_preview(
+        frame, tmp_path / "preview.png", {"cover_titles": ["T"]}, panel={"top_share": 0.3}
+    )
+
+    with Image.open(output) as image:
+        layout = calculate_layout(320, 180, 0.3)
+        assert image.size == (layout.canvas_width, layout.canvas_height)
+        assert image.getpixel((160, layout.main_y + 90))[0] > 200
+        assert max(image.getpixel((5, 5))) < 30

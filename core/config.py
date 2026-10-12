@@ -75,6 +75,15 @@ VIDEO_CODEC: str = ""
 VIDEO_BITRATE_MODE: str = ""
 VIDEO_QUALITY_LEVEL: int = 0
 THREE_BY_FOUR_QUALITY_LEVEL: int = 86
+THREE_BY_FOUR_ENABLED: bool = True
+THREE_BY_FOUR_THEME: str = "ink"
+THREE_BY_FOUR_TOP_SHARE: float = 0.5
+THREE_BY_FOUR_TOP_CONTENT: str = "title_subtitle"
+THREE_BY_FOUR_TITLE_TEXT: str = ""
+THREE_BY_FOUR_SUBTITLE_TEXT: str = ""
+THREE_BY_FOUR_BOTTOM_CONTENT: str = "quote"
+THREE_BY_FOUR_BOTTOM_TEXT: str = ""
+THREE_BY_FOUR_ACCENT_COLOR: str = "#C45A47"
 ENABLE_SUBTITLES: bool = True
 DEFAULT_BGM_FILENAME: str = ""
 BGM_DEFAULT_VOLUME: float = 0.0
@@ -214,6 +223,17 @@ _YAML_SCHEMA: Dict[str, Dict[str, str]] = {
         "video_material_longer_than_audio_mode": "VIDEO_MATERIAL_LONGER_THAN_AUDIO_MODE",
         "video_material_duration_adjust": "VIDEO_MATERIAL_DURATION_ADJUST",
         "video_material_resize_method": "VIDEO_MATERIAL_RESIZE_METHOD",
+    },
+    "three_by_four": {
+        "enabled": "THREE_BY_FOUR_ENABLED",
+        "theme": "THREE_BY_FOUR_THEME",
+        "top_share": "THREE_BY_FOUR_TOP_SHARE",
+        "top_content": "THREE_BY_FOUR_TOP_CONTENT",
+        "title_text": "THREE_BY_FOUR_TITLE_TEXT",
+        "subtitle_text": "THREE_BY_FOUR_SUBTITLE_TEXT",
+        "bottom_content": "THREE_BY_FOUR_BOTTOM_CONTENT",
+        "bottom_text": "THREE_BY_FOUR_BOTTOM_TEXT",
+        "accent_color": "THREE_BY_FOUR_ACCENT_COLOR",
     },
     "subtitles": {
         "style": "SUBTITLE_STYLE",
@@ -465,21 +485,18 @@ class Config:
                 "doubao-seedream-3-0-t2i-250415",
             ],
             "google": [
-                "gemini-2.5-flash-image",
-                "imagen-3.0-generate-002",
-                "imagen-3.0-fast-generate-001",
-                "gemini-2.5-flash-image-preview",
-                "gemini-3.1-flash-image-preview",
+                "gemini-3.1-flash-image",
+                "gemini-3-pro-image",
+                "gemini-3.1-flash-lite-image",
             ],
             "google_adc": [
-                "gemini-2.5-flash-image",
-                "imagen-3.0-generate-002",
-                "imagen-3.0-fast-generate-001",
-                "gemini-2.5-flash-image-preview",
-                "gemini-3.1-flash-image-preview",
+                "gemini-3.1-flash-image",
+                "gemini-3-pro-image",
+                "gemini-3.1-flash-lite-image",
             ],
         },
         "voice": [
+            "zh_female_vv_uranus_bigtts",
             "zh_male_yuanboxiaoshu_moon_bigtts",
             "zh_male_haoyuxiaoge_moon_bigtts",
             "zh_female_wenrouxiaoya_moon_bigtts",

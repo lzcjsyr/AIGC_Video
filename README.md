@@ -97,6 +97,7 @@ step4:
 * 📂 **`core/`** — **系统核心代码库**。
 * 📂 **`prompts/`** — **大模型提示词与风格模板**。包含视频生成过程中生成描述小结、润色口播文案和构建画面所用的核心 Prompt 预设。如需调整文案生成风格或添加自定义艺术风格，在此修改。
 * 📂 **`skills/`** — **自动化技能扩展**。`skills/step1/` 存放第一步写作 Agent skills；`skills/step4/` 存放第四步动态画面使用的官方 HyperFrames 核心 skills，包括 `hyperframes/`、`hyperframes-core/`、`hyperframes-animation/`、`hyperframes-creative/`、`hyperframes-cli/`、`hyperframes-media/`、`hyperframes-registry/` 和 `general-video/`。
+  设置环境变量 `AIGC_VIDEO_LIBRARY_DIR` 可从另一个文件夹读取 `prompts/` 与 `skills/`（桌面版用它指向用户可编辑的副本）；设置 `AIGC_HYPERFRAMES_CLI` 指向 HyperFrames 的 `dist/cli.js` 时，渲染改用该固定版本而不是 `npx`。
 * 📂 **`scripts/`** — **系统管理脚本**。提供 macOS/Linux 以及 Windows 环境下一键环境安装、依赖检验以及完整功能诊断的脚本。
 * 📂 **`input/`** — **待处理文档输入目录**。放入需要转为视频的 PDF、EPUB、DOCX 等原始电子书/文档。
 * 📂 **`output/`** — **项目生成输出目录**。每一次视频制作都将在此按“项目名_时间戳”生成独立的文件夹，包含视频和全部中间缓存资源。

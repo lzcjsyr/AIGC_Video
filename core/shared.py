@@ -22,7 +22,10 @@ import os
 import json
 import logging
 import datetime
+import functools
+import random
 import re
+import time
 from pathlib import Path
 from typing import Dict, Any
 
@@ -45,8 +48,10 @@ class VideoProcessingError(Exception):
     pass
 
 class APIError(Exception):
-    """API调用异常类"""
-    pass
+    """API调用异常类；retryable=False 表示重试无济于事（如缺少配置）。"""
+    def __init__(self, message: str = "", *, retryable: bool = True):
+        super().__init__(message)
+        self.retryable = retryable
 
 class FileProcessingError(Exception):
     """文件处理异常类"""
@@ -125,25 +130,51 @@ def project_name_sort_key(project: Dict[str, Any]) -> tuple:
         return (0, int(match.group(1)), name.lower())
     return (1, name.lower())
 
-def retry_on_failure(max_retries: int = 3, delay: float = 1.0):
-    """重试装饰器"""
+def _error_chain(error: BaseException):
+    seen = set()
+    while error is not None and id(error) not in seen:
+        seen.add(id(error))
+        yield error
+        error = error.__cause__ or error.__context__
+
+
+def http_status(error: BaseException) -> int | None:
+    """在异常及其包装链上查找 HTTP 状态码（google-genai、openai、requests 各自命名不同）。"""
+    for item in _error_chain(error):
+        response = getattr(item, "response", None)
+        for value in (getattr(item, "code", None), getattr(item, "status_code", None),
+                      getattr(response, "status_code", None)):
+            if isinstance(value, int) and not isinstance(value, bool) and 100 <= value < 600:
+                return value
+    return None
+
+
+def is_retryable(error: BaseException) -> bool:
+    """限流（429）、超时和服务端错误（5xx）稍后可能成功；其余 4xx（密钥无效、模型不存在等）及缺少配置重试也无用。"""
+    if any(getattr(item, "retryable", True) is False for item in _error_chain(error)):
+        return False
+    status = http_status(error)
+    return status is None or status in (408, 429) or status >= 500
+
+
+def retry_on_failure(max_retries: int = 3, delay: float = 1.0, max_delay: float = 60.0):
+    """重试装饰器：首次失败后最多再试 max_retries 次，等待时间从 delay 起指数增长（上限 max_delay）。"""
     def decorator(func):
+        @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            last_exception = None
-            
-            for attempt in range(max_retries):
+            for attempt in range(max_retries + 1):
                 try:
                     return func(*args, **kwargs)
                 except Exception as e:
-                    last_exception = e
-                    if attempt < max_retries - 1:
-                        logger.warning(f"函数 {func.__name__} 第{attempt + 1}次尝试失败: {str(e)}，{delay}秒后重试...")
-                        import time
-                        time.sleep(delay)
-                    else:
-                        logger.error(f"函数 {func.__name__} 经过{max_retries}次尝试后仍然失败")
-            
-            raise last_exception
+                    if not is_retryable(e):
+                        logger.error(f"函数 {func.__name__} 失败且不可重试: {e}")
+                        raise
+                    if attempt == max_retries:
+                        logger.error(f"函数 {func.__name__} 重试{max_retries}次后仍然失败")
+                        raise
+                    wait = min(delay * 2 ** attempt, max_delay) * random.uniform(0.8, 1.2)
+                    logger.warning(f"函数 {func.__name__} 第{attempt + 1}次尝试失败: {e}，{wait:.0f}秒后重试（{attempt + 1}/{max_retries}）...")
+                    time.sleep(wait)
         return wrapper
     return decorator
 
@@ -185,5 +216,5 @@ def handle_video_operation(operation_name: str, critical: bool = False, fallback
 __all__ = [
     'VideoProcessingError', 'APIError', 'FileProcessingError',
     'ensure_directory_exists', 'load_json_file', 'format_file_size',
-    'get_file_info', 'retry_on_failure', 'handle_video_operation', 'logger',
+    'get_file_info', 'http_status', 'is_retryable', 'retry_on_failure', 'handle_video_operation', 'logger',
 ]

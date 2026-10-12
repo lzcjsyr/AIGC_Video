@@ -150,7 +150,8 @@ def _request_bytedance_tts_pcm(
         if response.status_code != 200:
             error_text = response.text
             logger.error(f"TTS API请求失败 - 状态码: {response.status_code}, 错误: {error_text}")
-            raise APIError(f"TTS API请求失败: {error_text}")
+            raise APIError(f"TTS API请求失败（{response.status_code}）: {error_text}",
+                           retryable=response.status_code in (408, 429) or response.status_code >= 500)
 
         logid = response.headers.get("X-Tt-Logid", "N/A")
         logger.debug(f"TTS 请求成功 - X-Tt-Logid: {logid}")
@@ -184,7 +185,19 @@ def _request_bytedance_tts_pcm(
         session.close()
 
 
-@retry_on_failure(max_retries=2, delay=1.0)
+def resource_for_voice(voice: str, configured: str) -> str:
+    """音色所属的资源 ID。音色与资源不匹配时火山会拒绝（code=55000000），因此按音色类型选择。"""
+    voice, configured = (voice or "").strip(), (configured or "").strip()
+    if voice.startswith("S_"):  # 声音复刻音色
+        return configured if configured.startswith("seed-icl") else "seed-icl-2.0"
+    if "_uranus_" in voice or voice.startswith("saturn_"):  # 语音合成 2.0 音色
+        return "seed-tts-2.0"
+    if voice.endswith(("_moon_bigtts", "_mars_bigtts")):  # 语音合成 1.0 音色
+        return "seed-tts-1.0"
+    return configured
+
+
+@retry_on_failure(max_retries=1, delay=1.0)
 def text_to_audio_bytedance(
     text,
     output_filename,
@@ -223,9 +236,14 @@ def text_to_audio_bytedance(
     # ============ 1. 验证配置 ============
     api_key = (getattr(config, "BYTEDANCE_TTS_API_KEY", "") or "").strip()
     if not api_key:
-        raise APIError("豆包语音配置不完整，请检查 BYTEDANCE_TTS_API_KEY")
+        raise APIError("豆包语音配置不完整，请检查 BYTEDANCE_TTS_API_KEY", retryable=False)
 
-    RESOURCE_ID = config.RESOURCE_ID
+    voice = (voice or "").strip()
+    if not voice:
+        raise APIError("未设置配音音色，请在设置中填写音色 ID", retryable=False)
+    RESOURCE_ID = resource_for_voice(voice, config.RESOURCE_ID)
+    if RESOURCE_ID != config.RESOURCE_ID:
+        logger.info(f"音色 {voice} 属于资源 {RESOURCE_ID}，已替换配置的 {config.RESOURCE_ID}")
     MODEL = str(model or getattr(config, "TTS_MODEL", "") or "").strip()
 
     # ============ 2. 参数验证和规范化 ============
@@ -286,7 +304,7 @@ def text_to_audio_bytedance(
         raise
     except Exception as e:
         logger.error(f"语音合成失败: {str(e)}")
-        raise APIError(f"语音合成失败: {str(e)}")
+        raise APIError(f"语音合成失败: {str(e)}") from e
 
 
-__all__ = ["text_to_audio_bytedance"]
+__all__ = ["resource_for_voice", "text_to_audio_bytedance"]

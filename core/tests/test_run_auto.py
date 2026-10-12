@@ -99,7 +99,7 @@ def test_run_auto_success_uses_raw_data_for_cover_and_statistics(monkeypatch, tm
         llm_server_step4="siliconflow",
         llm_base_url_step4="https://example.test/v1",
         image_server="google",
-        image_model="gemini-3.1-flash-image-preview",
+        image_model="gemini-3.1-flash-image",
         image_size="1280x720",
         image_prompt_template="pure_images",
         visual_mode="hyperframes_agent",
@@ -111,7 +111,7 @@ def test_run_auto_success_uses_raw_data_for_cover_and_statistics(monkeypatch, tm
         llm_server_step1_5="kimi",
         llm_model_step1_5="kimi-k2.6",
         cover_image_server="google",
-        cover_image_model="gemini-3.1-flash-image-preview",
+        cover_image_model="gemini-3.1-flash-image",
         cover_image_size="1280x720",
         extra_requirements="突出商业启示",
     )

@@ -8,39 +8,39 @@ import random
 from openai import OpenAI
 
 from core.config import config
-from core.shared import logger, APIError, retry_on_failure
+from core.shared import logger, APIError, http_status, retry_on_failure
 
 def _get_openai_api_key(server: str) -> str:
     server = (server or "").strip().lower()
     if server == "openrouter":
         if not config.OPENROUTER_API_KEY:
-            raise APIError("OPENROUTER_API_KEY未配置")
+            raise APIError("OPENROUTER_API_KEY未配置", retryable=False)
         return config.OPENROUTER_API_KEY
     elif server == "siliconflow":
         if not config.SILICONFLOW_KEY:
-            raise APIError("SILICONFLOW_KEY未配置")
+            raise APIError("SILICONFLOW_KEY未配置", retryable=False)
         return config.SILICONFLOW_KEY
     elif server == "mimo":
         if not config.MIMO_API_KEY:
-            raise APIError("MIMO_API_KEY未配置")
+            raise APIError("MIMO_API_KEY未配置", retryable=False)
         return config.MIMO_API_KEY
     elif server == "kimi":
         if not config.KIMI_API_KEY:
-            raise APIError("KIMI_API_KEY 或 MOONSHOT_API_KEY 未配置")
+            raise APIError("KIMI_API_KEY 或 MOONSHOT_API_KEY 未配置", retryable=False)
         return config.KIMI_API_KEY
     elif server == "deepseek":
         if not config.DEEPSEEK_API_KEY:
-            raise APIError("DEEPSEEK_API_KEY未配置")
+            raise APIError("DEEPSEEK_API_KEY未配置", retryable=False)
         return config.DEEPSEEK_API_KEY
     elif server == "volcengine":
         if not config.VOLCENGINE_API_KEY:
-            raise APIError("VOLCENGINE_API_KEY未配置")
+            raise APIError("VOLCENGINE_API_KEY未配置", retryable=False)
         return config.VOLCENGINE_API_KEY
     else:
         raise ValueError(f"不支持的服务商: {server}，支持的服务商: {config.SUPPORTED_LLM_SERVERS}")
 
 
-@retry_on_failure(max_retries=2, delay=2.0)
+@retry_on_failure(max_retries=1, delay=2.0)
 def text_to_text(
     server,
     model,
@@ -61,7 +61,7 @@ def text_to_text(
         if not base_url:
             base_url = config.LLM_SERVER_URLS.get(server.strip().lower(), "")
         if not base_url:
-            raise APIError("LLM base URL未配置")
+            raise APIError("LLM base URL未配置", retryable=False)
 
         client = OpenAI(api_key=api_key, base_url=base_url)
         request_params = {
@@ -81,13 +81,13 @@ def text_to_text(
         return result
     except Exception as e:
         logger.error(f"文本生成失败: {str(e)}")
-        raise APIError(f"文本生成失败: {str(e)}")
+        raise APIError(f"文本生成失败: {str(e)}") from e
 
 
-@retry_on_failure(max_retries=2, delay=2.0)
+@retry_on_failure(max_retries=1, delay=2.0)
 def text_to_image_doubao(prompt, size="1024x1024", model="doubao-seedream-3-0-t2i-250415"):
     if not config.VOLCENGINE_API_KEY:
-        raise APIError("VOLCENGINE_API_KEY未配置，无法使用豆包图像生成服务")
+        raise APIError("VOLCENGINE_API_KEY未配置，无法使用豆包图像生成服务", retryable=False)
     logger.info(f"使用豆包Seedream生成图像，模型: {model}，尺寸: {size}，提示词长度: {len(prompt)}字符")
     try:
         from volcenginesdkarkruntime import Ark
@@ -125,10 +125,10 @@ def text_to_image_doubao(prompt, size="1024x1024", model="doubao-seedream-3-0-t2
         raise APIError("豆包图像生成API返回空响应")
     except ImportError:
         logger.error("未安装volcenginesdkarkruntime，请运行: pip install volcengine-python-sdk[ark]")
-        raise APIError("缺少依赖包volcenginesdkarkruntime")
+        raise APIError("缺少依赖包volcenginesdkarkruntime", retryable=False)
     except Exception as e:
         logger.error(f"豆包图像生成失败: {str(e)}")
-        raise APIError(f"豆包图像生成失败: {str(e)}")
+        raise APIError(f"豆包图像生成失败: {str(e)}") from e
 
 
 _GOOGLE_IMAGE_SIZE_TABLE_PRO: Dict[str, Dict[str, Tuple[int, int]]] = {
@@ -191,7 +191,7 @@ def _map_custom_size_to_google(size: str, model: str) -> Tuple[str, str, Tuple[i
 
     width, height = parsed
     lower_model = str(model or "").lower()
-    table = _GOOGLE_IMAGE_SIZE_TABLE_PRO if "pro-image-preview" in lower_model else _GOOGLE_IMAGE_SIZE_TABLE_FLASH
+    table = _GOOGLE_IMAGE_SIZE_TABLE_PRO if "pro-image" in lower_model else _GOOGLE_IMAGE_SIZE_TABLE_FLASH
 
     best_ratio = "1:1"
     best_size = "1K"
@@ -222,14 +222,16 @@ def _resolve_google_adc_project() -> Optional[str]:
         return project
     try:
         import google.auth
-        _, detected_project = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
-        return detected_project
+        credentials, detected_project = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+        # 找不到 gcloud 命令时（如桌面版），用户登录凭据只能通过 quota_project_id 给出项目。
+        return detected_project or getattr(credentials, "quota_project_id", None)
     except Exception:
         return None
 
 
-@retry_on_failure(max_retries=5, delay=2.0)
-def text_to_image_google(prompt, size="1024x1024", model="gemini-3.1-flash-image-preview", use_adc=False):
+# Google 图像接口常因限流返回 429：至少重试 5 次，等待约 5→10→20→40→60 秒。
+@retry_on_failure(max_retries=5, delay=5.0)
+def text_to_image_google(prompt, size="1024x1024", model="gemini-3.1-flash-image", use_adc=False):
     aspect_ratio, image_size, mapped_dims = _map_custom_size_to_google(size, model)
     if not _parse_wxh_size(size):
         logger.warning(f"Google图像尺寸格式无法解析: {size}，已回退到 {aspect_ratio}/{image_size}")
@@ -241,26 +243,24 @@ def text_to_image_google(prompt, size="1024x1024", model="gemini-3.1-flash-image
         from google.genai import types
     except ImportError as exc:
         logger.error("未安装google-genai，请运行: pip install google-genai")
-        raise APIError("缺少依赖包google-genai") from exc
+        raise APIError("缺少依赖包google-genai", retryable=False) from exc
+
+    if use_adc:
+        project = _resolve_google_adc_project()
+        if not project:
+            raise APIError("Google ADC项目未配置，请运行 gcloud auth application-default login 或设置 GOOGLE_CLOUD_PROJECT", retryable=False)
+        location = getattr(config, "GOOGLE_CLOUD_LOCATION", "") or os.getenv("GOOGLE_CLOUD_LOCATION") or "global"
+        target = f"项目 {project}（{location}）"
+    elif not config.GOOGLE_CLOUD_API_KEY:
+        raise APIError("GOOGLE_CLOUD_API_KEY未配置", retryable=False)
+    else:
+        target = "该 API 密钥"
 
     try:
         if use_adc:
-            project = _resolve_google_adc_project()
-            if not project:
-                raise APIError("Google ADC项目未配置，请设置GOOGLE_CLOUD_PROJECT或运行gcloud config set project")
-            location = getattr(config, "GOOGLE_CLOUD_LOCATION", "") or os.getenv("GOOGLE_CLOUD_LOCATION") or "global"
-            client = genai.Client(
-                vertexai=True,
-                project=project,
-                location=location,
-            )
+            client = genai.Client(vertexai=True, project=project, location=location)
         else:
-            if not config.GOOGLE_CLOUD_API_KEY:
-                raise APIError("GOOGLE_CLOUD_API_KEY未配置")
-            client = genai.Client(
-                vertexai=True,
-                api_key=config.GOOGLE_CLOUD_API_KEY
-            )
+            client = genai.Client(vertexai=True, api_key=config.GOOGLE_CLOUD_API_KEY)
 
         contents = [
             types.Content(
@@ -308,8 +308,15 @@ def text_to_image_google(prompt, size="1024x1024", model="gemini-3.1-flash-image
                 if isinstance(image_bytes, (bytes, bytearray)):
                     return {"type": "bytes", "data": bytes(image_bytes)}
     except Exception as e:
-        logger.error(f"Google官方图像生成失败: {str(e)}")
-        raise APIError(f"Google官方图像生成失败: {str(e)}")
+        status = http_status(e)
+        if status == 404:
+            message = f"Google图像模型 {model} 对{target}不可用（404）。请在设置中改用可用的模型，例如 gemini-3.1-flash-image"
+        elif status in (401, 403):
+            message = f"Google拒绝了{target}的请求（{status}），请检查凭据和 Vertex AI 权限: {e}"
+        else:
+            message = f"Google官方图像生成失败: {e}"
+        logger.error(message)
+        raise APIError(message) from e
 
     raise APIError("Google官方图像生成未返回图片数据")
 

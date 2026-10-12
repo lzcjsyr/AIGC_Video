@@ -10,7 +10,7 @@ from typing import Any, Dict, Iterable, Optional
 from moviepy import AudioFileClip
 
 from core.infra.ai.claude_agent import run_step4_hyperframes_agent
-from core.infra.hyperframes.runtime import HYPERFRAMES_VERSION, parse_size, subprocess_env
+from core.infra.hyperframes.runtime import hyperframes_command, parse_size, subprocess_env
 from core.infra.project_paths import ProjectPaths
 
 
@@ -124,9 +124,7 @@ def _render_one_segment(
             llm_base_url=llm_base_url,
         )
         command = [
-            "npx",
-            "--yes",
-            HYPERFRAMES_VERSION,
+            *hyperframes_command(),
             "render",
             "--output",
             str(output_path),

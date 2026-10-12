@@ -163,12 +163,12 @@ def test_google_adc_image_server_is_inherited_by_gemini_cover_defaults():
         input_file="input.pdf",
         output_dir="output",
         image_server="google_adc",
-        image_model="gemini-3.1-flash-image-preview",
+        image_model="gemini-3.1-flash-image",
         cover_image_server="",
         cover_image_model=None,
     )
 
-    assert config.cover_image_model == "gemini-3.1-flash-image-preview"
+    assert config.cover_image_model == "gemini-3.1-flash-image"
     assert config.cover_image_server == "google_adc"
 
 
@@ -183,7 +183,7 @@ def test_config_rejects_unsupported_llm_server():
             llm_server="unknown",
             image_server="google",
             tts_server="bytedance",
-            image_model="gemini-3.1-flash-image-preview",
+            image_model="gemini-3.1-flash-image",
             image_size="1280x720",
             llm_model="model",
         )

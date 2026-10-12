@@ -39,7 +39,7 @@ step3:
   speech_rate: 15
 step4:
   image_server: google_adc
-  image_model: gemini-3.1-flash-image-preview
+  image_model: gemini-3.1-flash-image
   image_size: 1920x1080
   image_style_preset: style08
   image_prompt_template: pure_images
@@ -50,7 +50,7 @@ step5:
   bgm_filename: null
 step6:
   cover_image_server: google_adc
-  cover_image_model: gemini-3.1-flash-image-preview
+  cover_image_model: gemini-3.1-flash-image
   cover_image_count: 2
 """,
         encoding="utf-8",
