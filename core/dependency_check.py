@@ -96,9 +96,9 @@ class DependencyChecker:
             self._check_command("FFmpeg", "ffmpeg", "安装 FFmpeg，并确保 ffmpeg 在 PATH 中。"),
             self._check_command("Node.js", "node", "安装 Node.js 22 或更新版本。"),
             self._check_command("npm", "npm", "安装 Node.js 时勾选 npm，并重开终端。"),
-            self._check_hyperframes_package_json(),
-            self._check_hyperframes_template(),
-            self._check_hyperframes_skill_bundle(),
+            self._check_motion_package_json(),
+            self._check_motion_template(),
+            self._check_motion_skill_bundle(),
             self._check_python_packages(),
             self._check_env_file(),
             self._check_music_dir(),
@@ -121,52 +121,47 @@ class DependencyChecker:
             return CheckItem(name, True, f"已找到 {path}")
         return CheckItem(name, False, f"未找到命令 {command}", fix)
 
-    def _check_hyperframes_package_json(self) -> CheckItem:
-        package_json = self._hyperframes_app_dir / "package.json"
+    def _check_motion_package_json(self) -> CheckItem:
+        package_json = self._motion_app_dir.parent / "package.json"
         if package_json.exists():
-            return CheckItem("HyperFrames package", True, str(package_json))
+            return CheckItem("HTML Motion package", True, str(package_json))
         return CheckItem(
-            "HyperFrames package",
+            "HTML Motion package",
             False,
-            "缺少 HyperFrames 子项目 package.json",
-            "确认项目完整下载，包含 core/infra/hyperframes/app/package.json。",
+            "缺少 HTML Motion 子项目 package.json",
+            "确认项目完整下载，包含 core/infra/motion/package.json。",
         )
 
-    def _check_hyperframes_template(self) -> CheckItem:
-        index_html = self._hyperframes_app_dir / "index.html"
+    def _check_motion_template(self) -> CheckItem:
+        index_html = self._motion_app_dir / "index.html"
         if index_html.exists():
-            return CheckItem("HyperFrames template", True, str(index_html))
+            return CheckItem("HTML Motion template", True, str(index_html))
         return CheckItem(
-            "HyperFrames template",
+            "HTML Motion template",
             False,
-            "缺少 HyperFrames 网页模板 index.html",
-            "确认项目完整下载，包含 core/infra/hyperframes/app/index.html。",
+            "缺少 HTML Motion 网页模板 index.html",
+            "确认项目完整下载，包含 core/infra/motion/app/index.html。",
         )
 
-    def _check_hyperframes_skill_bundle(self) -> CheckItem:
+    def _check_motion_skill_bundle(self) -> CheckItem:
         required_files = (
-            "hyperframes/SKILL.md",
-            "hyperframes-core/SKILL.md",
-            "hyperframes-animation/SKILL.md",
-            "hyperframes-creative/SKILL.md",
-            "hyperframes-cli/SKILL.md",
-            "hyperframes-cli/references/lint-validate-inspect.md",
-            "hyperframes-media/SKILL.md",
-            "hyperframes-registry/SKILL.md",
-            "general-video/SKILL.md",
+            "motion-core/SKILL.md",
+            "motion-animation/SKILL.md",
+            "motion-creative/SKILL.md",
+            "motion-core/references/rendering.md",
         )
         missing = [
             rel_path
             for rel_path in required_files
-            if not (self._hyperframes_skill_dir / rel_path).exists()
+            if not (self._motion_skill_dir / rel_path).exists()
         ]
         if not missing:
-            return CheckItem("Step4 HyperFrames skills", True, str(self._hyperframes_skill_dir))
+            return CheckItem("Step4 HTML Motion skills", True, str(self._motion_skill_dir))
         return CheckItem(
-            "Step4 HyperFrames skills",
+            "Step4 HTML Motion skills",
             False,
             "缺少: " + ", ".join(missing),
-            "确认项目完整下载，包含 skills/step4/ 下的 HyperFrames skill 文件。",
+            "确认项目完整下载，包含 skills/step4/ 下的 HTML Motion skill 文件。",
         )
 
     def _check_python_packages(self) -> CheckItem:
@@ -229,11 +224,11 @@ class DependencyChecker:
         )
 
     @property
-    def _hyperframes_app_dir(self) -> Path:
-        return self.repo_root / "core" / "infra" / "hyperframes" / "app"
+    def _motion_app_dir(self) -> Path:
+        return self.repo_root / "core" / "infra" / "motion" / "app"
 
     @property
-    def _hyperframes_skill_dir(self) -> Path:
+    def _motion_skill_dir(self) -> Path:
         return self.repo_root / "skills" / "step4"
 
     def _pyproject_package_names(self) -> Iterable[str]:

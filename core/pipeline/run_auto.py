@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional
 
 from core.pipeline.steps import (
     _get_project_root,
-    _invoke_opening_narration,
+    _ensure_opening_narration,
     _resolve_bgm_audio_path,
     _run_cover_generation,
     run_step_1 as _run_step_1,
@@ -146,10 +146,10 @@ def run_auto(config: VideoGenerationConfig) -> Dict[str, Any]:
         llm_server=config.llm_server_step4,
         llm_base_url=config.llm_base_url_step4,
         visual_mode=config.visual_mode,
-        hyperframes_style_preset=config.hyperframes_style_preset,
-        hyperframes_max_turns=config.hyperframes_max_turns,
-        hyperframes_render_fps=config.hyperframes_render_fps,
-        hyperframes_concurrency=config.hyperframes_concurrency,
+        motion_style_preset=config.motion_style_preset,
+        motion_max_turns=config.motion_max_turns,
+        motion_render_fps=config.motion_render_fps,
+        motion_concurrency=config.motion_concurrency,
         image_prompt_template=config.image_prompt_template,
     )
     if not step4.get("success"):
@@ -186,7 +186,7 @@ def run_auto(config: VideoGenerationConfig) -> Dict[str, Any]:
         try:
             bgm_audio_path = _resolve_bgm_audio_path(config.bgm_filename, _get_project_root())
             opening_image_path = step4.get("opening_image_path")
-            opening_narration_audio_path = _invoke_opening_narration(
+            opening_narration_audio_path = _ensure_opening_narration(
                 script_data,
                 paths.voice,
                 config.voice,

@@ -48,7 +48,6 @@ def text_to_text(
     system_message="",
     max_tokens=4000,
     temperature=0.5,
-    output_format="text",
     base_url="",
 ):
     logger.info(f"调用{server}的{model}模型生成文本，提示词长度: {len(prompt)}字符")

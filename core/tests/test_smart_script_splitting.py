@@ -2,31 +2,41 @@ from core.domain.summarizer import process_raw_to_script
 import pytest
 
 
-def test_auto_split_groups_short_sentences_without_empty_segments():
-    raw_data = {
-        "video_titles": ["测试"],
-        "content": "好。是的！为什么？因为系统会放大选择。最后回到行动。",
-    }
-
-    script = process_raw_to_script(raw_data, num_segments=20, split_mode="auto")
-    contents = [segment["content"] for segment in script["segments"]]
-
-    assert contents == ["好。是的！为什么？", "因为系统会放大选择。最后回到行动。"]
-    assert script["actual_segments"] == 2
-    assert all(content.strip() for content in contents)
+def contents(text, target=50, mode="punctuation"):
+    return [s["content"] for s in process_raw_to_script({"content": text}, target, mode)["segments"]]
 
 
-def test_auto_split_does_not_add_period_after_paragraph_newlines():
-    raw_data = {
-        "video_titles": ["测试"],
-        "content": "第一段已经结束！\n第二段继续说明。\n第三段收束。",
-    }
+@pytest.mark.parametrize("stop", [".", "。", "．", "?", "？", "!", "！", ";", "；"])
+def test_punctuation_splits_at_each_english_and_chinese_terminal(stop):
+    assert contents(f"First{stop}Second{stop}Tail") == [f"First{stop}", f"Second{stop}", "Tail"]
 
-    script = process_raw_to_script(raw_data, num_segments=3, split_mode="auto")
-    combined = "".join(segment["content"] for segment in script["segments"])
 
-    assert "！。" not in combined
-    assert "第一段已经结束！" in combined
+@pytest.mark.parametrize("target", [1, 2, 50, 200])
+def test_punctuation_ignores_target_without_merging_short_or_splitting_long_sentences(target):
+    long = "很长的句子，包含逗号但不在逗号切分" * 30 + "。"
+    assert contents("好。是的！为什么？" + long, target) == ["好。", "是的！", "为什么？", long]
+
+
+def test_punctuation_keeps_decimal_numbers_closing_quotes_and_punctuation_runs():
+    text = '价格是3.14元。他问：“Ready?!” Then said: "Yes."（真的？！）结束；'
+    assert contents(text) == ['价格是3.14元。', '他问：“Ready?!”', 'Then said: "Yes."', '（真的？！）', '结束；']
+
+
+def test_punctuation_does_not_invent_newline_boundaries_or_punctuation():
+    assert contents("第一行未结束\n第二行才结束。\n最后一段") == ["第一行未结束\n第二行才结束。", "最后一段"]
+    assert contents(" , \n ") == [","]
+
+
+def test_legacy_auto_now_uses_punctuation_and_keeps_motion_markers():
+    raw = {"content": "一。【motion】二？三；"}
+    script = process_raw_to_script(raw, 1, "auto")
+    assert [s["content"] for s in script["segments"]] == ["一。", "二？", "三；"]
+    assert [s["visualizer"] for s in script["segments"]] == ["hf", "image", "image"]
+    assert script["target_segments"] == script["actual_segments"] == 3
+
+
+def test_manual_target_is_ignored():
+    assert contents("Line one. Line two?\nLine three!", 1, "manual") == ["Line one. Line two?", "Line three!"]
 
 
 def test_agent_segments_keep_script_shape_and_visualizer_choices():

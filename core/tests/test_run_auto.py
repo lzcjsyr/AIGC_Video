@@ -102,11 +102,11 @@ def test_run_auto_success_uses_raw_data_for_cover_and_statistics(monkeypatch, tm
         image_model="gemini-3.1-flash-image",
         image_size="1280x720",
         image_prompt_template="pure_images",
-        visual_mode="hyperframes_agent",
-        hyperframes_style_preset="light_corporate",
-        hyperframes_max_turns=9,
-        hyperframes_render_fps=60,
-        hyperframes_concurrency=2,
+        visual_mode="motion_agent",
+        motion_style_preset="light_corporate",
+        motion_max_turns=9,
+        motion_render_fps=60,
+        motion_concurrency=2,
         step1_5_split_mode="agent",
         llm_server_step1_5="kimi",
         llm_model_step1_5="kimi-k2.6",
@@ -127,9 +127,9 @@ def test_run_auto_success_uses_raw_data_for_cover_and_statistics(monkeypatch, tm
     assert captured["step15_kwargs"]["split_mode"] == "agent"
     assert captured["step15_kwargs"]["llm_server_step1_5"] == "kimi"
     assert captured["step15_kwargs"]["llm_model_step1_5"] == "kimi-k2.6"
-    assert captured["step4_kwargs"]["visual_mode"] == "hyperframes_agent"
-    assert captured["step4_kwargs"]["hyperframes_style_preset"] == "light_corporate"
-    assert captured["step4_kwargs"]["hyperframes_max_turns"] == 9
-    assert captured["step4_kwargs"]["hyperframes_render_fps"] == 60
-    assert captured["step4_kwargs"]["hyperframes_concurrency"] == 2
+    assert captured["step4_kwargs"]["visual_mode"] == "motion_agent"
+    assert captured["step4_kwargs"]["motion_style_preset"] == "light_corporate"
+    assert captured["step4_kwargs"]["motion_max_turns"] == 9
+    assert captured["step4_kwargs"]["motion_render_fps"] == 60
+    assert captured["step4_kwargs"]["motion_concurrency"] == 2
     assert captured["step4_kwargs"]["image_prompt_template"] == "pure_images"

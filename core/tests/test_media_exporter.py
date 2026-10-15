@@ -1,21 +1,27 @@
 import os
+from pathlib import Path
+
+import pytest
 
 
 class _FakeVideo:
-    def __init__(self, width=1920, height=1080, duration=10.0, fail_first=False):
+    def __init__(self, width=1920, height=1080, duration=10.0, fail_first=False, fail_all=False):
         self.w = width
         self.h = height
         self.duration = duration
         self.fail_first = fail_first
+        self.fail_all = fail_all
         self.calls = []
 
     def write_videofile(self, output_path, **kwargs):
         self.calls.append({"output_path": output_path, **kwargs})
-        if self.fail_first and len(self.calls) == 1:
+        Path(output_path).write_bytes(b"partial")
+        if self.fail_all or (self.fail_first and len(self.calls) == 1):
             raise RuntimeError("hardware unavailable")
+        Path(output_path).write_bytes(b"video")
 
 
-def test_export_video_uses_h264_hardware_fixed_bitrate_with_fade_filter(monkeypatch):
+def test_export_video_uses_h264_hardware_fixed_bitrate_with_fade_filter(monkeypatch, tmp_path):
     from core.infra.media.exporter import export_video
 
     monkeypatch.setattr(os, "cpu_count", lambda: 8)
@@ -23,7 +29,7 @@ def test_export_video_uses_h264_hardware_fixed_bitrate_with_fade_filter(monkeypa
 
     export_video(
         video,
-        "final.mp4",
+        str(tmp_path / "final.mp4"),
         fps=30,
         video_codec="h264",
         bitrate_mode="auto",
@@ -52,7 +58,7 @@ def test_export_video_uses_h264_hardware_fixed_bitrate_with_fade_filter(monkeypa
     ]
 
 
-def test_export_video_uses_hevc_hardware_quality_mode_without_h264_profile(monkeypatch):
+def test_export_video_uses_hevc_hardware_quality_mode_without_h264_profile(monkeypatch, tmp_path):
     from core.infra.media.exporter import export_video
 
     monkeypatch.setattr(os, "cpu_count", lambda: None)
@@ -60,7 +66,7 @@ def test_export_video_uses_hevc_hardware_quality_mode_without_h264_profile(monke
 
     export_video(
         video,
-        "final.mp4",
+        str(tmp_path / "final.mp4"),
         fps=15,
         video_codec="hevc",
         bitrate_mode="quality",
@@ -82,7 +88,7 @@ def test_export_video_uses_hevc_hardware_quality_mode_without_h264_profile(monke
     ]
 
 
-def test_export_video_falls_back_to_libx264_when_hardware_export_fails(monkeypatch):
+def test_export_video_falls_back_to_libx264_when_hardware_export_fails(monkeypatch, tmp_path):
     from core.infra.media.exporter import export_video
 
     monkeypatch.setattr(os, "cpu_count", lambda: 6)
@@ -90,7 +96,7 @@ def test_export_video_falls_back_to_libx264_when_hardware_export_fails(monkeypat
 
     export_video(
         video,
-        "final.mp4",
+        str(tmp_path / "final.mp4"),
         fps=15,
         video_codec="h264",
         bitrate_mode="auto",
@@ -113,3 +119,31 @@ def test_export_video_falls_back_to_libx264_when_hardware_export_fails(monkeypat
         "-movflags", "+faststart",
         "-vf", "fade=t=out:st=5.5:d=2.5",
     ]
+
+
+def test_export_video_moves_the_finished_video_into_place(tmp_path):
+    from core.infra.media.exporter import export_video
+
+    destination = tmp_path / "final_video.mp4"
+    video = _FakeVideo(width=1280, height=720)
+
+    export_video(video, str(destination))
+
+    assert destination.read_bytes() == b"video"
+    assert video.calls[0]["output_path"] != str(destination)
+    assert video.calls[0]["temp_audiofile"].startswith(str(tmp_path))
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["final_video.mp4"]
+
+
+def test_interrupted_export_keeps_the_previous_video(tmp_path):
+    from core.infra.media.exporter import export_video
+
+    destination = tmp_path / "final_video.mp4"
+    destination.write_bytes(b"previous")
+    video = _FakeVideo(width=1280, height=720, fail_all=True)
+
+    with pytest.raises(RuntimeError):
+        export_video(video, str(destination))
+
+    assert destination.read_bytes() == b"previous"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["final_video.mp4"]

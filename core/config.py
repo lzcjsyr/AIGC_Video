@@ -1,14 +1,13 @@
 """Configuration loading, validation, and runtime parameter objects.
 
-User-facing settings live in config.yaml. This module keeps compatibility with
-legacy imports such as `from core.config import config` while using
-config.example.yaml as the built-in defaults.
+User-facing settings live in config.yaml; config.example.yaml holds the built-in
+defaults. Read values through `from core.config import config`.
 """
 
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Mapping
+from typing import Dict, Optional, Mapping
 from dotenv import load_dotenv
 import yaml
 
@@ -27,7 +26,7 @@ LLM_MODEL_STEP1: str = ""
 STEP1_AGENT_SKILL: str = ""
 
 NUM_SEGMENTS: int = 10
-STEP1_5_SPLIT_MODE: str = "auto"
+STEP1_5_SPLIT_MODE: str = "punctuation"
 LLM_SERVER_STEP1_5: str = ""
 LLM_MODEL_STEP1_5: str = ""
 
@@ -47,25 +46,26 @@ MUTE_CUT_MIN_SILENCE_MS: int = 0
 MUTE_CUT_REMAIN_MS: int = 0
 MAX_CONCURRENT_VOICE_SYNTHESIS: int = 1
 
-OPENING_HYPERFRAMES_IP_NAME: str = ""
-OPENING_HYPERFRAMES_DURATION_SECONDS: float = 0.0
-OPENING_HYPERFRAMES_FPS: int = 0
-OPENING_HYPERFRAMES_FIRST_LINE_SECONDS: float = 0.0
-OPENING_HYPERFRAMES_LAST_LINE_SECONDS: float = 0.0
-OPENING_HYPERFRAMES_MAX_LINES: int = 0
-OPENING_HYPERFRAMES_MAX_CHARS_PER_LINE: int = 0
+OPENING_MOTION_IP_NAME: str = ""
+OPENING_MOTION_DURATION_SECONDS: float = 0.0
+OPENING_MOTION_FPS: int = 0
+OPENING_MOTION_FIRST_LINE_SECONDS: float = 0.0
+OPENING_MOTION_LAST_LINE_SECONDS: float = 0.0
+OPENING_MOTION_MAX_LINES: int = 0
+OPENING_MOTION_MAX_CHARS_PER_LINE: int = 0
 
 VISUAL_MODE: str = ""
-HYPERFRAMES_STYLE_PRESET: str = ""
-HYPERFRAMES_MAX_TURNS: int = 60
-HYPERFRAMES_RENDER_FPS: int = 0
-HYPERFRAMES_CONCURRENCY: int = 1
+MOTION_STYLE_PRESET: str = ""
+MOTION_MAX_TURNS: int = 60
+MOTION_RENDER_FPS: int = 0
+MOTION_CONCURRENCY: int = 1
 IMAGE_SERVER: str = ""
 IMAGE_SIZE: str = ""
 IMAGE_MODEL: str = ""
 IMAGE_STYLE_PRESET: str = ""
 IMAGE_PROMPT_TEMPLATE: str = "keywords"
 MAX_CONCURRENT_IMAGE_GENERATION: int = 1
+SEEDREAM_MAX_CONCURRENT_IMAGE_GENERATION: int = 3
 LLM_SERVER_STEP4: str = ""
 LLM_MODEL_STEP4: str = ""
 
@@ -101,11 +101,8 @@ ENDING_FADE_SECONDS: float = 0.0
 ENABLE_TRANSITIONS: bool = False
 TRANSITION_DURATION: float = 0.0
 TRANSITION_STYLE: str = ""
-IMAGE_MATERIAL_TARGET_FPS: int = 0
 VIDEO_MATERIAL_REMOVE_AUDIO: bool = False
 VIDEO_MATERIAL_LONGER_THAN_AUDIO_MODE: str = ""
-VIDEO_MATERIAL_DURATION_ADJUST: str = ""
-VIDEO_MATERIAL_RESIZE_METHOD: str = ""
 
 SUBTITLE_FONT_SIZE: int = 0
 SUBTITLE_STYLE: str = "classic"
@@ -129,7 +126,7 @@ SUBTITLE_SHADOW_COLOR: str = ""
 SUBTITLE_SHADOW_OFFSET: tuple = (0, 0)
 
 COVER_IMAGE_SIZE_PRESETS: dict = {}
-DEFAULT_COVER_IMAGE_SIZE_KEY: str = ""
+COVER_IMAGE_SIZE_KEYS: list = []
 COVER_IMAGE_MODEL: str = ""
 COVER_IMAGE_SERVER: str = ""
 COVER_IMAGE_STYLE: str = ""
@@ -169,27 +166,28 @@ _YAML_SCHEMA: Dict[str, Dict[str, str]] = {
         "mute_cut_remain_ms": "MUTE_CUT_REMAIN_MS",
         "max_concurrent_voice_synthesis": "MAX_CONCURRENT_VOICE_SYNTHESIS",
     },
-    "hyperframes_opening": {
-        "ip_name": "OPENING_HYPERFRAMES_IP_NAME",
-        "duration_seconds": "OPENING_HYPERFRAMES_DURATION_SECONDS",
-        "fps": "OPENING_HYPERFRAMES_FPS",
-        "first_line_seconds": "OPENING_HYPERFRAMES_FIRST_LINE_SECONDS",
-        "last_line_seconds": "OPENING_HYPERFRAMES_LAST_LINE_SECONDS",
-        "max_lines": "OPENING_HYPERFRAMES_MAX_LINES",
-        "max_chars_per_line": "OPENING_HYPERFRAMES_MAX_CHARS_PER_LINE",
+    "motion_opening": {
+        "ip_name": "OPENING_MOTION_IP_NAME",
+        "duration_seconds": "OPENING_MOTION_DURATION_SECONDS",
+        "fps": "OPENING_MOTION_FPS",
+        "first_line_seconds": "OPENING_MOTION_FIRST_LINE_SECONDS",
+        "last_line_seconds": "OPENING_MOTION_LAST_LINE_SECONDS",
+        "max_lines": "OPENING_MOTION_MAX_LINES",
+        "max_chars_per_line": "OPENING_MOTION_MAX_CHARS_PER_LINE",
     },
     "step4": {
         "visual_mode": "VISUAL_MODE",
-        "hyperframes_style_preset": "HYPERFRAMES_STYLE_PRESET",
-        "hyperframes_max_turns": "HYPERFRAMES_MAX_TURNS",
-        "hyperframes_render_fps": "HYPERFRAMES_RENDER_FPS",
-        "hyperframes_concurrency": "HYPERFRAMES_CONCURRENCY",
+        "motion_style_preset": "MOTION_STYLE_PRESET",
+        "motion_max_turns": "MOTION_MAX_TURNS",
+        "motion_render_fps": "MOTION_RENDER_FPS",
+        "motion_concurrency": "MOTION_CONCURRENCY",
         "image_server": "IMAGE_SERVER",
         "image_size": "IMAGE_SIZE",
         "image_model": "IMAGE_MODEL",
         "image_style_preset": "IMAGE_STYLE_PRESET",
         "image_prompt_template": "IMAGE_PROMPT_TEMPLATE",
         "max_concurrent_image_generation": "MAX_CONCURRENT_IMAGE_GENERATION",
+        "seedream_max_concurrent_image_generation": "SEEDREAM_MAX_CONCURRENT_IMAGE_GENERATION",
         "llm_server": "LLM_SERVER_STEP4",
         "llm_base_url": "LLM_BASE_URL_STEP4_OVERRIDE",
         "llm_model": "LLM_MODEL_STEP4",
@@ -218,11 +216,8 @@ _YAML_SCHEMA: Dict[str, Dict[str, str]] = {
         "enable_transitions": "ENABLE_TRANSITIONS",
         "transition_duration": "TRANSITION_DURATION",
         "transition_style": "TRANSITION_STYLE",
-        "image_material_target_fps": "IMAGE_MATERIAL_TARGET_FPS",
         "video_material_remove_audio": "VIDEO_MATERIAL_REMOVE_AUDIO",
         "video_material_longer_than_audio_mode": "VIDEO_MATERIAL_LONGER_THAN_AUDIO_MODE",
-        "video_material_duration_adjust": "VIDEO_MATERIAL_DURATION_ADJUST",
-        "video_material_resize_method": "VIDEO_MATERIAL_RESIZE_METHOD",
     },
     "three_by_four": {
         "enabled": "THREE_BY_FOUR_ENABLED",
@@ -259,12 +254,19 @@ _YAML_SCHEMA: Dict[str, Dict[str, str]] = {
     },
     "step6": {
         "cover_image_size_presets": "COVER_IMAGE_SIZE_PRESETS",
-        "default_cover_image_size_key": "DEFAULT_COVER_IMAGE_SIZE_KEY",
+        "cover_image_size_keys": "COVER_IMAGE_SIZE_KEYS",
         "cover_image_model": "COVER_IMAGE_MODEL",
         "cover_image_server": "COVER_IMAGE_SERVER",
         "cover_image_style": "COVER_IMAGE_STYLE",
         "cover_image_count": "COVER_IMAGE_COUNT",
     },
+}
+
+# Settings that no longer do anything. Older config.yaml files and the desktop
+# app's saved job configs still carry them, so loading skips them instead of failing.
+_RETIRED_YAML_KEYS = {
+    "step5": {"image_material_target_fps", "video_material_duration_adjust", "video_material_resize_method"},
+    "step6": {"default_cover_image_size_key"},
 }
 
 _STRUCTURED_YAML_SCHEMA = {
@@ -285,10 +287,10 @@ _PARAM_CONSTANTS = {
     "image_server": "IMAGE_SERVER",
     "image_model": "IMAGE_MODEL",
     "visual_mode": "VISUAL_MODE",
-    "hyperframes_style_preset": "HYPERFRAMES_STYLE_PRESET",
-    "hyperframes_max_turns": "HYPERFRAMES_MAX_TURNS",
-    "hyperframes_render_fps": "HYPERFRAMES_RENDER_FPS",
-    "hyperframes_concurrency": "HYPERFRAMES_CONCURRENCY",
+    "motion_style_preset": "MOTION_STYLE_PRESET",
+    "motion_max_turns": "MOTION_MAX_TURNS",
+    "motion_render_fps": "MOTION_RENDER_FPS",
+    "motion_concurrency": "MOTION_CONCURRENCY",
     "llm_server_step4": "LLM_SERVER_STEP4",
     "llm_base_url_step4": "LLM_BASE_URL_STEP4_OVERRIDE",
     "llm_model_step4": "LLM_MODEL_STEP4",
@@ -377,6 +379,24 @@ def _load_yaml_overrides(config_path: str | os.PathLike[str]) -> Dict[str, objec
     if not isinstance(data, Mapping):
         raise ValueError("YAML配置必须是对象")
 
+    # Read existing project configs using the new motion option names.
+    data = dict(data)
+    if "hyperframes_opening" in data:
+        data.setdefault("motion_opening", data.pop("hyperframes_opening"))
+    if isinstance(data.get("step4"), Mapping):
+        values = dict(data["step4"])
+        for suffix in ("style_preset", "max_turns", "render_fps", "concurrency"):
+            old = "hyperframes_" + suffix
+            if old in values:
+                values.setdefault("motion_" + suffix, values.pop(old))
+        if values.get("visual_mode") == "hyperframes_agent":
+            values["visual_mode"] = "motion_agent"
+        data["step4"] = values
+    for old in list(data):
+        if isinstance(old, str) and (old.startswith("OPENING_HYPERFRAMES_") or old.startswith("HYPERFRAMES_")):
+            new = old.replace("OPENING_HYPERFRAMES_", "OPENING_MOTION_").replace("HYPERFRAMES_", "MOTION_")
+            data.setdefault(new, data.pop(old))
+
     overrides: Dict[str, object] = {}
     for section, values in data.items():
         if isinstance(section, str) and section.isupper():
@@ -390,7 +410,10 @@ def _load_yaml_overrides(config_path: str | os.PathLike[str]) -> Dict[str, objec
             raise ValueError(f"配置分组 {section} 必须是对象")
         allowed = _YAML_SCHEMA[section]
         structured = _STRUCTURED_YAML_SCHEMA.get(section, {})
+        retired = _RETIRED_YAML_KEYS.get(section, set())
         for key, value in values.items():
+            if key in retired:
+                continue
             if key in structured:
                 overrides[structured[key]] = _normalize_step1_subagents(value)
                 continue
@@ -480,7 +503,9 @@ class Config:
         },
         "image": {
             "doubao": [
+                "doubao-seedream-5-0-pro-260628",
                 "doubao-seedream-5-0-260128",
+                "doubao-seedream-5-0-flash-260915",
                 "doubao-seedream-4-0-250828",
                 "doubao-seedream-3-0-t2i-250415",
             ],
@@ -488,11 +513,13 @@ class Config:
                 "gemini-3.1-flash-image",
                 "gemini-3-pro-image",
                 "gemini-3.1-flash-lite-image",
+                "gemini-nano-banana-2.1",
             ],
             "google_adc": [
                 "gemini-3.1-flash-image",
                 "gemini-3-pro-image",
                 "gemini-3.1-flash-lite-image",
+                "gemini-nano-banana-2.1",
             ],
         },
         "voice": [
@@ -507,20 +534,6 @@ class Config:
     MIN_NUM_SEGMENTS = 5
     MAX_NUM_SEGMENTS = 100
     SPEECH_SPEED_WPM = 250
-
-    @classmethod
-    def get_required_keys_for_config(cls, image_server: str, tts_server: str, *llm_key_names: str) -> List[str]:
-        """根据服务配置返回所需的API密钥列表"""
-        required_keys = [k for k in llm_key_names if k]
-        
-        image_keys = {"doubao": "VOLCENGINE_API_KEY", "google": "GOOGLE_CLOUD_API_KEY"}
-        img_key = image_keys.get(image_server)
-        if img_key and img_key not in required_keys:
-            required_keys.append(img_key)
-
-        if tts_server == "bytedance" and "BYTEDANCE_TTS_API_KEY" not in required_keys:
-            required_keys.append("BYTEDANCE_TTS_API_KEY")
-        return required_keys
 
     @classmethod
     def validate_image_size(cls, size: str, model: str) -> bool:
@@ -636,15 +649,6 @@ class Config:
         """根据 LLM_SERVER_STEP2 自动匹配 base URL"""
         return self.LLM_SERVER_URLS.get((getattr(self, "LLM_SERVER_STEP2", "") or "").strip().lower(), "")
 
-    @property
-    def LLM_BASE_URL_STEP4(self) -> str:
-        """步骤4 LLM base URL；配置为空时根据 LLM_SERVER_STEP4 自动匹配。"""
-        override = str(getattr(self, "LLM_BASE_URL_STEP4_OVERRIDE", "") or "").strip()
-        if override:
-            return override
-        return self.LLM_SERVER_URLS.get((getattr(self, "LLM_SERVER_STEP4", "") or "").strip().lower(), "")
-
-
 # 将用户配置区的模块常量挂到 Config，避免在类体内逐字段复制
 for _name, _value in list(globals().items()):
     if _name.isupper() and not hasattr(Config, _name) and not isinstance(_value, type):
@@ -724,10 +728,10 @@ class VideoGenerationConfig:
     
     # ==================== 图像生成配置 ====================
     visual_mode: str = VISUAL_MODE
-    hyperframes_style_preset: str = HYPERFRAMES_STYLE_PRESET
-    hyperframes_max_turns: int = HYPERFRAMES_MAX_TURNS
-    hyperframes_render_fps: int = HYPERFRAMES_RENDER_FPS
-    hyperframes_concurrency: int = HYPERFRAMES_CONCURRENCY
+    motion_style_preset: str = MOTION_STYLE_PRESET
+    motion_max_turns: int = MOTION_MAX_TURNS
+    motion_render_fps: int = MOTION_RENDER_FPS
+    motion_concurrency: int = MOTION_CONCURRENCY
     image_server: str = IMAGE_SERVER
     image_model: str = IMAGE_MODEL
     image_size: str = IMAGE_SIZE
@@ -789,45 +793,15 @@ class VideoGenerationConfig:
         output_dir: str,
         **overrides,
     ) -> "VideoGenerationConfig":
-        """从 get_generation_params() 风格字典创建配置（含 CLI 字段别名）。"""
+        """从 get_generation_params() 风格字典创建配置（含 CLI 字段别名，忽略未知键）。"""
         data = dict(params)
         for src, dst in _CLI_PARAM_ALIASES:
             if src in data:
                 data[dst] = data.pop(src)
         data.update(input_file=input_file, output_dir=output_dir, **overrides)
-        return cls.from_dict(data)
+        fields = cls.__dataclass_fields__
+        return cls(**{k: v for k, v in data.items() if k in fields})
 
-    @classmethod
-    def from_dict(cls, params: dict) -> "VideoGenerationConfig":
-        """
-        从字典创建配置对象
-        
-        Args:
-            params: 参数字典
-            
-        Returns:
-            VideoGenerationConfig: 配置对象
-        """
-        for src, dst in _CLI_PARAM_ALIASES:
-            if src in params and dst not in params:
-                params = dict(params)
-                params[dst] = params[src]
-
-        # 过滤掉不在 dataclass 字段中的键
-        valid_fields = {f.name for f in cls.__dataclass_fields__.values()}
-        filtered_params = {k: v for k, v in params.items() if k in valid_fields}
-        return cls(**filtered_params)
-    
-    def to_dict(self) -> dict:
-        """
-        转换为字典
-        
-        Returns:
-            dict: 参数字典
-        """
-        from dataclasses import asdict
-        return asdict(self)
-    
     def get_effective_video_size(self) -> str:
         """获取实际使用的视频尺寸"""
         return self.video_size or self.image_size

@@ -33,206 +33,61 @@ def _write_project(project_dir: Path) -> ProjectPaths:
     return paths
 
 
-def test_step4_hyperframes_skill_loader_uses_project_resources():
-    from core.infra.hyperframes.skill_loader import (
-        default_step4_hyperframes_skill_dir,
-        build_step4_hyperframes_skill_path_context,
-        step4_hyperframes_skill_dirs,
-    )
-
-    skill_context = build_step4_hyperframes_skill_path_context()
-    skill_dirs = step4_hyperframes_skill_dirs()
-
-    assert "可用 Step4 Skills" in skill_context
-    assert "entry_path:" in skill_context
-    assert "name: hyperframes" in skill_context
-    assert "name: hyperframes-cli" in skill_context
-    assert "Layout Before Animation" not in skill_context
-    assert ".agents/skills" not in skill_context
-    assert default_step4_hyperframes_skill_dir().as_posix().endswith("skills/step4/hyperframes")
-    assert [path.name for path in skill_dirs] == [
-        "hyperframes",
-        "hyperframes-core",
-        "hyperframes-animation",
-        "hyperframes-creative",
-        "hyperframes-cli",
-        "hyperframes-media",
-        "hyperframes-registry",
-        "general-video",
-    ]
+def test_step4_motion_skill_loader_uses_project_resources():
+    from core.infra.motion.skill_loader import default_step4_motion_skill_dir, build_step4_motion_skill_path_context, step4_motion_skill_dirs
+    context = build_step4_motion_skill_path_context()
+    assert "counter_burst:" in context and "entry_path:" in context
+    assert "hyperframes" not in context.lower()
+    assert default_step4_motion_skill_dir().name == "motion-core"
+    assert [p.name for p in step4_motion_skill_dirs()] == ["motion-core", "motion-animation", "motion-creative"]
 
 
-def test_segment_renderer_uses_audio_duration_and_render_command(monkeypatch, tmp_path):
-    from core.infra.hyperframes import segment_renderer
-
-    paths = _write_project(tmp_path / "project")
-    commands = []
-    agent_inputs = []
-
-    def fake_agent_runner(**kwargs):
-        agent_inputs.append(kwargs)
-        work_dir = Path(kwargs["work_dir"])
-        work_dir.mkdir(parents=True, exist_ok=True)
-        (work_dir / "index.html").write_text("<html><body>segment</body></html>", encoding="utf-8")
-
-    def fake_run(command, cwd, check, stdin, stdout, stderr, text, env, timeout):
-        commands.append({"command": command, "cwd": cwd, "check": check, "text": text, "env": env})
-        output_path = Path(command[command.index("--output") + 1])
-        assert output_path.is_absolute()
-        output_path.write_bytes(b"video")
-        return subprocess.CompletedProcess(command, 0, stdout="ok")
-
-    monkeypatch.setattr(segment_renderer, "run_step4_hyperframes_agent", fake_agent_runner)
-    monkeypatch.setattr(segment_renderer.subprocess, "run", fake_run)
-
-    result = segment_renderer.render_hyperframes_segments_with_agent(
-        project_output_dir=str(tmp_path / "project"),
-        script_data=json.loads(Path(paths.script_json()).read_text(encoding="utf-8")),
-        image_size="1280x720",
-        output_dir=paths.images,
-        target_segments=[1],
-        description_data=None,
-        style_preset="data_driven",
-        max_turns=7,
-        render_fps=60,
-        concurrency=1,
-        session_log_path=str(Path(paths.text) / "_step4_hyperframes_agent_session.jsonl"),
-        repo_root=str(tmp_path),
-        llm_server="siliconflow",
-        llm_model="step4-model",
-        llm_base_url="https://llm-gateway.example.test/anthropic",
-    )
-
-    assert result["failed_segments"] == []
-    assert result["processed_segments"] == [1]
-    assert result["image_paths"] == [str(Path(paths.images) / "segment_1.mp4")]
-    assert Path(result["image_paths"][0]).exists()
-    assert agent_inputs[0]["duration_seconds"] == 0.75
-    assert agent_inputs[0]["style_preset"] == "data_driven"
-    assert "atmosphere" not in agent_inputs[0]["segment_payload"]
-    assert agent_inputs[0]["segment_payload"]["content"] == "收入同比增长30%，利润承压。"
-    assert agent_inputs[0]["llm_server"] == "siliconflow"
-    assert agent_inputs[0]["llm_model"] == "step4-model"
-    assert agent_inputs[0]["llm_base_url"] == "https://llm-gateway.example.test/anthropic"
-    assert commands[0]["command"][:4] == ["npx", "--yes", "hyperframes@0.7.10", "render"]
-    assert "/opt/homebrew/bin" in commands[0]["env"]["PATH"]
-    assert "--fps" in commands[0]["command"]
-    assert "60" in commands[0]["command"]
-    assert commands[0]["cwd"] == Path(paths.images) / "hyperframes" / "segment_1"
+def render_options(project, paths):
+    return dict(project_output_dir=str(project), script_data=json.loads(Path(paths.script_json()).read_text()),
+        image_size="1280x720",output_dir=paths.images,target_segments=[1],description_data=None,
+        style_preset="data_driven",max_turns=7,render_fps=60,concurrency=1,
+        session_log_path=str(Path(paths.text)/"session.jsonl"),repo_root=str(project.parent))
 
 
-def test_segment_renderer_uses_absolute_render_output_when_project_path_is_relative(
-    monkeypatch, tmp_path
-):
-    from core.infra.hyperframes import segment_renderer
-
+def test_segment_renderer_uses_audio_duration_and_absolute_output(monkeypatch, tmp_path):
+    from core.infra.motion import segment_renderer
     monkeypatch.chdir(tmp_path)
-    paths = _write_project(Path("project"))
-    commands = []
-
-    def fake_agent_runner(**kwargs):
-        work_dir = Path(kwargs["work_dir"])
-        work_dir.mkdir(parents=True, exist_ok=True)
-        (work_dir / "index.html").write_text("<html></html>", encoding="utf-8")
-
-    def fake_run(command, cwd, check, stdin, stdout, stderr, text, env, timeout):
-        commands.append({"command": command, "cwd": cwd})
-        output_path = Path(command[command.index("--output") + 1])
-        assert output_path.is_absolute()
-        output_path.write_bytes(b"video")
-        return subprocess.CompletedProcess(command, 0, stdout="ok")
-
-    monkeypatch.setattr(segment_renderer, "run_step4_hyperframes_agent", fake_agent_runner)
-    monkeypatch.setattr(segment_renderer.subprocess, "run", fake_run)
-
-    result = segment_renderer.render_hyperframes_segments_with_agent(
-        project_output_dir="project",
-        script_data=json.loads(Path(paths.script_json()).read_text(encoding="utf-8")),
-        image_size="1280x720",
-        output_dir=paths.images,
-        target_segments=[1],
-        description_data=None,
-        style_preset="data_driven",
-        max_turns=7,
-        render_fps=30,
-        concurrency=1,
-        session_log_path=str(Path(paths.text) / "_step4_hyperframes_agent_session.jsonl"),
-        repo_root=str(tmp_path),
-    )
-
-    assert result["failed_segments"] == []
-    assert Path(result["image_paths"][0]).exists()
-    assert Path(result["image_paths"][0]) == (tmp_path / "project/images/segment_1.mp4")
-    assert commands[0]["cwd"] == Path("project/images/hyperframes/segment_1")
+    project=Path("project");paths=_write_project(project);agents=[];renders=[]
+    def agent(**kwargs):
+        agents.append(kwargs);work=Path(kwargs['work_dir']);work.mkdir(parents=True,exist_ok=True)
+        (work/'index.html').write_text('<html></html>')
+    def render(work,payload,output,**kwargs):
+        renders.append((work,payload,output,kwargs));assert Path(output).is_absolute()
+        Path(output).write_bytes(b'video')
+    monkeypatch.setattr(segment_renderer,'run_step4_motion_agent',agent)
+    monkeypatch.setattr(segment_renderer,'render_clip',render)
+    result=segment_renderer.render_motion_segments_with_agent(**render_options(project,paths))
+    assert result['processed_segments']==[1] and not result['failed_segments']
+    assert agents[0]['duration_seconds']==.75
+    assert renders[0][1]['durationSeconds']==.75
+    assert renders[0][3]['fps']==60
+    assert Path(renders[0][0]).parts[-2:]==('motion','segment_1')
+    assert Path(result['image_paths'][0]).is_file()
 
 
-def test_segment_renderer_records_render_log_on_failure(monkeypatch, tmp_path):
-    from core.infra.hyperframes import segment_renderer
-
-    paths = _write_project(tmp_path / "project")
-
-    def fake_agent_runner(**kwargs):
-        work_dir = Path(kwargs["work_dir"])
-        work_dir.mkdir(parents=True, exist_ok=True)
-        (work_dir / "index.html").write_text("<html></html>", encoding="utf-8")
-
-    def fake_run(command, cwd, check, stdin, stdout, stderr, text, env, timeout):
-        raise subprocess.CalledProcessError(1, command, output="render failed")
-
-    monkeypatch.setattr(segment_renderer, "run_step4_hyperframes_agent", fake_agent_runner)
-    monkeypatch.setattr(segment_renderer.subprocess, "run", fake_run)
-
-    result = segment_renderer.render_hyperframes_segments_with_agent(
-        project_output_dir=str(tmp_path / "project"),
-        script_data=json.loads(Path(paths.script_json()).read_text(encoding="utf-8")),
-        image_size="1280x720",
-        output_dir=paths.images,
-        target_segments=[1],
-        description_data=None,
-        style_preset="data_driven",
-        max_turns=7,
-        render_fps=30,
-        concurrency=1,
-        session_log_path=str(Path(paths.text) / "_step4_hyperframes_agent_session.jsonl"),
-        repo_root=str(tmp_path),
-    )
-
-    log_path = Path(paths.images) / "hyperframes" / "segment_1" / "render.log"
-    assert result["failed_segments"] == [1]
-    assert "render failed" in log_path.read_text(encoding="utf-8")
+def test_segment_renderer_preserves_prior_video_and_logs_failure(monkeypatch,tmp_path):
+    from core.infra.motion import segment_renderer
+    project=tmp_path/'project';paths=_write_project(project)
+    output=Path(paths.images)/'segment_1.mp4';output.write_bytes(b'previous')
+    monkeypatch.setattr(segment_renderer,'run_step4_motion_agent',lambda **kwargs:None)
+    def fail(*args,**kwargs):raise RuntimeError('capture failed')
+    monkeypatch.setattr(segment_renderer,'render_clip',fail)
+    result=segment_renderer.render_motion_segments_with_agent(**render_options(project,paths))
+    assert result['failed_segments']==[1]
+    assert output.read_bytes()==b'previous'
+    assert 'capture failed' in (Path(paths.images)/'motion/segment_1/render.log').read_text()
 
 
-def test_segment_renderer_records_render_log_on_timeout(monkeypatch, tmp_path):
-    from core.infra.hyperframes import segment_renderer
-
-    paths = _write_project(tmp_path / "project")
-
-    def fake_agent_runner(**kwargs):
-        work_dir = Path(kwargs["work_dir"])
-        work_dir.mkdir(parents=True, exist_ok=True)
-        (work_dir / "index.html").write_text("<html></html>", encoding="utf-8")
-
-    def fake_run(command, cwd, check, stdin, stdout, stderr, text, env, timeout):
-        raise subprocess.TimeoutExpired(command, timeout)
-
-    monkeypatch.setattr(segment_renderer, "run_step4_hyperframes_agent", fake_agent_runner)
-    monkeypatch.setattr(segment_renderer.subprocess, "run", fake_run)
-
-    result = segment_renderer.render_hyperframes_segments_with_agent(
-        project_output_dir=str(tmp_path / "project"),
-        script_data=json.loads(Path(paths.script_json()).read_text(encoding="utf-8")),
-        image_size="1280x720",
-        output_dir=paths.images,
-        target_segments=[1],
-        description_data=None,
-        style_preset="data_driven",
-        max_turns=7,
-        render_fps=30,
-        concurrency=1,
-        session_log_path=str(Path(paths.text) / "_step4_hyperframes_agent_session.jsonl"),
-        repo_root=str(tmp_path),
-    )
-
-    log_path = Path(paths.images) / "hyperframes" / "segment_1" / "render.log"
-    assert result["failed_segments"] == [1]
-    assert "渲染超时" in log_path.read_text(encoding="utf-8")
+def test_segment_renderer_skips_missing_audio(monkeypatch,tmp_path):
+    from core.infra.motion import segment_renderer
+    project=tmp_path/'project';paths=_write_project(project)
+    (Path(paths.voice)/'voice_1.wav').unlink()
+    def fail(**kwargs):raise AssertionError('agent should not run')
+    monkeypatch.setattr(segment_renderer,'run_step4_motion_agent',fail)
+    result=segment_renderer.render_motion_segments_with_agent(**render_options(project,paths))
+    assert result['missing_audio_segments']==[1]

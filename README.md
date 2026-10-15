@@ -26,7 +26,7 @@ pip install -e .
 
 * **大模型服务** (如 MiMo, OpenRouter, SiliconFlow)
 * **语音合成** (如 字节跳动 TTS)
-* **图像/画面生成** (如 火山引擎, Google Cloud Vertex AI，或 HyperFrames 动态画面)
+* **图像/画面生成** (如 火山引擎, Google Cloud Vertex AI，或 HTML / Three.js 动态画面)
 
 ### 4. 运行制作
 
@@ -48,7 +48,7 @@ python start.py
 * **步骤 1.5 脚本分段**：按规则或 Agent 模式分段，并生成每段对应的口播文案。
 * **步骤 2 描述小结**：从原稿生成整体内容小结，供后续各段画面保持统一语境与视觉连贯性。
 * **步骤 3 语音合成**：采用高品质 TTS 引擎生成拟真配音及 SRT 字幕，为画面生成提供精确时长。
-* **步骤 4 画面生成**：生成静态段落图片，或根据音频时长渲染 HyperFrames 动态画面，并渲染精美开场视频。
+* **步骤 4 画面生成**：生成静态段落图片，或根据音频时长渲染 HTML / Three.js 动态画面，并渲染精美开场视频。
 * **步骤 5 视频合成**：混合开场视频、转场画面、配音、字幕及背景音乐，导出 MP4 视频。
 * **步骤 6 封面生成**：自动生成适配社交媒体的竖版封面图。
 
@@ -64,7 +64,7 @@ python start.py
 
 ### 第四步画面模式
 
-步骤 1.5 默认使用规则分段，并把每段 `visualizer` 写为 `image`。手动编辑 `raw.docx` 时，可在某段末尾添加 `【hf】`，让该段写为 `visualizer: "hf"` 并使用 HyperFrames 动态配图；输出到 `script.json` 时会自动移除这个标记。如需让 Agent 按意群分段并自动选择 `image` / `hf`，可在 `config.yaml` 中启用：
+步骤 1.5 默认使用规则分段，并把每段 `visualizer` 写为 `image`。手动编辑 `raw.docx` 时，可在某段末尾添加 `【motion】`，让该段写为 `visualizer: "hf"` 并使用 HTML / Three.js 动态配图；输出到 `script.json` 时会自动移除这个标记。如需让 Agent 按意群分段并自动选择 `image` / `hf`，可在 `config.yaml` 中启用：
 
 ```yaml
 step1_5:
@@ -76,15 +76,15 @@ step1_5:
 ```yaml
 step4:
   visual_mode: static_image       # 默认：生成 images/segment_i.png
-  # visual_mode: hyperframes_agent # 动态：生成 images/segment_i.mp4
-  # visual_mode: mixed             # 混合：按每段 visualizer 选择图片或 HyperFrames
-  hyperframes_style_preset: data_driven
+  # visual_mode: motion_agent # 动态：生成 images/segment_i.mp4
+  # visual_mode: mixed             # 混合：按每段 visualizer 选择图片或 HTML / Three.js
+  motion_style_preset: data_driven
   image_prompt_template: keywords  # keywords / pure_images
 ```
 
-选择 `hyperframes_agent` 时，系统会先使用步骤 3 已生成的真实音频时长，再调用 Claude Agent 按项目内置 HyperFrames 规范生成动态 HTML 并渲染为分段视频。
+选择 `motion_agent` 时，系统会先使用步骤 3 已生成的真实音频时长，再调用 Claude Agent 按项目内置 HTML / Three.js 规范生成动态 HTML 并渲染为分段视频。
 
-选择 `mixed` 时，系统读取 `text/script.json` 中每段的 `visualizer` 字段：`image` 生成 `segment_i.png`，`hf` 生成 `segment_i.mp4`。步骤 1.5 的默认规则模式会把每段 `visualizer` 写为 `image`；带 `【hf】` 标记或 Agent 判定为动态配图的段落会写为 `hf`。混合模式下两类段落会分组并行生成。
+选择 `mixed` 时，系统读取 `text/script.json` 中每段的 `visualizer` 字段：`image` 生成 `segment_i.png`，`hf` 生成 `segment_i.mp4`。步骤 1.5 的默认规则模式会把每段 `visualizer` 写为 `image`；带 `【motion】` 标记或 Agent 判定为动态配图的段落会写为 `hf`。混合模式下两类段落会分组并行生成。
 
 静态图片使用的提示词模板集中定义在 `prompts/step4_image_templates.yaml`。每个模板都包含便于人类辨识的 `label`、`description` 和原样多行的 `template`；只有 `template` 正文会发送给生图模型。`keywords` 完整保留原有图示加中文关键词模板；`pure_images` 生成无文字的电影感叙事画面。通过 `step4.image_prompt_template` 选择，配置不存在的模板名称时会直接报错并列出可选项。
 
@@ -96,8 +96,8 @@ step4:
 
 * 📂 **`core/`** — **系统核心代码库**。
 * 📂 **`prompts/`** — **大模型提示词与风格模板**。包含视频生成过程中生成描述小结、润色口播文案和构建画面所用的核心 Prompt 预设。如需调整文案生成风格或添加自定义艺术风格，在此修改。
-* 📂 **`skills/`** — **自动化技能扩展**。`skills/step1/` 存放第一步写作 Agent skills；`skills/step4/` 存放第四步动态画面使用的官方 HyperFrames 核心 skills，包括 `hyperframes/`、`hyperframes-core/`、`hyperframes-animation/`、`hyperframes-creative/`、`hyperframes-cli/`、`hyperframes-media/`、`hyperframes-registry/` 和 `general-video/`。
-  设置环境变量 `AIGC_VIDEO_LIBRARY_DIR` 可从另一个文件夹读取 `prompts/` 与 `skills/`（桌面版用它指向用户可编辑的副本）；设置 `AIGC_HYPERFRAMES_CLI` 指向 HyperFrames 的 `dist/cli.js` 时，渲染改用该固定版本而不是 `npx`。
+* 📂 **`skills/`** — `skills/step1/` 保存写作技能；`skills/step4/` 保存 HTML 动画、Three.js 和视觉设计技能。精剪复用同一浏览器渲染契约。
+  `AIGC_VIDEO_LIBRARY_DIR` 可覆盖可编辑 prompts/ 和 skills/；步骤 4 使用本地浏览器和 FFmpeg。
 * 📂 **`scripts/`** — **系统管理脚本**。提供 macOS/Linux 以及 Windows 环境下一键环境安装、依赖检验以及完整功能诊断的脚本。
 * 📂 **`input/`** — **待处理文档输入目录**。放入需要转为视频的 PDF、EPUB、DOCX 等原始电子书/文档。
 * 📂 **`output/`** — **项目生成输出目录**。每一次视频制作都将在此按“项目名_时间戳”生成独立的文件夹，包含视频和全部中间缓存资源。
@@ -113,6 +113,18 @@ step4:
 视频制作完成后，在 `output/《你的文档标题》_MMDD_HHMM/` 目录下将产生以下结构，供随时审阅或二次重制：
 
 * `final_video.mp4` — **最终合成的高清短视频文件**
-* `images/` — 各分段配图及精美的 HyperFrames 开场动画（`opening.mp4`）
+* `images/` — 各分段配图及精美的 HTML / Three.js 开场动画（`opening.mp4`）
 * `voice/` — 对应段落的高保真配音 MP3 及字幕文件（`字幕.srt`）
 * `text/` — 中间过程中 AI 生成并导出的 Word 文案脚本与段落总结文件（可供编辑修正后实现精准二次重制）
+
+### HTML motion runtime (Step 4)
+
+Install the pinned JS dependencies with `npm ci --prefix core/infra/motion`. Set `AIGC_BROWSER_PATH` to Chrome/Chromium if it is not in a standard location. Optional `AIGC_MOTION_MODULES`, `AIGC_FFMPEG_PATH` and `AIGC_FFPROBE_PATH` select packaged tools. Use `visual_mode: motion_agent` and the `motion_style_preset`, `motion_max_turns`, `motion_render_fps`, `motion_concurrency` options. Older YAML option names and `【motion】` markers are read for compatibility; new manual motion lines can end in `【motion】`. Skills for Step 4 are project-owned HTML motion guides.
+
+Agent 可运行 render.py capabilities / check / preview / render，自主完成实际渲染、抽帧审阅和修复。Chrome、Node 和 FFmpeg 由共享脚本控制；不再安装视频框架 CLI。未改变的已验证预览会被复用。
+
+### Segmentation and voice controls
+
+Step 2 contains **Split method** and, in **Agent (split by meaning)** mode, **Target segments**. **Split by punctuation** splits at English/Chinese periods, question marks, exclamation marks and semicolons, retaining punctuation and closing quotes. It keeps decimal numbers together and does not group sentences to meet a target count. **One segment per line** remains available. Existing `auto` settings now use punctuation mode; existing segments remain until regenerated.
+
+Step 3 contains **TTS model**, **Speaking rate** (−50 to 100, 0 is normal) and **Emotion**. These controls save automatically and apply to new recordings. Agent provider/model and voice selection remain in Settings.

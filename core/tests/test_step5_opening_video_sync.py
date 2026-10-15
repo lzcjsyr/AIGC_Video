@@ -37,7 +37,7 @@ def test_run_step_5_skips_duplicate_opening_text_for_video_asset(monkeypatch, tm
 
     monkeypatch.setattr(steps, "_get_project_root", lambda: str(tmp_path))
     monkeypatch.setattr(steps, "_resolve_bgm_audio_path", lambda *args, **kwargs: None)
-    monkeypatch.setattr(steps, "_invoke_opening_narration", lambda *args, **kwargs: str(voice_dir / "opening.mp3"))
+    monkeypatch.setattr(steps, "_ensure_opening_narration", lambda *args, **kwargs: str(voice_dir / "opening.mp3"))
     monkeypatch.setattr(steps, "VideoComposer", FakeComposer)
 
     result = steps.run_step_5(

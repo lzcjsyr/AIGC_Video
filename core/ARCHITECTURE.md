@@ -2,58 +2,56 @@
 
 ## Goal
 
-`core` is the shared business/runtime layer for all adapters (`core/cli/`, future UI).
-Keep orchestration in `pipeline`, business logic in `domain`, and all external systems in `infra`.
+`core` is the engine shared by the CLI (`core/cli/`) and Book2Video Studio, which
+bundles it. Orchestration lives in `pipeline`, business logic in `domain`, and
+external systems in `infra`. Packages export nothing themselves: import the module
+that defines a name (`from core.pipeline import steps`).
 
-## Current Layout
+## Layout
 
 ```text
 core/
-├── __init__.py
-├── config.py
-├── startup.py             # CLI startup validation (provider resolution)
-├── llm_gateway.py         # Domain-safe gateway to LLM text generation
-├── media_gateway.py       # Domain-safe gateway to media infrastructure
-├── prompts.py
-├── shared.py
+├── config.py              # YAML settings, API keys, validation, VideoGenerationConfig
+├── prompts.py             # Loads prompts/ templates and style presets
+├── resources.py           # Where prompts/ and skills/ live (desktop overrides it)
+├── shared.py              # Logging, errors, retry, JSON and file helpers
+├── startup.py             # CLI provider inference from model names
+├── dependency_check.py    # `python -m core.dependency_check` for install/test scripts
 │
-├── cli/                   # Command-line interface adapters & helpers
-│   ├── __init__.py
+├── cli/                   # Interactive CLI
 │   ├── main.py
-│   ├── project_io.py
 │   └── ui_helpers.py
 │
-├── pipeline/              # Application orchestration
-│   ├── __init__.py
-│   ├── run_auto.py
-│   ├── scanner.py
-│   └── steps.py
+├── pipeline/              # Step orchestration
+│   ├── steps.py           # run_step_1 … run_step_6
+│   ├── run_auto.py        # Full automatic run
+│   └── scanner.py         # Input/project discovery and step progress
 │
-├── domain/                # Domain/business logic
-│   ├── __init__.py
-│   ├── composer.py
-│   ├── docx_transform.py
-│   ├── reader.py
-│   ├── subtitles.py
-│   └── summarizer.py
+├── domain/                # Business logic
+│   ├── summarizer.py      # Step 1.5 segmentation, step 2 summary
+│   ├── subtitles.py       # Subtitle line breaking and timing
+│   ├── composer.py        # Step 5 video composition (MoviePy)
+│   ├── docx_transform.py  # raw/script JSON <-> DOCX
+│   └── metadata.py        # Title, quote and focus-marker helpers
 │
-└── infra/                 # Infrastructure and external integrations
-    ├── __init__.py
-    ├── ai/                # Third-party AI provider adapters
-    │   ├── __init__.py
-    │   ├── image_client.py
-    │   ├── llm_client.py
-    │   └── tts_client.py  # Includes silence trimming helper
-    ├── media/             # Low-level media operation adapters
-    │   ├── __init__.py
-    │   ├── exporter.py
-    │   └── ffmpeg.py
-    └── project_paths.py
+└── infra/                 # External systems
+    ├── project_paths.py
+    ├── ai/
+    │   ├── llm_client.py      # OpenAI-compatible text, Doubao/Google image calls
+    │   ├── image_providers.py
+    │   ├── image_client.py    # Step 4 images, step 6 covers, step 3 voice batch + SRT
+    │   ├── tts_client.py      # ByteDance TTS and silence trimming
+    │   └── claude_agent.py    # Claude Agent SDK runs for steps 1, 1.5 and 4
+    ├── motion/                # Shared Chrome capture, capabilities, opening and agent clips
+    └── media/
+        ├── ffmpeg.py
+        ├── exporter.py
+        └── three_by_four.py   # 3:4 distribution copy
 ```
 
 ## Dependency Rules
 
-1. `domain/` must not import `core.infra`.
-2. `pipeline/` may import `domain/`, `infra/`, and core shared modules.
-3. `infra/` exports only infrastructure types/utilities.
-4. Adapters (`core/cli/`, future UI) should call `core.pipeline` as main entry.
+1. `pipeline/` may import `domain/`, `infra/`, and the top-level modules.
+2. `domain/` holds the logic; it calls `infra/` for providers and media tools.
+3. `infra/` never imports `pipeline/` or `cli/`.
+4. Adapters (`cli/`, the desktop backend) call `core.pipeline` as their entry.

@@ -44,22 +44,22 @@ def test_generation_params_include_hyperframes_visual_mode(tmp_path):
     config_path.write_text(
         """
 step4:
-  visual_mode: hyperframes_agent
-  hyperframes_style_preset: data_driven
-  hyperframes_max_turns: 12
-  hyperframes_render_fps: 60
-  hyperframes_concurrency: 2
+  visual_mode: motion_agent
+  motion_style_preset: data_driven
+  motion_max_turns: 12
+  motion_render_fps: 60
+  motion_concurrency: 2
 """,
         encoding="utf-8",
     )
 
     params = get_generation_params(config_path)
 
-    assert params["visual_mode"] == "hyperframes_agent"
-    assert params["hyperframes_style_preset"] == "data_driven"
-    assert params["hyperframes_max_turns"] == 12
-    assert params["hyperframes_render_fps"] == 60
-    assert params["hyperframes_concurrency"] == 2
+    assert params["visual_mode"] == "motion_agent"
+    assert params["motion_style_preset"] == "data_driven"
+    assert params["motion_max_turns"] == 12
+    assert params["motion_render_fps"] == 60
+    assert params["motion_concurrency"] == 2
 
 
 def test_generation_params_include_mixed_visual_mode(tmp_path):
@@ -107,7 +107,7 @@ def test_cli_step_4_mixed_mode_prompts_both_style_choices(monkeypatch, tmp_path)
     )
     monkeypatch.setattr(
         ui_helpers,
-        "prompt_hyperframes_style_choice",
+        "prompt_motion_style_choice",
         lambda *_args, **_kwargs: style_calls.append("hf") or "dark_premium",
     )
     monkeypatch.setattr(
@@ -159,10 +159,10 @@ def test_cli_step_4_mixed_mode_prompts_both_style_choices(monkeypatch, tmp_path)
         mute_cut_min_silence_ms=100,
         mute_cut_remain_ms="static_image",
         visual_mode="mixed",
-        hyperframes_style_preset="dark_premium",  # Wait, let's keep it "data_driven" or let prompt choice override it
-        hyperframes_max_turns=20,
-        hyperframes_render_fps=30,
-        hyperframes_concurrency=1,
+        motion_style_preset="dark_premium",  # Wait, let's keep it "data_driven" or let prompt choice override it
+        motion_max_turns=20,
+        motion_render_fps=30,
+        motion_concurrency=1,
         image_prompt_template="pure_images",
     )
 
@@ -170,7 +170,7 @@ def test_cli_step_4_mixed_mode_prompts_both_style_choices(monkeypatch, tmp_path)
     assert style_calls == ["image", "hf"]
     assert captured["args"][3] == "style08"
     assert captured["kwargs"]["visual_mode"] == "mixed"
-    assert captured["kwargs"]["hyperframes_style_preset"] == "dark_premium"
+    assert captured["kwargs"]["motion_style_preset"] == "dark_premium"
     assert captured["kwargs"]["image_prompt_template"] == "pure_images"
 
 
@@ -229,10 +229,10 @@ def test_cli_step_4_allows_zero_for_opening_video_even_when_opening_disabled(mon
         mute_cut_min_silence_ms=100,
         mute_cut_remain_ms="static_image",
         visual_mode="static_image",
-        hyperframes_style_preset="data_driven",
-        hyperframes_max_turns=20,
-        hyperframes_render_fps=30,
-        hyperframes_concurrency=1,
+        motion_style_preset="data_driven",
+        motion_max_turns=20,
+        motion_render_fps=30,
+        motion_concurrency=1,
     )
 
     assert result["success"] is True
@@ -295,7 +295,7 @@ def test_run_step_4_mixed_mode_dispatches_by_segment_visualizer(monkeypatch, tmp
         return {"image_paths": ["", str(video_path)], "failed_segments": [], "processed_segments": [2]}
 
     monkeypatch.setattr(steps, "generate_images_for_segments", fake_generate_images)
-    monkeypatch.setattr(steps, "render_hyperframes_segments_with_agent", fake_hyperframes_renderer, raising=False)
+    monkeypatch.setattr(steps, "render_motion_segments_with_agent", fake_hyperframes_renderer, raising=False)
     monkeypatch.setattr(steps, "render_opening_video", lambda *args, **kwargs: None)
 
     result = steps.run_step_4(
@@ -327,7 +327,7 @@ def test_run_step_4_hyperframes_mode_dispatches_to_renderer(monkeypatch, tmp_pat
         return {"image_paths": ["", str(video_path)], "failed_segments": [], "processed_segments": [2]}
 
     monkeypatch.setattr(steps, "render_opening_video", lambda *args, **kwargs: None)
-    monkeypatch.setattr(steps, "render_hyperframes_segments_with_agent", fake_hyperframes_renderer, raising=False)
+    monkeypatch.setattr(steps, "render_motion_segments_with_agent", fake_hyperframes_renderer, raising=False)
 
     result = steps.run_step_4(
         image_server="doubao",
@@ -337,11 +337,11 @@ def test_run_step_4_hyperframes_mode_dispatches_to_renderer(monkeypatch, tmp_pat
         project_output_dir=str(tmp_path / "project"),
         opening_quote=False,
         target_segments=[2],
-        visual_mode="hyperframes_agent",
-        hyperframes_style_preset="data_driven",
-        hyperframes_max_turns=9,
-        hyperframes_render_fps=60,
-        hyperframes_concurrency=1,
+        visual_mode="motion_agent",
+        motion_style_preset="data_driven",
+        motion_max_turns=9,
+        motion_render_fps=60,
+        motion_concurrency=1,
         llm_server="siliconflow",
         llm_model="step4-model",
         llm_base_url="https://llm-gateway.example.test/anthropic",
@@ -368,9 +368,19 @@ def test_run_step_4_hyperframes_mode_requires_step3_voice(tmp_path):
         image_style_preset="style01",
         project_output_dir=str(tmp_path / "project"),
         opening_quote=False,
-        visual_mode="hyperframes_agent",
+        visual_mode="motion_agent",
     )
 
     assert result["success"] is False
     assert result["failed_segments"] == [1, 2]
     assert "步骤3" in result["message"]
+
+
+def test_legacy_yaml_options_migrate_without_requiring_a_framework(tmp_path):
+    path = tmp_path / "legacy.yaml"
+    path.write_text("step4:\n  visual_mode: hyperframes_agent\n  hyperframes_style_preset: dark_premium\n  hyperframes_render_fps: 60\n  motion_render_fps: 24\nhyperframes_opening:\n  ip_name: My channel\n")
+    params = get_generation_params(path)
+    assert params["visual_mode"] == "motion_agent"
+    assert params["motion_style_preset"] == "dark_premium"
+    assert params["motion_render_fps"] == 24
+    assert not any(key.startswith("hyperframes_") for key in params)

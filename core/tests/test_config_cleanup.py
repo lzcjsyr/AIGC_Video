@@ -78,7 +78,7 @@ def test_yaml_runtime_overrides_update_global_config_for_legacy_readers(tmp_path
 
     original = {
         "SUBTITLE_FONT_SIZE": config.SUBTITLE_FONT_SIZE,
-        "OPENING_HYPERFRAMES_IP_NAME": config.OPENING_HYPERFRAMES_IP_NAME,
+        "OPENING_MOTION_IP_NAME": config.OPENING_MOTION_IP_NAME,
         "MAX_CONCURRENT_IMAGE_GENERATION": config.MAX_CONCURRENT_IMAGE_GENERATION,
         "BGM_DEFAULT_VOLUME": config.BGM_DEFAULT_VOLUME,
         "IMAGE_ZOOM_IN_RATIO": config.IMAGE_ZOOM_IN_RATIO,
@@ -89,7 +89,7 @@ def test_yaml_runtime_overrides_update_global_config_for_legacy_readers(tmp_path
         """
 subtitles:
   font_size: 56
-hyperframes_opening:
+motion_opening:
   ip_name: 测试刊头
 step4:
   max_concurrent_image_generation: 4
@@ -105,7 +105,7 @@ step5:
         apply_yaml_config(config_path)
 
         assert config.SUBTITLE_FONT_SIZE == 56
-        assert config.OPENING_HYPERFRAMES_IP_NAME == "测试刊头"
+        assert config.OPENING_MOTION_IP_NAME == "测试刊头"
         assert config.MAX_CONCURRENT_IMAGE_GENERATION == 4
         assert config.BGM_DEFAULT_VOLUME == 0.25
         assert config.IMAGE_ZOOM_IN_RATIO == 1.08
@@ -153,3 +153,26 @@ def test_video_generation_config_rejects_unknown_image_prompt_template():
             output_dir="output",
             image_prompt_template="missing-template",
         )
+
+
+def test_seedream_has_its_own_image_concurrency(tmp_path):
+    import core.config as config_module
+    from core.config import Config, apply_yaml_config, config
+    from core.infra.ai.image_client import image_generation_workers
+
+    keys = ("MAX_CONCURRENT_IMAGE_GENERATION", "SEEDREAM_MAX_CONCURRENT_IMAGE_GENERATION")
+    original = {key: getattr(config, key) for key in keys}
+    config_path = tmp_path / "video.yaml"
+    config_path.write_text(
+        "step4:\n  max_concurrent_image_generation: 1\n  seedream_max_concurrent_image_generation: 4\n",
+        encoding="utf-8",
+    )
+    try:
+        apply_yaml_config(config_path)
+        assert image_generation_workers("doubao") == 4
+        assert image_generation_workers("google_adc") == 1
+    finally:
+        for key, value in original.items():
+            setattr(Config, key, value)
+            setattr(config, key, value)
+            setattr(config_module, key, value)

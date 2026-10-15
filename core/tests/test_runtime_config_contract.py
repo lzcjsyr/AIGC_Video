@@ -131,18 +131,20 @@ def test_step1_subagent_prompts_do_not_depend_on_book_video_script_internals():
 
 
 def test_config_exposes_current_runtime_params():
-    from core.config import config, get_generation_params
+    from core.config import config, get_generation_params, _load_yaml_overrides
 
-    params = get_generation_params()
+    example = Path(__file__).resolve().parents[2] / "config.example.yaml"
+    defaults = _load_yaml_overrides(example)
+    params = get_generation_params(example)
 
-    assert params["llm_server_step2"] == "volcengine"
-    assert params["llm_base_url_step2"] == config.LLM_BASE_URL_STEP2
-    assert params["llm_server_step4"] == "volcengine"
-    assert params["llm_base_url_step4"] == config.LLM_BASE_URL_STEP4
+    assert params["llm_server_step2"] == defaults["LLM_SERVER_STEP2"]
+    assert params["llm_base_url_step2"] == config.LLM_SERVER_URLS[params["llm_server_step2"]]
+    assert params["llm_server_step4"] == defaults["LLM_SERVER_STEP4"]
+    assert params["llm_base_url_step4"] == config.LLM_SERVER_URLS[params["llm_server_step4"]]
     assert "volcengine" in config.SUPPORTED_LLM_SERVERS
     assert "kimi" in config.SUPPORTED_LLM_SERVERS
     assert config.LLM_SERVER_URLS["kimi"] == "https://api.moonshot.cn/v1"
-    assert config.IMAGE_STYLE_PRESET == params["image_style_preset"]
+    assert defaults["IMAGE_STYLE_PRESET"] == params["image_style_preset"]
     assert params["cover_image_server"] == "google_adc"
 
     config.validate_parameters(
@@ -275,3 +277,64 @@ def test_recovered_config_keeps_cover_validation_usable(monkeypatch, tmp_path):
     assert result["success"] is True
     assert captured["server"] == "google"
     assert captured["model"]
+
+
+def test_step6_makes_every_requested_size(monkeypatch, tmp_path):
+    import json
+
+    from core.pipeline import steps
+
+    sizes = []
+
+    def fake_run_cover_generation(project_output_dir, cover_image_size, *args):
+        sizes.append(cover_image_size)
+        if cover_image_size == "bad":
+            raise ValueError("封面参数校验失败")
+        return {"success": True, "cover_paths": [f"cover_{cover_image_size}.png"], "failures": [], "style_id": "cover01"}
+
+    monkeypatch.setattr(steps, "_run_cover_generation", fake_run_cover_generation)
+    (tmp_path / "text").mkdir()
+    (tmp_path / "text" / "raw.json").write_text(json.dumps({"title": "测试标题"}), encoding="utf-8")
+
+    result = steps.run_step_6(str(tmp_path), ["16:9", "bad", "3:4", "16:9"], "google", None, "cover01", 1)
+
+    assert sizes == ["16:9", "bad", "3:4"]
+    assert result["success"] is True
+    assert result["cover_paths"] == ["cover_16:9.png", "cover_3:4.png"]
+    assert result["failures"] == ["bad: 封面参数校验失败"]
+
+    single = steps.run_step_6(str(tmp_path), "bad", "google", None, "cover01", 1)
+    assert single == {"success": False, "message": "封面参数校验失败", "failures": ["封面参数校验失败"]}
+
+
+def test_default_config_makes_covers_in_several_sizes_with_style_one():
+    from core import config
+
+    assert config.COVER_IMAGE_SIZE_KEYS == ["16:9", "3:4"]
+    assert set(config.COVER_IMAGE_SIZE_KEYS) <= set(config.COVER_IMAGE_SIZE_PRESETS)
+    assert config.COVER_IMAGE_STYLE == "cover01"
+
+
+def test_retired_cover_size_key_loads_and_is_ignored(tmp_path):
+    from core.config import _load_yaml_overrides
+
+    path = tmp_path / "config.yaml"
+    path.write_text('step6:\n  default_cover_image_size_key: "1:1"\n', encoding="utf-8")
+
+    assert _load_yaml_overrides(path) == {}
+
+
+def test_retired_step5_settings_load_and_are_ignored(tmp_path):
+    from core.config import _load_yaml_overrides
+
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "step5:\n"
+        "  image_material_target_fps: 15\n"
+        "  video_material_duration_adjust: stretch\n"
+        "  video_material_resize_method: crop\n"
+        "  video_material_longer_than_audio_mode: compress\n",
+        encoding="utf-8",
+    )
+
+    assert _load_yaml_overrides(path) == {"VIDEO_MATERIAL_LONGER_THAN_AUDIO_MODE": "compress"}

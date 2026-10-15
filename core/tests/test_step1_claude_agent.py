@@ -494,16 +494,14 @@ def test_commerce_skill_disables_agent_tool_even_when_global_subagents_are_enabl
     assert captured["agents"] is None
 
 
-def test_step1_subagent_instruction_is_managed_by_prompt_file():
-    instruction = claude_agent._with_step1_subagent_instruction("保留用户要求", {"subagent": object()})
+def test_step1_prompt_uses_available_subagents_only_for_specific_problems():
     prompt = Path("prompts/step1_agent.md").read_text(encoding="utf-8")
-
-    assert instruction == "保留用户要求"
     assert "如果当前会话存在可调用的 subagent" in prompt
     assert "只告知输入稿件路径和需要保存的输出文件路径" in prompt
-    assert "下一步必须先调用 subagent：title-quote-writer" in prompt
-    assert "稳定第一稿路径" in prompt
-    assert "必须调用 subagent：fact-style-reviewer" in prompt
+    assert "title-quote-writer" in prompt and "fact-style-reviewer" in prompt
+    assert "不为凑轮次反复起草或审稿" in prompt
+    assert "必须先调用" not in prompt
+    assert "不要转发整个对话或整本来源" in prompt
 
 
 def test_step1_agent_adds_input_directory_to_options(monkeypatch, tmp_path: Path):

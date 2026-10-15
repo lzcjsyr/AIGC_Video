@@ -13,10 +13,6 @@ def test_config_accepts_google_adc_without_google_api_key(monkeypatch):
         "google_adc",
         "gemini-3.1-flash-image",
     )
-    assert "GOOGLE_CLOUD_API_KEY" not in Config.get_required_keys_for_config(
-        "google_adc",
-        "bytedance",
-    )
 
 
 def test_google_adc_provider_uses_google_generator_with_adc(monkeypatch):

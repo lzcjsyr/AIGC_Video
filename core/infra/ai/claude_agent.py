@@ -21,24 +21,25 @@ from claude_agent_sdk import (
 )
 
 from core.config import config
+from core.infra.ai.task_context import write_task_context
 from core.resources import library_root
-from core.infra.hyperframes.skill_loader import (
-    build_step4_hyperframes_skill_path_context,
-    default_step4_hyperframes_skill_dir,
-    step4_hyperframes_skill_dirs,
+from core.infra.motion.skill_loader import (
+    build_step4_motion_skill_path_context,
+    default_step4_motion_skill_dir,
+    step4_motion_skill_dirs,
 )
 from core.prompts import (
     STEP1_5_SEGMENT_PROMPT_TEMPLATE,
-    STEP4_HYPERFRAMES_AGENT_PROMPT_TEMPLATE,
-    STEP4_HYPERFRAMES_PROMPT_VERSION,
-    build_step4_hyperframes_style_context,
+    STEP4_MOTION_AGENT_PROMPT_TEMPLATE,
+    STEP4_MOTION_PROMPT_VERSION,
+    build_step4_motion_style_context,
     build_step1_agent_prompt,
 )
 
 STEP1_AGENT_TOOLS = ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "Skill"]
 STEP1_5_AGENT_TOOLS = ["Read", "Write"]
 STEP1_AGENT_SKILL = config.STEP1_AGENT_SKILL
-STEP4_HYPERFRAMES_AGENT_TOOLS = ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
+STEP4_MOTION_AGENT_TOOLS = ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
 
 _STEP1_SUBAGENT_PROMPTS = {
     "title-quote-writer": "第一稿固定后生成标题、封面文案和金句候选，写入 _title_quote_candidates.json。",
@@ -98,10 +99,6 @@ def _build_step1_subagents(skill_name: str | None = None) -> dict[str, AgentDefi
     return agents
 
 
-def _with_step1_subagent_instruction(extra_requirements: str, agents: dict[str, AgentDefinition]) -> str:
-    return extra_requirements
-
-
 def _get_anthropic_compatible_config(server: str, context: str) -> tuple[str, str, str]:
     server = (server or "").strip().lower()
     if server == "mimo":
@@ -120,7 +117,7 @@ def _get_anthropic_compatible_config(server: str, context: str) -> tuple[str, st
         labels = {
             "step1": "步骤1",
             "step1_5": "步骤1.5",
-            "step4": "步骤4 HyperFrames Agent",
+            "step4": "步骤4 HTML Motion Agent",
         }
         label = labels.get(context, context)
         raise ValueError(f"不支持的{label} LLM服务商: {server}，支持的服务商: mimo, kimi, deepseek, siliconflow, openrouter, volcengine")
@@ -171,8 +168,8 @@ def _build_anthropic_agent_env(*, server: str, model: str, context: str, config_
             {
                 "ANTHROPIC_DEFAULT_OPUS_MODEL": _normalize_anthropic_agent_model(server, model),
                 "ANTHROPIC_DEFAULT_SONNET_MODEL": _normalize_anthropic_agent_model(server, model),
-                "ANTHROPIC_DEFAULT_HAIKU_MODEL": "deepseek-v4-flash",
-                "CLAUDE_CODE_SUBAGENT_MODEL": "deepseek-v4-flash",
+                "ANTHROPIC_DEFAULT_HAIKU_MODEL": "deepseek-flash",
+                "CLAUDE_CODE_SUBAGENT_MODEL": "deepseek-flash",
                 "CLAUDE_CODE_EFFORT_LEVEL": "max",
             }
         )
@@ -208,14 +205,14 @@ def build_step1_5_agent_env(
     )
 
 
-def build_step4_hyperframes_agent_env(
+def build_step4_motion_agent_env(
     llm_server: str | None = None,
     llm_model: str | None = None,
     llm_base_url: str | None = None,
 ) -> dict[str, str]:
     server = (llm_server or getattr(config, "LLM_SERVER_STEP4", "") or "").strip().lower()
     if not server:
-        raise RuntimeError("步骤4 HyperFrames Agent 需要配置 LLM_SERVER_STEP4")
+        raise RuntimeError("步骤4 HTML Motion Agent 需要配置 LLM_SERVER_STEP4")
 
     base_url, api_key, key_name = _get_anthropic_compatible_config(server, "step4")
 
@@ -227,7 +224,7 @@ def build_step4_hyperframes_agent_env(
     base_url = _normalize_anthropic_agent_base_url(server, base_url)
 
     if not api_key:
-        raise RuntimeError(f"步骤4 HyperFrames Agent 需要 {key_name}（.env）")
+        raise RuntimeError(f"步骤4 HTML Motion Agent 需要 {key_name}（.env）")
 
     env = {
         "ANTHROPIC_BASE_URL": base_url,
@@ -244,8 +241,8 @@ def build_step4_hyperframes_agent_env(
                 "ANTHROPIC_DEFAULT_SONNET_MODEL": _normalize_anthropic_agent_model(
                     server, llm_model or config.LLM_MODEL_STEP4
                 ),
-                "ANTHROPIC_DEFAULT_HAIKU_MODEL": "deepseek-v4-flash",
-                "CLAUDE_CODE_SUBAGENT_MODEL": "deepseek-v4-flash",
+                "ANTHROPIC_DEFAULT_HAIKU_MODEL": "deepseek-flash",
+                "CLAUDE_CODE_SUBAGENT_MODEL": "deepseek-flash",
                 "CLAUDE_CODE_EFFORT_LEVEL": "max",
             }
         )
@@ -558,14 +555,19 @@ async def _run_step1_agent_async(
 
     actual_skill = Path(skill_path).name if skill_path else STEP1_AGENT_SKILL
     subagents = _build_step1_subagents(actual_skill)
-    effective_extra_requirements = _with_step1_subagent_instruction(extra_requirements, subagents)
     prompt = build_step1_agent_prompt(
         input_file=input_file,
         output_json=output_json,
         text_dir=text_dir,
         skill_path=skill_path,
-        extra_requirements=effective_extra_requirements,
+        extra_requirements=extra_requirements,
     )
+    prompt = write_task_context(Path(session_log_path).with_suffix('.task.json'),
+        stage='1', objective='根据选定来源和用户要求写作，只产出本项目 raw.json 与必要写作中间文件。',
+        cwd=repo_root, inputs=[input_file, skill_path], writable=[text_dir],
+        protected=[Path(repo_root)/'core', Path(repo_root)/'prompts', Path(repo_root)/'skills', input_file],
+        done=['raw.json 可被 json.loads 读取，正文非空，元数据符合输出契约；不生成分段、配音、画面或视频。'],
+        facts={'skill': actual_skill, 'subagents': list(subagents)}) + '\n' + prompt
     tools = STEP1_AGENT_TOOLS + (["Agent"] if subagents else [])
     options = ClaudeAgentOptions(
         cwd=repo_root,
@@ -594,7 +596,6 @@ async def _run_step1_agent_async(
             "skill_path": skill_path,
             "repo_root": repo_root,
             "extra_requirements": extra_requirements,
-            "effective_extra_requirements": effective_extra_requirements,
             "add_dirs": _step1_agent_add_dirs(input_file),
             "model": config.LLM_MODEL_STEP1,
             "tools": tools,
@@ -728,11 +729,16 @@ async def _run_step1_5_segment_agent_async(
         output_json_path=output_json_path,
         target_segments=target_segments,
     )
+    prompt = write_task_context(Path(session_log_path).with_suffix('.task.json'),
+        stage='2', objective='只做语义分段并选择 image/hf，不修改正文或生成素材。', cwd=output_path.parent,
+        inputs=[raw_json_path], writable=[output_path], protected=[raw_json_path],
+        done=['只写 segments JSON；按顺序拼接内容与原文一致（忽略空白），visualizer 只能为 image/hf。'],
+        facts={'target_segments': target_segments}) + '\n' + prompt
     tools = list(STEP1_5_AGENT_TOOLS)
     effective_llm_server = llm_server or config.LLM_SERVER_STEP1_5
     effective_llm_model = llm_model or config.LLM_MODEL_STEP1_5
     options = ClaudeAgentOptions(
-        cwd=repo_root,
+        cwd=str(output_path.parent.resolve()),
         model=_anthropic_agent_options_model(effective_llm_server, effective_llm_model),
         tools=tools,
         allowed_tools=tools,
@@ -740,7 +746,7 @@ async def _run_step1_5_segment_agent_async(
         max_turns=80,
         add_dirs=[str(Path(raw_json_path).parent)],
         env=build_step1_5_agent_env(llm_server=llm_server, llm_model=llm_model),
-        setting_sources=["project", "local"],
+        setting_sources=[],
     )
     session_log = AgentSessionLog(session_log_path)
     session_log.append(
@@ -811,7 +817,7 @@ def run_step1_5_segment_agent(
     return anyio.run(runner)
 
 
-def _build_step4_hyperframes_prompt(
+def _build_step4_motion_prompt(
     *,
     segment_payload: dict[str, Any],
     style_preset: str,
@@ -820,8 +826,8 @@ def _build_step4_hyperframes_prompt(
     target_index_html_path: str = "",
 ) -> str:
     payload_json = json.dumps(segment_payload, ensure_ascii=False, indent=2)
-    style_context = build_step4_hyperframes_style_context(style_preset, skills_root=skills_root)
-    return STEP4_HYPERFRAMES_AGENT_PROMPT_TEMPLATE.format(
+    style_context = build_step4_motion_style_context(style_preset, skills_root=skills_root)
+    return STEP4_MOTION_AGENT_PROMPT_TEMPLATE.format(
         skill_path_context=skill_path_context,
         style_preset=style_preset,
         style_context=style_context,
@@ -830,7 +836,7 @@ def _build_step4_hyperframes_prompt(
     )
 
 
-async def _run_step4_hyperframes_agent_async(
+async def _run_step4_motion_agent_async(
     *,
     work_dir: str,
     project_dir: str,
@@ -855,17 +861,25 @@ async def _run_step4_hyperframes_agent_async(
                 stale_file.unlink()
         except Exception:
             pass
-    skill_dir = Path(step4_skill_dir) if step4_skill_dir else default_step4_hyperframes_skill_dir()
-    skill_path_context = build_step4_hyperframes_skill_path_context(skill_dir)
-    skill_add_dirs = [str(path) for path in step4_hyperframes_skill_dirs(skill_dir.parent)]
-    prompt = _build_step4_hyperframes_prompt(
+    from core.infra.motion.runtime import prepare
+    prepare(work_path, segment_payload)
+    skill_dir = Path(step4_skill_dir) if step4_skill_dir else default_step4_motion_skill_dir()
+    skill_path_context = build_step4_motion_skill_path_context(skill_dir)
+    skill_add_dirs = [str(path) for path in step4_motion_skill_dirs(skill_dir.parent)]
+    prompt = _build_step4_motion_prompt(
         segment_payload=segment_payload,
         style_preset=style_preset,
         skill_path_context=skill_path_context,
         skills_root=skill_dir.parent,
         target_index_html_path=str(work_path / "index.html"),
     )
-    tools = list(STEP4_HYPERFRAMES_AGENT_TOOLS)
+    prompt = write_task_context(Path(session_log_path).with_suffix('.task.json'),
+        stage='4', objective='只制作当前段落 HTML 动画，完成预览、修复和静音视频验证。', cwd=work_path,
+        inputs=[work_path/'studio-payload.json', work_path/'index.html'], optional_inputs=[work_path/'index.html'], writable=[work_path],
+        protected=[work_path/'studio-payload.json', work_path/'render.py', work_path/'vendor', Path(project_dir)/'text', Path(project_dir)/'voice'],
+        done=['video.mp4 与当前 HTML 一致，render-report.json 的 verified 为 true；如实报告视觉检查限制。'],
+        facts={'segment': segment_payload.get('segmentIndex', segment_payload.get('index')), 'fps': segment_payload.get('fps', 30)}) + '\n' + prompt
+    tools = list(STEP4_MOTION_AGENT_TOOLS)
     effective_llm_server = llm_server or config.LLM_SERVER_STEP4
     effective_llm_model = llm_model or config.LLM_MODEL_STEP4
     options = ClaudeAgentOptions(
@@ -876,7 +890,7 @@ async def _run_step4_hyperframes_agent_async(
         permission_mode="acceptEdits",
         max_turns=max(1, int(max_turns or 1)),
         add_dirs=[str(Path(project_dir)), *skill_add_dirs],
-        env=build_step4_hyperframes_agent_env(
+        env=build_step4_motion_agent_env(
             llm_server=llm_server,
             llm_model=llm_model,
             llm_base_url=llm_base_url,
@@ -887,11 +901,11 @@ async def _run_step4_hyperframes_agent_async(
     session_log.append(
         "session_start",
         {
-            "step": "step_4_hyperframes",
+            "step": "step_4_motion",
             "work_dir": str(work_path),
             "project_dir": project_dir,
             "style_preset": style_preset,
-            "prompt_version": STEP4_HYPERFRAMES_PROMPT_VERSION,
+            "prompt_version": STEP4_MOTION_PROMPT_VERSION,
             "max_turns": max_turns,
             "step4_skill_dir": str(skill_dir),
             "segment_payload": segment_payload,
@@ -911,7 +925,7 @@ async def _run_step4_hyperframes_agent_async(
             if isinstance(message, ResultMessage):
                 result_message = message
                 if message.is_error:
-                    raise RuntimeError(message.result or "Claude Agent Step 4 HyperFrames failed")
+                    raise RuntimeError(message.result or "Claude Agent Step 4 HTML 动画 failed")
     except Exception as exc:
         session_log.append(
             "session_error",
@@ -945,10 +959,10 @@ async def _run_step4_hyperframes_agent_async(
                     shutil.copy2(item, work_path / item.name)
 
     if not (work_path / "index.html").exists():
-        raise FileNotFoundError(f"Claude Agent未生成HyperFrames index.html: {work_path / 'index.html'}")
+        raise FileNotFoundError(f"Claude Agent未生成HTML 动画 index.html: {work_path / 'index.html'}")
 
 
-def run_step4_hyperframes_agent(
+def run_step4_motion_agent(
     *,
     work_dir: str,
     project_dir: str,
@@ -963,7 +977,7 @@ def run_step4_hyperframes_agent(
     llm_base_url: str | None = None,
 ) -> None:
     runner = partial(
-        _run_step4_hyperframes_agent_async,
+        _run_step4_motion_agent_async,
         work_dir=work_dir,
         project_dir=project_dir,
         segment_payload=segment_payload,

@@ -202,7 +202,6 @@ def text_to_audio_bytedance(
     text,
     output_filename,
     voice="zh_male_yuanboxiaoshu_moon_bigtts",
-    encoding="mp3",
     model: str = "",
     speech_rate: int = 0,
     loudness_rate: int = 0,
@@ -219,7 +218,6 @@ def text_to_audio_bytedance(
         text: 要合成的文本
         output_filename: 输出文件路径（.wav格式）
         voice: 音色ID
-        encoding: 输出编码格式（保留参数，实际输出为wav）
         model: 复刻2.0效果模型（如 seed-tts-2.0-expressive / seed-tts-2.0-standard）
         speech_rate: 语速 (-50到100, 0=正常, 100=2倍速, -50=0.5倍速)
         loudness_rate: 音量 (-50到100, 0=正常, 100=2倍音量, -50=0.5倍音量)
@@ -231,8 +229,6 @@ def text_to_audio_bytedance(
     Returns:
         bool: 成功返回True
     """
-    _ = encoding  # 保留入参兼容，当前固定输出wav容器
-
     # ============ 1. 验证配置 ============
     api_key = (getattr(config, "BYTEDANCE_TTS_API_KEY", "") or "").strip()
     if not api_key:

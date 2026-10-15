@@ -306,56 +306,6 @@ def detect_project_progress(project_dir: str) -> Dict[str, Any]:
     }
 
 
-def collect_ordered_assets(project_dir: str, script_data: Dict[str, Any], require_audio: bool = True) -> Dict[str, List[str]]:
-    """
-    根据 script_data 的段落顺序，收集按序排列的图片和音频文件路径
-
-    Args:
-        project_dir: 项目目录
-        script_data: 包含段落信息的脚本数据
-        require_audio: 是否强制要求每段音频都存在
-
-    Returns:
-        Dict[str, List[str]]: {"images": [...], "audio": [...]}
-    """
-    # 使用 ProjectPaths 管理路径
-    paths = ProjectPaths(project_dir)
-    num_segments = len(script_data.get('segments', []))
-
-    image_paths: List[str] = []
-    audio_paths: List[str] = []
-    
-    for i in range(1, num_segments+1):
-        candidates = [
-            os.path.join(paths.images, f"segment_{i}.{extension}")
-            for extension in SEGMENT_MEDIA_EXTENSIONS
-        ]
-        image_path = None
-        for p in candidates:
-            if os.path.exists(p):
-                image_path = p
-                break
-                
-        if not image_path:
-            raise FileNotFoundError(f"缺少画面素材: segment_{i}.({'|'.join(SEGMENT_MEDIA_EXTENSIONS)})")
-        image_paths.append(image_path)
-        
-        # 音频文件搜索 - 使用 ProjectPaths
-        audio_path = paths.segment_audio_exists(i)
-        
-        if require_audio:
-            if audio_path:
-                audio_paths.append(audio_path)
-            else:
-                raise FileNotFoundError(f"缺少音频: voice_{i}.(wav|mp3)")
-        else:
-            # 非强制音频：有则收集
-            if audio_path:
-                audio_paths.append(audio_path)
-    
-    return {"images": image_paths, "audio": audio_paths}
-
-
 def clear_downstream_outputs(project_dir: str, from_step) -> None:
     """
     清理从指定步骤之后的产物

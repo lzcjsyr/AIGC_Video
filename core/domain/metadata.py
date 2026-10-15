@@ -4,10 +4,6 @@ import re
 from typing import Any, Dict, List, Tuple
 
 
-def strip_book_title_marks(text: str) -> str:
-    return (text or "").strip().strip("《》").strip()
-
-
 def parse_marked_focus_text(text: str) -> Tuple[str, List[str]]:
     raw = (text or "").strip()
     if not raw:

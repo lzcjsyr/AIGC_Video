@@ -1,6 +1,5 @@
 from pathlib import Path
 
-from core.cli.project_io import scan_input_files as scan_cli_input_files
 from core.pipeline import scanner
 from core.pipeline.scanner import scan_input_files as scan_pipeline_input_files
 
@@ -45,7 +44,6 @@ def test_input_scanners_include_agent_readable_text_and_office_formats(tmp_path:
         ".doc",
     }
 
-    assert scan_cli_input_files is scan_pipeline_input_files
     discovered = scan_pipeline_input_files(str(input_dir))
     extensions = {item["extension"] for item in discovered}
     directories = {item["name"] for item in discovered if item.get("is_directory")}

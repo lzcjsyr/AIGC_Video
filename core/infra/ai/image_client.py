@@ -278,6 +278,12 @@ def _generate_single_image(args) -> Dict[str, Any]:
     return {"success": False, "segment_index": segment_index, "image_path": ""}
 
 
+def image_generation_workers(image_server: str) -> int:
+    """Seedream (doubao) has its own concurrency setting; every other image service uses the shared one."""
+    key = "SEEDREAM_MAX_CONCURRENT_IMAGE_GENERATION" if image_server == "doubao" else "MAX_CONCURRENT_IMAGE_GENERATION"
+    return max(1, int(getattr(config, key, 1) or 1))
+
+
 def generate_images_for_segments(
     image_server: str,
     model: str,
@@ -357,7 +363,7 @@ def generate_images_for_segments(
         if not prompt_payload:
             raise ValueError("未生成有效的提示词")
 
-        max_workers = getattr(config, "MAX_CONCURRENT_IMAGE_GENERATION", 3)
+        max_workers = image_generation_workers(image_server)
         print(f"使用 {max_workers} 个并发线程生成图像... (本次处理 {len(prompt_payload)} 段)")
 
         image_paths: List[str] = [""] * segment_count

@@ -38,8 +38,5 @@ norecursedirs = [".git", ".venv", "venv", "node_modules", "build", "dist"]
 include = ["core*"]
 
 [tool.setuptools.package-data]
-"core.infra.hyperframes" = [
-    "app/*.html",
-    "app/*.json",
-    "app/package.json",
-]
+
+"core.infra.motion" = ["*.cjs", "package*.json", "app/*.html"]

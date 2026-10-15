@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from core import prompts, resources
-from core.infra.hyperframes import runtime
+from core.infra.motion import runtime
 
 
 def test_library_defaults_to_the_engine_folder(monkeypatch):
@@ -18,8 +18,8 @@ def test_library_override_relocates_prompts_and_skills(monkeypatch, tmp_path: Pa
     assert prompts._load_prompt_file("step2_summary.md") == "relocated"
 
 
-def test_hyperframes_command_prefers_the_bundled_cli(monkeypatch):
-    monkeypatch.delenv(runtime.BUNDLED_CLI_ENV, raising=False)
-    assert runtime.hyperframes_command() == ["npx", "--yes", runtime.HYPERFRAMES_VERSION]
-    monkeypatch.setenv(runtime.BUNDLED_CLI_ENV, "/app/hyperframes/cli.js")
-    assert runtime.hyperframes_command()[1:] == ["/app/hyperframes/cli.js"]
+def test_motion_runtime_uses_explicit_library_path(monkeypatch,tmp_path):
+    for name in ['puppeteer-core','gsap','three']:
+        folder=tmp_path/name;folder.mkdir();(folder/'package.json').write_text('{}')
+    monkeypatch.setenv('AIGC_MOTION_MODULES',str(tmp_path))
+    assert runtime.modules_dir()==tmp_path.resolve()

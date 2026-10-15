@@ -78,7 +78,7 @@ def test_run_step_3_generates_voice_after_swap(monkeypatch, tmp_path: Path):
         return {"audio_paths": [str(voice_path)], "missing_segments": []}
 
     monkeypatch.setattr(steps, "synthesize_voice_for_segments", fake_synthesize)
-    monkeypatch.setattr(steps, "_invoke_opening_narration", lambda *args, **kwargs: None)
+    monkeypatch.setattr(steps, "_ensure_opening_narration", lambda *args, **kwargs: None)
 
     result = steps.run_step_3(
         tts_server="bytedance",
@@ -222,21 +222,6 @@ def test_scanner_maps_step3_to_audio_and_step4_to_visual_after_swap(tmp_path: Pa
     assert progress["images_ok"] is True
     assert progress["current_step"] == 4
     assert progress["current_step_name"] == "4"
-
-
-def test_collect_ordered_assets_accepts_segment_videos(tmp_path: Path):
-    paths = _write_script(tmp_path / "project", segments=1)
-    video_path = Path(paths.images) / "segment_1.mp4"
-    audio_path = Path(paths.voice) / "voice_1.wav"
-    video_path.write_bytes(b"video")
-    audio_path.write_bytes(b"voice")
-
-    script_data = json.loads(Path(paths.script_json()).read_text(encoding="utf-8"))
-
-    assert scanner.collect_ordered_assets(str(tmp_path / "project"), script_data) == {
-        "images": [str(video_path)],
-        "audio": [str(audio_path)],
-    }
 
 
 def test_cli_specific_step_3_runs_voice_and_step_4_runs_visual(monkeypatch, tmp_path: Path):

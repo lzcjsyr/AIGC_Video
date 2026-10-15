@@ -30,11 +30,8 @@ from core.domain.subtitles import (
     format_subtitle_display_text,
     split_text_for_subtitle,
 )
-from core.media_gateway import (
-    adjust_audio_speed,
-    export_video,
-    normalize_bgm_loudness,
-)
+from core.infra.media.exporter import export_video
+from core.infra.media.ffmpeg import adjust_audio_speed, normalize_loudness as normalize_bgm_loudness
 from core.infra.media.three_by_four import PanelOptions, derive_output_path, export_three_by_four_video
 from core.shared import logger, handle_video_operation
 
@@ -1580,11 +1577,6 @@ class VideoComposer:
 
         return None, 0
 
-    def resolve_font_path(self, preferred: Optional[str]) -> Optional[str]:
-        """解析字体路径，保留旧接口兼容测试和外部调用。"""
-        font_path, _ = self.resolve_subtitle_font(preferred, 0)
-        return font_path
-    
     def _is_video_file(self, file_path: str) -> bool:
         """检测是否为视频文件"""
         file_extension = os.path.splitext(file_path)[1].lower()
@@ -1595,16 +1587,10 @@ class VideoComposer:
         return any(self._is_video_file(path) for path in media_paths)
 
     def _resolve_long_video_mode(self) -> str:
-        """解析长视频对齐策略，优先读取新配置并兼容旧配置。"""
+        """解析长视频对齐策略。"""
         mode = str(getattr(config, "VIDEO_MATERIAL_LONGER_THAN_AUDIO_MODE", "") or "").strip().lower()
         if mode in {"crop", "compress"}:
             return mode
-
-        legacy_mode = str(getattr(config, "VIDEO_MATERIAL_DURATION_ADJUST", "") or "").strip().lower()
-        if legacy_mode in {"crop", "compress"}:
-            return legacy_mode
-        if legacy_mode == "stretch":
-            return "compress"
 
         if mode:
             logger.warning(

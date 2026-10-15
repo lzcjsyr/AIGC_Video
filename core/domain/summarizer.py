@@ -14,7 +14,7 @@ from core.domain.metadata import (
 )
 from core.prompts import description_summary_system_prompt
 from core.shared import logger
-from core.llm_gateway import text_to_text
+from core.infra.ai.llm_client import text_to_text
 
 
 def parse_json_robust(raw_text: str) -> Dict[str, Any]:
@@ -288,7 +288,7 @@ def _build_fallback_summary(source_text: str, max_chars: int) -> str:
 def process_raw_to_script(
     raw_data: Dict[str, Any],
     num_segments: int,
-    split_mode: str = "auto",
+    split_mode: str = "punctuation",
     agent_segments: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
@@ -329,7 +329,7 @@ def process_raw_to_script(
             "cover_subtitles": cover_subtitles,
             "golden_quotes": golden_quotes,
             "total_length": total_length,
-            "target_segments": num_segments,
+            "target_segments": num_segments if split_mode == "agent" else actual_segments,
             "actual_segments": actual_segments,
             "created_time": datetime.datetime.now().isoformat(),
             "model_info": raw_data.get("model_info", {}),
@@ -370,7 +370,7 @@ def _split_text_by_newlines(full_text: str) -> List[str]:
     return segments if segments else [text]
 
 
-HF_MARKER_PATTERN = re.compile(r'\s*【hf】\s*$', re.IGNORECASE)
+HF_MARKER_PATTERN = re.compile(r'\s*【(?:motion|hf)】\s*$', re.IGNORECASE)
 
 
 def _normalize_visualizer_value(visualizer: Any) -> str:
@@ -395,7 +395,7 @@ def _compact_text_for_compare(text: str) -> str:
 
 
 def _ends_sentence(text: str) -> bool:
-    return bool(re.search(r'[。！？!?；;][”’"\'）》」』）)]*$', (text or "").strip()))
+    return bool(re.search(r'[。．.！？!?；;][”’"\'）》」』）)]*$', (text or "").strip()))
 
 
 def _normalize_agent_segments(agent_segments: List[Dict[str, Any]], full_text: str) -> List[Dict[str, str]]:
@@ -424,84 +424,44 @@ def _normalize_agent_segments(agent_segments: List[Dict[str, Any]], full_text: s
     return normalized
 
 
-def _split_text_into_segments(full_text: str, num_segments: int, mode: str = "auto") -> List[str]:
-    """
-    文本切分函数
-    mode: "manual" 手动切分(按换行符), "auto" 自动切分(智能均分)
-    """
+def _split_text_into_segments(full_text: str, num_segments: int, mode: str = "punctuation") -> List[str]:
+    """Rule modes ignore the agent's target count; auto is a legacy alias."""
     if mode == "manual":
         return _split_text_by_newlines(full_text)
-
-    text = (full_text or "").strip()
-    if num_segments <= 1 or len(text) == 0:
-        return [text] if text else [""]
-
-    total_len = len(text)
-    target_len = max(1, total_len / float(num_segments))
-    min_len = max(8, int(target_len * 0.6))
-    max_len = max(40, int(target_len * 1.8))
-
-    sentences = _split_text_by_strong_punctuation(text)
-    segments: List[str] = []
-    current = ""
-
-    for sentence in sentences:
-        candidate = current + sentence
-        next_is_short = len(sentence) < min_len
-        if current and len(current) >= min_len and not next_is_short and len(candidate) > target_len:
-            segments.extend(_split_long_segment(current, max_len))
-            current = sentence
-        elif current and len(candidate) > max_len:
-            segments.extend(_split_long_segment(current, max_len))
-            current = sentence
-        else:
-            current = candidate
-
-    if current:
-        segments.extend(_split_long_segment(current, max_len))
-
-    return [segment for segment in segments if segment.strip()]
+    if mode not in {"punctuation", "auto"}:
+        raise ValueError(f"不支持的分段方式: {mode}")
+    return _split_text_by_strong_punctuation(full_text)
 
 
 def _split_text_by_strong_punctuation(text: str) -> List[str]:
+    """Keep terminal punctuation, closing quotes and motion markers with their sentence.
+
+    Newlines and commas are not boundaries. Dots between digits belong to a
+    decimal/version number; all other periods end a segment.
+    """
     source = (text or "").strip()
-
-    def _newline_replacement(match: re.Match[str]) -> str:
-        before = source[:match.start()].rstrip()
-        after = source[match.end():].lstrip()
-        if not before or not after:
-            return ""
-        if re.search(r'[。！？!?；;][”’"\'）》」』）)]*$', before):
-            return ""
-        if re.match(r'^[。！？!?；;]', after):
-            return ""
-        return "。"
-
-    normalized = re.sub(r'\s*[\r\n]+\s*', _newline_replacement, source)
-    normalized = re.sub(r'[ \t]+', ' ', normalized)
-    pattern = r'.+?(?:[。！？!?；;]+[”’）》」』]*)|.+$'
-    return [match.group(0).strip() for match in re.finditer(pattern, normalized) if match.group(0).strip()]
-
-
-def _split_long_segment(text: str, max_len: int) -> List[str]:
-    if len(text) <= max_len:
-        return [text]
-
-    pieces = [part for part in re.split(r'(?<=[，,：:、])', text) if part]
-    if len(pieces) <= 1:
-        return [text[i:i + max_len] for i in range(0, len(text), max_len)]
-
-    result: List[str] = []
-    current = ""
-    for piece in pieces:
-        if current and len(current) + len(piece) > max_len:
-            result.append(current)
-            current = piece
-        else:
-            current += piece
-    if current:
-        result.append(current)
-    return result
+    if not source:
+        return []
+    boundary = re.compile(r"(?:[。．！？!?；;]|(?<!\d)\.|\.(?!\d))+")
+    closing = set("”’\"'）》」』）)]}】")
+    segments: List[str] = []
+    start = 0
+    for match in boundary.finditer(source):
+        if match.start() < start:
+            continue
+        end = match.end()
+        while end < len(source) and source[end] in closing:
+            end += 1
+        marker = re.match(r'\s*【(?:motion|hf)】', source[end:], re.IGNORECASE)
+        if marker:
+            end += marker.end()
+        piece = source[start:end].strip()
+        if piece:
+            segments.append(piece)
+        start = end
+    if tail := source[start:].strip():
+        segments.append(tail)
+    return segments
 
 
 def export_plain_text_segments(script_data: Dict[str, Any], text_dir: str, max_chars_per_line: int = 20) -> str:

@@ -14,7 +14,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
-from core.prompts import STEP4_HYPERFRAMES_STYLE_PRESETS
+from core.prompts import STEP4_MOTION_STYLE_PRESETS
 from core.shared import load_json_file
 
 
@@ -62,7 +62,7 @@ def interactive_project_selector(output_dir: str = "output") -> Optional[str]:
     """
     交互式项目选择器（从 output/ 选择已有项目文件夹）
     """
-    from core.cli.project_io import scan_output_projects
+    from core.pipeline.scanner import scan_output_projects
     
     print("\n📂 打开现有项目")
     print("正在扫描 output 目录...")
@@ -304,7 +304,7 @@ def prompt_visual_mode_choice(default_mode: str = "static_image") -> Optional[st
     """提示用户选择第四步画面生成模式。"""
     modes = [
         ("static_image", "静态图片"),
-        ("hyperframes_agent", "HyperFrames动态视频"),
+        ("motion_agent", "HTML 动态视频"),
         ("mixed", "混合模式（按 script.json 的 visualizer 字段选择）"),
     ]
     default_mode = (default_mode or "static_image").strip().lower()
@@ -316,16 +316,16 @@ def prompt_visual_mode_choice(default_mode: str = "static_image") -> Optional[st
     return selected.split(":", 1)[0].strip()
 
 
-def prompt_hyperframes_style_choice(default_style: str = "data_driven") -> Optional[str]:
-    """提示用户选择 HyperFrames 动态画面风格。"""
+def prompt_motion_style_choice(default_style: str = "data_driven") -> Optional[str]:
+    """提示用户选择 HTML / Three.js 动态画面风格。"""
     styles = [
         (style_id, str(style.get("label") or style_id))
-        for style_id, style in STEP4_HYPERFRAMES_STYLE_PRESETS.items()
+        for style_id, style in STEP4_MOTION_STYLE_PRESETS.items()
     ]
     default_style = (default_style or "data_driven").strip().lower()
     default_idx = next((idx for idx, (style, _label) in enumerate(styles) if style == default_style), 0)
     options = [f"{style}: {label}" for style, label in styles]
-    selected = prompt_choice("请选择 HyperFrames 动态画面风格", options, default_index=default_idx)
+    selected = prompt_choice("请选择 HTML / Three.js 动态画面风格", options, default_index=default_idx)
     if selected is None:
         return None
     return selected.split(":", 1)[0].strip()
@@ -427,7 +427,7 @@ def interactive_file_selector(input_dir: str = "input") -> Optional[str]:
     Returns:
         Optional[str]: 选择的文件路径，如果用户取消则返回None
     """
-    from core.cli.project_io import scan_input_files
+    from core.pipeline.scanner import scan_input_files
 
     print("\n🚀 智能视频制作系统")
     print("正在扫描可处理的文件或文件夹...")
@@ -534,10 +534,10 @@ def print_section(title: str, icon: str = "📋", style: str = "-") -> None:
 
 
 def _prompt_split_mode() -> Optional[str]:
-    """提示用户选择文本切分模式，返回 auto/manual/agent。"""
+    """提示用户选择文本切分模式，返回 punctuation/manual/agent。"""
     choice = prompt_choice(
         "请选择文本切分方式",
-        ["手动切分(根据换行符)", "自动切分(智能均分)", "Agent智能分段并选择画面模式"],
+        ["手动切分(根据换行符)", "按标点切分(中英文句号、问号、感叹号、分号)", "Agent智能分段并选择画面模式"],
         default_index=1,
     )
     if choice is None:
@@ -546,7 +546,7 @@ def _prompt_split_mode() -> Optional[str]:
         return "manual"
     if choice.startswith("Agent"):
         return "agent"
-    return "auto"
+    return "punctuation"
 
 
 # ================================================================================
@@ -801,8 +801,8 @@ def _run_specific_step(
     enable_subtitles, bgm_filename,
     cover_image_size, cover_image_server, cover_image_model, cover_image_style, cover_image_count, opening_quote=True,
     mute_cut_threshold=400, mute_cut_min_silence_ms=200, mute_cut_remain_ms=100,
-    visual_mode="static_image", hyperframes_style_preset="data_driven",
-    hyperframes_max_turns=60, hyperframes_render_fps=30, hyperframes_concurrency=1,
+    visual_mode="static_image", motion_style_preset="data_driven",
+    motion_max_turns=60, motion_render_fps=30, motion_concurrency=1,
     image_prompt_template="keywords",
 ):
     """执行指定步骤并返回结果"""
@@ -898,14 +898,14 @@ def _run_specific_step(
             return {"success": False, "message": "用户取消", "cancelled": True}
 
         selected_style = image_style_preset
-        selected_hyperframes_style = hyperframes_style_preset
+        selected_motion_style = motion_style_preset
         if selected_visual_mode in {"static_image", "mixed"}:
             selected_style = prompt_image_style_choice(style_type="segment")
             if selected_style is None:
                 return {"success": False, "message": "用户取消", "cancelled": True}
-        if selected_visual_mode in {"hyperframes_agent", "mixed"}:
-            selected_hyperframes_style = prompt_hyperframes_style_choice(hyperframes_style_preset)
-            if selected_hyperframes_style is None:
+        if selected_visual_mode in {"motion_agent", "mixed"}:
+            selected_motion_style = prompt_motion_style_choice(motion_style_preset)
+            if selected_motion_style is None:
                 return {"success": False, "message": "用户取消", "cancelled": True}
 
         selection = _prompt_segment_generation_scope(
@@ -930,10 +930,10 @@ def _run_specific_step(
                 llm_server=llm_server_step4,
                 llm_base_url=llm_base_url_step4,
                 visual_mode=selected_visual_mode,
-                hyperframes_style_preset=selected_hyperframes_style,
-                hyperframes_max_turns=hyperframes_max_turns,
-                hyperframes_render_fps=hyperframes_render_fps,
-                hyperframes_concurrency=hyperframes_concurrency,
+                motion_style_preset=selected_motion_style,
+                motion_max_turns=motion_max_turns,
+                motion_render_fps=motion_render_fps,
+                motion_concurrency=motion_concurrency,
                 image_prompt_template=image_prompt_template,
             )
         else:
@@ -948,10 +948,10 @@ def _run_specific_step(
                 llm_server=llm_server_step4,
                 llm_base_url=llm_base_url_step4,
                 visual_mode=selected_visual_mode,
-                hyperframes_style_preset=selected_hyperframes_style,
-                hyperframes_max_turns=hyperframes_max_turns,
-                hyperframes_render_fps=hyperframes_render_fps,
-                hyperframes_concurrency=hyperframes_concurrency,
+                motion_style_preset=selected_motion_style,
+                motion_max_turns=motion_max_turns,
+                motion_render_fps=motion_render_fps,
+                motion_concurrency=motion_concurrency,
                 image_prompt_template=image_prompt_template,
             )
     elif target_step == 5:
@@ -990,16 +990,17 @@ def _run_specific_step(
         if selected_style is None:
             return {"success": False, "message": "用户取消", "cancelled": True}
 
-        # 封面尺寸选择交互
-        from core.config import COVER_IMAGE_SIZE_PRESETS, DEFAULT_COVER_IMAGE_SIZE_KEY
+        # 封面尺寸选择交互：默认一次生成配置的全部尺寸，也可只选一个
+        from core.config import COVER_IMAGE_SIZE_KEYS, COVER_IMAGE_SIZE_PRESETS
 
-        # 构建选项列表
-        size_options = []
+        configured = [key for key in COVER_IMAGE_SIZE_KEYS or [] if key in COVER_IMAGE_SIZE_PRESETS]
+        size_options = [f"{ratio} ({size})" for ratio, size in COVER_IMAGE_SIZE_PRESETS.items()]
         default_idx = 0
-        for idx, (ratio, size) in enumerate(COVER_IMAGE_SIZE_PRESETS.items()):
-            size_options.append(f"{ratio} ({size})")
-            if ratio == DEFAULT_COVER_IMAGE_SIZE_KEY:
-                default_idx = idx
+        if len(configured) > 1:
+            all_option = "配置的全部尺寸：" + " + ".join(configured)
+            size_options.insert(0, all_option)
+        elif configured:
+            default_idx = list(COVER_IMAGE_SIZE_PRESETS).index(configured[0])
 
         # 让用户选择尺寸
         print("\n请选择封面尺寸：")
@@ -1008,12 +1009,12 @@ def _run_specific_step(
         if selected is None:
             return {"success": False, "cancelled": True}
 
-        # 解析选择的尺寸比例（从"16:9 (3200x1800)"提取"16:9"）
-        selected_ratio = selected.split(" ")[0]
+        # 解析选择的尺寸比例（从"16:9 (3200x1800)"提取"16:9"），pipeline会自动解析比例key
+        selected_sizes = configured if len(configured) > 1 and selected == size_options[0] else selected.split(" ")[0]
 
         result = run_step_6(
             project_output_dir,
-            selected_ratio,  # 传入比例key（如"16:9"），pipeline会自动解析
+            selected_sizes,
             cover_image_server,
             cover_image_model,
             selected_style,
@@ -1035,8 +1036,8 @@ def _run_step_by_step_loop(
     enable_subtitles, bgm_filename,
     cover_image_size, cover_image_server, cover_image_model, cover_image_style, cover_image_count, opening_quote=True,
     mute_cut_threshold=400, mute_cut_min_silence_ms=200, mute_cut_remain_ms=100,
-    visual_mode="static_image", hyperframes_style_preset="data_driven",
-    hyperframes_max_turns=60, hyperframes_render_fps=30, hyperframes_concurrency=1,
+    visual_mode="static_image", motion_style_preset="data_driven",
+    motion_max_turns=60, motion_render_fps=30, motion_concurrency=1,
     image_prompt_template="keywords",
 ):
     """执行指定步骤，然后进入交互模式让用户选择下一步操作"""
@@ -1054,8 +1055,8 @@ def _run_step_by_step_loop(
             enable_subtitles, bgm_filename,
             cover_image_size, cover_image_server, cover_image_model, cover_image_style, cover_image_count, opening_quote,
             mute_cut_threshold, mute_cut_min_silence_ms, mute_cut_remain_ms,
-            visual_mode, hyperframes_style_preset,
-            hyperframes_max_turns, hyperframes_render_fps, hyperframes_concurrency,
+            visual_mode, motion_style_preset,
+            motion_max_turns, motion_render_fps, motion_concurrency,
             image_prompt_template
         )
         
@@ -1098,8 +1099,8 @@ def _run_step_by_step_loop(
             enable_subtitles, bgm_filename,
             cover_image_size, cover_image_server, cover_image_model, cover_image_style, cover_image_count, opening_quote,
             mute_cut_threshold, mute_cut_min_silence_ms, mute_cut_remain_ms,
-            visual_mode, hyperframes_style_preset,
-            hyperframes_max_turns, hyperframes_render_fps, hyperframes_concurrency,
+            visual_mode, motion_style_preset,
+            motion_max_turns, motion_render_fps, motion_concurrency,
             image_prompt_template
         )
         
@@ -1148,10 +1149,10 @@ def run_cli_main(
     mute_cut_remain_ms: Optional[int] = _UNSET,
     output_dir: Optional[str] = None,
     visual_mode: str = _UNSET,
-    hyperframes_style_preset: str = _UNSET,
-    hyperframes_max_turns: Optional[int] = _UNSET,
-    hyperframes_render_fps: Optional[int] = _UNSET,
-    hyperframes_concurrency: Optional[int] = _UNSET,
+    motion_style_preset: str = _UNSET,
+    motion_max_turns: Optional[int] = _UNSET,
+    motion_render_fps: Optional[int] = _UNSET,
+    motion_concurrency: Optional[int] = _UNSET,
     image_style_preset: str = _UNSET,
     image_prompt_template: str = _UNSET,
     enable_subtitles: bool = _UNSET,
@@ -1203,10 +1204,10 @@ def run_cli_main(
             "mute_cut_min_silence_ms": mute_cut_min_silence_ms,
             "mute_cut_remain_ms": mute_cut_remain_ms,
             "visual_mode": visual_mode,
-            "hyperframes_style_preset": hyperframes_style_preset,
-            "hyperframes_max_turns": hyperframes_max_turns,
-            "hyperframes_render_fps": hyperframes_render_fps,
-            "hyperframes_concurrency": hyperframes_concurrency,
+            "motion_style_preset": motion_style_preset,
+            "motion_max_turns": motion_max_turns,
+            "motion_render_fps": motion_render_fps,
+            "motion_concurrency": motion_concurrency,
             "image_style_preset": image_style_preset,
             "image_prompt_template": image_prompt_template,
             "enable_subtitles": enable_subtitles,
@@ -1224,7 +1225,7 @@ def run_cli_main(
                 params[key] = value
 
         num_segments = params["num_segments"]
-        step1_5_split_mode = params.get("step1_5_split_mode", "auto")
+        step1_5_split_mode = params.get("step1_5_split_mode", "punctuation")
         llm_server_step1_5 = params["llm_server_step1_5"]
         llm_model_step1_5 = params["llm_model_step1_5"]
         image_size = params["image_size"]
@@ -1260,19 +1261,19 @@ def run_cli_main(
         except Exception:
             loudness_rate = 0
         visual_mode = params.get("visual_mode", "static_image")
-        hyperframes_style_preset = params.get("hyperframes_style_preset", "data_driven")
+        motion_style_preset = params.get("motion_style_preset", "data_driven")
         try:
-            hyperframes_max_turns = int(params.get("hyperframes_max_turns", 60))
+            motion_max_turns = int(params.get("motion_max_turns", 60))
         except Exception:
-            hyperframes_max_turns = 60
+            motion_max_turns = 60
         try:
-            hyperframes_render_fps = int(params.get("hyperframes_render_fps", 30))
+            motion_render_fps = int(params.get("motion_render_fps", 30))
         except Exception:
-            hyperframes_render_fps = 30
+            motion_render_fps = 30
         try:
-            hyperframes_concurrency = int(params.get("hyperframes_concurrency", 1))
+            motion_concurrency = int(params.get("motion_concurrency", 1))
         except Exception:
-            hyperframes_concurrency = 1
+            motion_concurrency = 1
         image_style_preset = params["image_style_preset"]
         image_prompt_template = params["image_prompt_template"]
         enable_subtitles = params["enable_subtitles"]
@@ -1355,8 +1356,8 @@ def run_cli_main(
                 enable_subtitles, bgm_filename, cover_image_size, cover_image_server, cover_image_model,
                 cover_image_style, cover_image_count, opening_quote,
                 mute_cut_threshold, mute_cut_min_silence_ms, mute_cut_remain_ms,
-                visual_mode, hyperframes_style_preset,
-                hyperframes_max_turns, hyperframes_render_fps, hyperframes_concurrency,
+                visual_mode, motion_style_preset,
+                motion_max_turns, motion_render_fps, motion_concurrency,
                 image_prompt_template
             )
 
@@ -1414,7 +1415,7 @@ def run_cli_main(
             enable_subtitles, bgm_filename, cover_image_size, cover_image_server, cover_image_model,
             cover_image_style, cover_image_count, opening_quote,
             mute_cut_threshold, mute_cut_min_silence_ms, mute_cut_remain_ms,
-            visual_mode, hyperframes_style_preset,
-            hyperframes_max_turns, hyperframes_render_fps, hyperframes_concurrency,
+            visual_mode, motion_style_preset,
+            motion_max_turns, motion_render_fps, motion_concurrency,
             image_prompt_template
         )

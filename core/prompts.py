@@ -4,11 +4,12 @@
 """
 
 import os
+from pathlib import Path
 import re
 import string
 import yaml
 
-from core.resources import prompts_dir
+from core.resources import prompts_dir, skills_dir
 
 def _load_prompt_file(filename: str) -> str:
     path = os.path.join(prompts_dir(), filename)
@@ -82,8 +83,8 @@ DEFAULT_STEP4_IMAGE_PROMPT_TEMPLATE = (
 STEP4_IMAGE_DESCRIPTION_PROMPT_TEMPLATE = STEP4_IMAGE_DESCRIPTION_PROMPT_TEMPLATES[
     DEFAULT_STEP4_IMAGE_PROMPT_TEMPLATE
 ]
-STEP4_HYPERFRAMES_AGENT_PROMPT_TEMPLATE = _load_prompt_file("step4_hyperframes_agent.md")
-STEP4_HYPERFRAMES_PROMPT_VERSION = "2026-06-26-phone-readable-v9"
+STEP4_MOTION_AGENT_PROMPT_TEMPLATE = _load_prompt_file("step4_motion_agent.md")
+STEP4_MOTION_PROMPT_VERSION = "2026-10-15-agent-render-v2"
 IMAGE_PROMPT_SAFETY_TEMPLATE = STEP4_IMAGE_PROMPT_SAFETY_TEMPLATE
 IMAGE_DESCRIPTION_PROMPT_TEMPLATE = STEP4_IMAGE_DESCRIPTION_PROMPT_TEMPLATE
 COVER_IMAGE_PROMPT_TEMPLATE = _load_prompt_file("step6_cover.md")
@@ -95,7 +96,7 @@ OPENING_BG_PROMPT_TEMPLATE = STEP4_OPENING_BG_PROMPT_TEMPLATE
 # 动态加载图像与封面预设风格
 # ================================================================================
 STEP4_IMAGE_STYLE_PRESETS = _load_yaml_file("step4_styles.yaml")
-STEP4_HYPERFRAMES_STYLE_PRESETS = _load_yaml_file("step4_hyperframes_styles.yaml")
+STEP4_MOTION_STYLE_PRESETS = _load_yaml_file("step4_motion_styles.yaml")
 IMAGE_STYLE_PRESETS = STEP4_IMAGE_STYLE_PRESETS
 COVER_IMAGE_STYLE_PRESETS = _load_yaml_file("step6_styles.yaml")
 
@@ -112,30 +113,54 @@ def get_step4_image_description_prompt_template(template_name: str | None = None
     return template
 
 
-def build_step4_hyperframes_style_context(style_preset: str, skills_root: str | os.PathLike | None = None) -> str:
-    """构建第四步 HyperFrames 官方风格映射上下文。"""
+def _read_step4_style_section(skills_root: str | os.PathLike, official_style: str) -> str:
+    """Return one style's section from the official visual-styles reference."""
+    path = os.path.join(os.fspath(skills_root), "motion-creative", "references", "visual-styles.md")
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    match = re.search(rf"^## \d+\. {re.escape(official_style)}\b.*?(?=^---\s*$|^## |\Z)", text, re.M | re.S)
+    return match.group(0).strip() if match else ""
+
+
+def _read_step4_palette(skills_root: str | os.PathLike, palette: str) -> str:
+    path = os.path.join(os.fspath(skills_root), "motion-creative", "palettes", f"{palette}.md")
+    try:
+        return Path(path).read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def build_step4_motion_style_context(style_preset: str, skills_root: str | os.PathLike | None = None) -> str:
+    """构建第四步 HTML 动画 视觉风格映射上下文，内联所选风格与调色板，免去 Agent 逐个读取。"""
     style_id = (style_preset or "data_driven").strip()
-    style = STEP4_HYPERFRAMES_STYLE_PRESETS.get(style_id) or STEP4_HYPERFRAMES_STYLE_PRESETS.get("data_driven", {})
-    references = style.get("references") or []
-    if skills_root:
-        root = os.fspath(skills_root)
-        reference_lines = "\n".join(
-            f"- {item} -> {os.path.join(root, item.split('#', 1)[0])}"
-            for item in references
-        ) if references else "- 无"
-    else:
-        reference_lines = "\n".join(f"- {item}" for item in references) if references else "- 无"
-    return "\n".join(
-        [
-            f"用户选择的业务风格：{style_id}",
-            f"显示名称：{style.get('label', style_id)}",
-            f"官方 HyperFrames 风格：{style.get('official_style', 'Swiss Pulse')}",
-            f"官方调色板：{style.get('palette', 'dark-premium')}",
-            f"适用场景：{style.get('best_for', '')}",
-            "必须优先参考：",
-            reference_lines,
-        ]
-    ).strip()
+    style = STEP4_MOTION_STYLE_PRESETS.get(style_id) or STEP4_MOTION_STYLE_PRESETS.get("data_driven", {})
+    official_style = style.get("official_style", "Swiss Pulse")
+    palette = style.get("palette", "dark-premium")
+    root = os.fspath(skills_root) if skills_root else os.fspath(skills_dir() / "step4")
+    # The style section and palette are inlined below; list only the other files.
+    inlined = ("references/visual-styles.md", f"palettes/{palette}.md")
+    references = [item for item in style.get("references") or [] if not item.split("#", 1)[0].endswith(inlined)]
+    reference_lines = "\n".join(
+        f"- {item} -> {os.path.join(root, item.split('#', 1)[0])}" for item in references
+    ) if references else "- 无"
+    lines = [
+        f"用户选择的业务风格：{style_id}",
+        f"显示名称：{style.get('label', style_id)}",
+        f"视觉设计 风格：{official_style}",
+        f"调色板：{palette}",
+        f"适用场景：{style.get('best_for', '')}",
+        "项目的字数、字号、字体、透明度和字幕避让规则优先于下方视觉风格里的字号与字体。",
+    ]
+    style_section = _read_step4_style_section(root, official_style)
+    if style_section:
+        lines += ["", f"视觉风格定义（摘自 motion-creative/references/visual-styles.md）：", style_section]
+    palette_text = _read_step4_palette(root, palette)
+    if palette_text:
+        lines += ["", f"调色板（摘自 motion-creative/palettes/{palette}.md，每行一组可选配色）：", palette_text]
+    lines += ["", "可选延伸参考（不必读取）：", reference_lines]
+    return "\n".join(lines).strip()
 
 
 def build_step1_agent_prompt(
@@ -173,10 +198,10 @@ __all__ = [
     'get_step4_image_description_prompt_template',
     'STEP4_IMAGE_PROMPT_SAFETY_TEMPLATE',
     'STEP4_IMAGE_STYLE_PRESETS',
-    'STEP4_HYPERFRAMES_STYLE_PRESETS',
-    'STEP4_HYPERFRAMES_PROMPT_VERSION',
-    'build_step4_hyperframes_style_context',
-    'STEP4_HYPERFRAMES_AGENT_PROMPT_TEMPLATE',
+    'STEP4_MOTION_STYLE_PRESETS',
+    'STEP4_MOTION_PROMPT_VERSION',
+    'build_step4_motion_style_context',
+    'STEP4_MOTION_AGENT_PROMPT_TEMPLATE',
     'COVER_IMAGE_STYLE_PRESETS',
     'COVER_IMAGE_PROMPT_TEMPLATE',
     'STEP4_OPENING_BG_PROMPT_TEMPLATE',

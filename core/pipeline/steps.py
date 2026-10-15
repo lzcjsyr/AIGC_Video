@@ -4,7 +4,7 @@
 1. 项目初始化与目录/文件落盘（raw/script/音视频资源）。
 2. 文本处理链路（摘要、分段脚本与描述小结生成）。
 3. 多媒体生成链路（语音合成、开场视频、分段画面、最终视频合成、封面图生成）。
-4. 运行时工具函数（路径解析、开场旁白生成、BGM 定位、HyperFrames开场渲染、失败兜底处理）。
+4. 运行时工具函数（路径解析、开场旁白生成、BGM 定位、HTML 动画开场渲染、失败兜底处理）。
 
 设计上保持“单步可独立调用”，便于 CLI 分步重跑、API 精细化控制与测试隔离。
 """
@@ -16,7 +16,7 @@ import re
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence, Union
 
 from core.config import Config, config
 from core.domain.composer import VideoComposer
@@ -46,12 +46,12 @@ from core.domain.summarizer import (
     generate_description_summary,
     process_raw_to_script,
 )
-from core.infra.ai import text_to_audio_bytedance
+from core.infra.ai.tts_client import text_to_audio_bytedance
 from core.infra.project_paths import ProjectPaths
 from core.resources import skills_dir
 from core.prompts import OPENING_BG_PROMPT_TEMPLATE
-from core.infra.hyperframes import render_opening_video
-from core.infra.hyperframes.segment_renderer import render_hyperframes_segments_with_agent
+from core.infra.motion.opening_renderer import render_opening_video
+from core.infra.motion.segment_renderer import render_motion_segments_with_agent
 from core.shared import load_json_file, logger
 
 SEGMENT_VIDEO_EXTENSIONS = (".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".m4v")
@@ -217,7 +217,6 @@ def _ensure_opening_narration(
             opening_golden_quote,
             opening_path,
             voice=voice,
-            encoding="wav",
             model=tts_model,
             speech_rate=speech_rate,
             loudness_rate=loudness_rate,
@@ -237,59 +236,6 @@ def _ensure_opening_narration(
         if announce:
             print("❌ 开场音频生成失败")
     return None
-
-
-def _invoke_opening_narration(
-    script_data: Optional[Dict[str, Any]],
-    voice_dir: str,
-    voice: str,
-    tts_model: str,
-    opening_quote: bool,
-    *,
-    announce: bool = False,
-    force_regenerate: bool = False,
-    speech_rate: int = 0,
-    loudness_rate: int = 0,
-    emotion: str = "neutral",
-    emotion_scale: int = 4,
-    mute_cut_threshold: int = 400,
-    mute_cut_min_silence_ms: int = 200,
-    mute_cut_remain_ms: int = 100,
-) -> Optional[str]:
-    """Call _ensure_opening_narration with graceful fallback for legacy mocks."""
-    func = _ensure_opening_narration
-    try:
-        return func(
-            script_data,
-            voice_dir,
-            voice,
-            tts_model,
-            opening_quote,
-            announce=announce,
-            force_regenerate=force_regenerate,
-            speech_rate=speech_rate,
-            loudness_rate=loudness_rate,
-            emotion=emotion,
-            emotion_scale=emotion_scale,
-            mute_cut_threshold=mute_cut_threshold,
-            mute_cut_min_silence_ms=mute_cut_min_silence_ms,
-            mute_cut_remain_ms=mute_cut_remain_ms,
-        )
-    except TypeError as exc:
-        message = str(exc)
-        if "unexpected keyword argument" in message and (
-            "speech_rate" in message or "loudness_rate" in message
-        ):
-            return func(
-                script_data,
-                voice_dir,
-                voice,
-                tts_model,
-                opening_quote,
-                announce=announce,
-                force_regenerate=force_regenerate,
-            )
-        raise
 
 
 def _resolve_description_source_text(
@@ -473,7 +419,7 @@ def run_step_1_5(
     is_new_project: bool = False,
     raw_data: Optional[Dict[str, Any]] = None,
     auto_mode: bool = False,
-    split_mode: str = "auto",
+    split_mode: str = "punctuation",
     llm_server_step1_5: Optional[str] = None,
     llm_model_step1_5: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -506,7 +452,8 @@ def run_step_1_5(
                 current_raw_data = load_json_file(raw_json_path)
                 if current_raw_data is None:
                     return {"success": False, "message": f"无法加载 raw.json 文件: {raw_json_path}"}
-                print(f"当前分段数: {num_segments}")
+                if split_mode == "agent":
+                    print(f"目标分段数: {num_segments}")
 
         updated_raw_data = current_raw_data
         if os.path.exists(raw_docx_path):
@@ -539,8 +486,8 @@ def run_step_1_5(
         if updated_raw_data is None:
             return {"success": False, "message": "处理raw数据失败：数据为空"}
 
-        if split_mode not in {"auto", "manual", "agent"}:
-            split_mode = "auto"
+        if split_mode == "auto" or split_mode not in {"punctuation", "manual", "agent"}:
+            split_mode = "punctuation"
 
         agent_segments = None
         if split_mode == "agent":
@@ -679,7 +626,7 @@ def run_step_3(
 
     opening_audio_file = paths.opening_audio()
     opening_previously_exists = os.path.exists(opening_audio_file)
-    narration_path = _invoke_opening_narration(
+    narration_path = _ensure_opening_narration(
         script_data,
         paths.voice,
         voice,
@@ -735,10 +682,10 @@ def run_step_4(
     llm_server: Optional[str] = None,
     llm_base_url: Optional[str] = None,
     visual_mode: Optional[str] = None,
-    hyperframes_style_preset: Optional[str] = None,
-    hyperframes_max_turns: Optional[int] = None,
-    hyperframes_render_fps: Optional[int] = None,
-    hyperframes_concurrency: Optional[int] = None,
+    motion_style_preset: Optional[str] = None,
+    motion_max_turns: Optional[int] = None,
+    motion_render_fps: Optional[int] = None,
+    motion_concurrency: Optional[int] = None,
     image_prompt_template: Optional[str] = None,
 ) -> Dict[str, Any]:
     paths = ProjectPaths(project_output_dir)
@@ -869,7 +816,9 @@ def run_step_4(
 
     # 2. 并行调度任务：开场视频渲染与段落画面生成
     mode = (visual_mode or getattr(config, "VISUAL_MODE", "static_image") or "static_image").strip().lower()
-    if mode not in {"static_image", "hyperframes_agent", "mixed"}:
+    if mode == "hyperframes_agent":  # Existing CLI configs.
+        mode = "motion_agent"
+    if mode not in {"static_image", "motion_agent", "mixed"}:
         return {"success": False, "message": f"不支持的画面生成模式: {visual_mode}"}
 
     def render_opening_task() -> Optional[str]:
@@ -905,19 +854,19 @@ def run_step_4(
             image_prompt_template=image_prompt_template,
         )
 
-    def run_hyper(targets: Optional[List[int]]) -> Dict[str, Any]:
-        return render_hyperframes_segments_with_agent(
+    def run_motion(targets: Optional[List[int]]) -> Dict[str, Any]:
+        return render_motion_segments_with_agent(
             project_output_dir=project_output_dir,
             script_data=script_data,
             image_size=image_size,
             output_dir=paths.images,
             target_segments=targets,
             description_data=description_data,
-            style_preset=hyperframes_style_preset or getattr(config, "HYPERFRAMES_STYLE_PRESET", "data_driven"),
-            max_turns=int(hyperframes_max_turns or getattr(config, "HYPERFRAMES_MAX_TURNS", 60)),
-            render_fps=int(hyperframes_render_fps or getattr(config, "HYPERFRAMES_RENDER_FPS", 30)),
-            concurrency=int(hyperframes_concurrency or getattr(config, "HYPERFRAMES_CONCURRENCY", 1)),
-            session_log_path=os.path.join(paths.images, "hyperframes", "_step4_hyperframes_agent_session.jsonl"),
+            style_preset=motion_style_preset or getattr(config, "MOTION_STYLE_PRESET", "data_driven"),
+            max_turns=int(motion_max_turns or getattr(config, "MOTION_MAX_TURNS", 60)),
+            render_fps=int(motion_render_fps or getattr(config, "MOTION_RENDER_FPS", 30)),
+            concurrency=int(motion_concurrency or getattr(config, "MOTION_CONCURRENCY", 1)),
+            session_log_path=os.path.join(paths.images, "motion", "_step4_motion_agent_session.jsonl"),
             repo_root=_get_project_root(),
             llm_server=llm_server,
             llm_model=llm_model,
@@ -936,8 +885,8 @@ def run_step_4(
 
         if mode == "static_image":
             return run_static(generation_targets)
-        elif mode == "hyperframes_agent":
-            return run_hyper(generation_targets)
+        elif mode == "motion_agent":
+            return run_motion(generation_targets)
         else:
             try:
                 mixed_targets = _split_mixed_visual_targets(segments, selected_segments)
@@ -953,7 +902,7 @@ def run_step_4(
             results: List[Dict[str, Any]] = []
             with ThreadPoolExecutor(max_workers=max(1, len(jobs))) as executor:
                 futures = {
-                    executor.submit(run_static if kind == "image" else run_hyper, targets): kind
+                    executor.submit(run_static if kind == "image" else run_motion, targets): kind
                     for kind, targets in jobs
                 }
                 for future in as_completed(futures):
@@ -1086,7 +1035,7 @@ def run_step_5(
 
     bgm_audio_path = _resolve_bgm_audio_path(bgm_filename, project_root)
     opening_image_candidate = paths.opening_image() if os.path.exists(paths.opening_image()) else None
-    opening_narration_audio_path = _invoke_opening_narration(
+    opening_narration_audio_path = _ensure_opening_narration(
         script_data,
         paths.voice,
         voice,
@@ -1145,9 +1094,10 @@ def _run_cover_generation(
         if cover_image_size in COVER_IMAGE_SIZE_PRESETS:
             cover_image_size = COVER_IMAGE_SIZE_PRESETS[cover_image_size]
     else:
-        from core.config import COVER_IMAGE_SIZE_PRESETS, DEFAULT_COVER_IMAGE_SIZE_KEY
+        from core.config import COVER_IMAGE_SIZE_KEYS, COVER_IMAGE_SIZE_PRESETS
 
-        cover_image_size = COVER_IMAGE_SIZE_PRESETS.get(DEFAULT_COVER_IMAGE_SIZE_KEY, "2048x2048")
+        default_key = next(iter(COVER_IMAGE_SIZE_KEYS or []), "")
+        cover_image_size = COVER_IMAGE_SIZE_PRESETS.get(default_key, "2048x2048")
 
     cover_image_model = cover_image_model or config.RECOMMENDED_MODELS["image"].get(
         cover_image_server, ["doubao-seedream-4-0-250828"]
@@ -1182,7 +1132,7 @@ def _run_cover_generation(
 
 def run_step_6(
     project_output_dir: str,
-    cover_image_size: str,
+    cover_image_size: Union[str, Sequence[str]],
     cover_image_server: Optional[str] = None,
     cover_image_model: Optional[str] = None,
     cover_image_style: str = "cover01",
@@ -1198,21 +1148,33 @@ def run_step_6(
 
     script_data = load_json_file(paths.script_json()) if os.path.exists(paths.script_json()) else None
 
-    try:
-        cover_image_server = cover_image_server or getattr(config, "COVER_IMAGE_SERVER", "")
-        cover_result = _run_cover_generation(
-            project_output_dir,
-            cover_image_size,
-            cover_image_server,
-            cover_image_model,
-            cover_image_style,
-            cover_image_count,
-            script_data,
-            raw_data,
-        )
-        return {"success": True, **cover_result}
-    except Exception as exc:
-        return {"success": False, "message": str(exc)}
+    # 可一次生成多个尺寸（预设 key 或 WxH），每个尺寸各生成 cover_image_count 张。
+    sizes = [cover_image_size] if isinstance(cover_image_size, str) or not cover_image_size else list(dict.fromkeys(cover_image_size))
+    cover_image_server = cover_image_server or getattr(config, "COVER_IMAGE_SERVER", "")
+    cover_paths: List[str] = []
+    failures: List[str] = []
+    style_id = cover_image_style
+    for size in sizes:
+        try:
+            cover_result = _run_cover_generation(
+                project_output_dir,
+                size,
+                cover_image_server,
+                cover_image_model,
+                cover_image_style,
+                cover_image_count,
+                script_data,
+                raw_data,
+            )
+        except Exception as exc:
+            failures.append(f"{size}: {exc}" if len(sizes) > 1 else str(exc))
+            continue
+        cover_paths += cover_result.get("cover_paths", [])
+        failures += [f"{size}: {f}" if len(sizes) > 1 else f for f in cover_result.get("failures", [])]
+        style_id = cover_result.get("style_id", style_id)
+    if not cover_paths:
+        return {"success": False, "message": "；".join(failures) or "封面生成失败", "failures": failures}
+    return {"success": True, "cover_paths": cover_paths, "failures": failures, "style_id": style_id}
 
 
 __all__ = [
@@ -1227,7 +1189,6 @@ __all__ = [
     "_initialize_project",
     "_resolve_bgm_audio_path",
     "_ensure_opening_narration",
-    "_invoke_opening_narration",
     "_resolve_description_source_text",
     "_run_cover_generation",
 ]

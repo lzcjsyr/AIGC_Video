@@ -1,0 +1,39 @@
+data_driven:
+  label: "数据分析 / 指标讲解"
+  official_style: "Swiss Pulse"
+  palette: "dark-premium"
+  best_for: "数据、指标、商业分析、结构化观点"
+  references:
+    - "motion-creative/references/visual-styles.md#Swiss Pulse"
+    - "motion-creative/palettes/dark-premium.md"
+    - "motion-creative/references/data-in-motion.md"
+
+light_corporate:
+  label: "浅色商务 / 报告说明"
+  official_style: "Swiss Pulse"
+  palette: "clean-corporate"
+  best_for: "浅色报告、说明型内容、专业商务表达"
+  references:
+    - "motion-creative/references/visual-styles.md#Swiss Pulse"
+    - "motion-creative/palettes/clean-corporate.md"
+    - "motion-creative/references/data-in-motion.md"
+
+dark_premium:
+  label: "深色高端 / 书评汇报"
+  official_style: "Velvet Standard"
+  palette: "dark-premium"
+  best_for: "高端汇报、书评金句、企业/投资人风格"
+  references:
+    - "motion-creative/references/visual-styles.md#Velvet Standard"
+    - "motion-creative/palettes/dark-premium.md"
+    - "motion-creative/references/video-composition.md"
+
+cinematic_contrast:
+  label: "电影对比 / 风险揭示"
+  official_style: "Shadow Cut"
+  palette: "monochrome"
+  best_for: "冲突、风险、历史、权力结构、揭示类段落"
+  references:
+    - "motion-creative/references/visual-styles.md#Shadow Cut"
+    - "motion-creative/palettes/monochrome.md"
+    - "motion-creative/references/video-composition.md"

@@ -1,9 +1,0 @@
-{
-  "name": "hyperframes-opening",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "dev": "npx --yes hyperframes@0.7.10 preview",
-    "render": "npx --yes hyperframes@0.7.10 render"
-  }
-}

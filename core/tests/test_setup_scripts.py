@@ -22,5 +22,5 @@ def test_macos_install_and_test_scripts_use_shared_dependency_checker() -> None:
     assert "--require-api-keys" in test_script
 
 
-def test_hyperframes_template_is_committed() -> None:
-    assert (REPO_ROOT / "core" / "infra" / "hyperframes" / "app" / "index.html").exists()
+def test_motion_template_is_committed() -> None:
+    assert (REPO_ROOT / "core" / "infra" / "motion" / "app" / "index.html").exists()

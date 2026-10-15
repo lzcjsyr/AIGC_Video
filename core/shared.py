@@ -1,21 +1,5 @@
 """
-智能视频制作系统 - 工具函数模块
-提供通用工具函数、错误处理和日志管理
-
-主要功能:
-- 日志配置和管理
-- 自定义异常类（APIError, VideoProcessingError）
-- JSON 文件处理（加载、保存、修复）
-- 文件信息获取和操作
-- 重试装饰器和错误处理
-- 文本清理和规范化
-
-被以下模块调用:
-- core/pipeline.py: 兼容入口
-- core/domain/*: 业务层能力复用
-- core/pipeline/*: 编排与流程管理
-- cli/__main__.py: 日志配置和异常类
-- cli/ui_helpers.py: 间接通过核心模块使用
+共享工具：日志、自定义异常（APIError 等）、重试、JSON 与文件辅助函数。
 """
 
 import os

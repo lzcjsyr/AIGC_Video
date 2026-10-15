@@ -1,6 +1,7 @@
 """MoviePy video export parameter selection and fallback handling."""
 
 import os
+from pathlib import Path
 
 
 def export_video(
@@ -14,7 +15,49 @@ def export_video(
     fade_in_seconds: float = 0.0,
     ending_fade_seconds: float = 0.0,
 ) -> None:
-    """Export a MoviePy video with hardware-first encoding and software fallback."""
+    """Export a MoviePy video with hardware-first encoding and software fallback.
+
+    The video is encoded beside the destination and moved into place only when encoding
+    finishes, so an interrupted export never replaces the previous video with a truncated one.
+    """
+    destination = Path(output_path)
+    temporary_output = destination.with_name(f".{destination.stem}.tmp{destination.suffix or '.mp4'}")
+    temporary_audio = destination.with_name(f".{destination.stem}.tmp_audio.mp4")
+    # A killed export leaves these behind; MoviePy would otherwise drop its audio in the working folder.
+    for leftover in (temporary_output, temporary_audio):
+        leftover.unlink(missing_ok=True)
+    try:
+        _write_video(
+            final_video,
+            str(temporary_output),
+            str(temporary_audio),
+            fps=fps,
+            video_codec=video_codec,
+            bitrate_mode=bitrate_mode,
+            quality_level=quality_level,
+            fade_in_seconds=fade_in_seconds,
+            ending_fade_seconds=ending_fade_seconds,
+        )
+        if not temporary_output.is_file():
+            raise RuntimeError("视频编码完成但未生成输出文件")
+        os.replace(temporary_output, destination)
+    finally:
+        temporary_output.unlink(missing_ok=True)
+        temporary_audio.unlink(missing_ok=True)
+
+
+def _write_video(
+    final_video,
+    output_path: str,
+    temp_audiofile: str,
+    *,
+    fps: int,
+    video_codec: str,
+    bitrate_mode: str,
+    quality_level: int,
+    fade_in_seconds: float,
+    ending_fade_seconds: float,
+) -> None:
     moviepy_logger = "bar"
     vf_filter = _build_fade_filter(final_video, fade_in_seconds, ending_fade_seconds)
 
@@ -64,6 +107,7 @@ def export_video(
             bitrate=bitrate_param,
             ffmpeg_params=ffmpeg_extra_params,
             threads=os.cpu_count() or 4,
+            temp_audiofile=temp_audiofile,
             logger=moviepy_logger,
         )
     except Exception as exc:
@@ -84,6 +128,7 @@ def export_video(
                 ["-nostdin", "-crf", crf, "-pix_fmt", "yuv420p", "-movflags", "+faststart"]
                 + (["-vf", vf_filter] if vf_filter else [])
             ),
+            temp_audiofile=temp_audiofile,
             logger=moviepy_logger,
         )
 

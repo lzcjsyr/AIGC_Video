@@ -19,10 +19,9 @@ global:
 # =============================================================================
 step1:
   # 可选：mimo / kimi / volcengine / deepseek / siliconflow / openrouter
-  llm_server: volcengine
-  # 按供应商要求填写完整模型名。火山方舟按量付费接口需带日期的模型 ID，例如 doubao-seed-2-0-pro-260215；
-  # doubao-seed-2.0-pro 这类名称只适用于 Coding Plan 订阅接口，这里不可用。
-  llm_model: doubao-seed-2-0-pro-260215
+  llm_server: deepseek
+  # 默认使用 DeepSeek 的 deepseek-flash；切换供应商时按其要求填写完整模型名。
+  llm_model: deepseek-flash
   # 使用根目录 skills/step1/ 下的写作 skill；一般不需要改。
   agent_skill: book-commerce-video-script
   # 可选 subagent。当前读书带货 skill 固定采用一次性流程，不调用 subagent。
@@ -51,24 +50,24 @@ step1:
 # =============================================================================
 step1_5:
   # 可选：mimo / kimi / volcengine / deepseek / siliconflow / openrouter
-  llm_server: volcengine
+  llm_server: deepseek
   # 仅 split_mode=agent 时使用；默认与步骤1保持一致即可。
-  llm_model: doubao-seed-2-0-pro-260215
-  # 视频分段数量。建议 5-100，越多视频节奏越碎、生成成本越高。
+  llm_model: deepseek-flash
+  # Agent 模式的目标分段数量；按标点和每行一段模式不使用此参数。
   num_segments: 50
   # 分段方式：
-  # - auto：默认规则切分，并将每段 visualizer 写为 image
-  # - manual：按 raw 文稿中的换行切分；段尾带【hf】的段落会写为 visualizer=hf，否则为 image
+  # - punctuation：按中英文句号、问号、感叹号、分号切分；保留标点，不按目标段数归并
+  # - manual：按 raw 文稿中的换行切分；段尾带【motion】的段落会写为 visualizer=hf，否则为 image
   # - agent：调用 Claude Agent 进行意群分段，并为每段选择 image / hf
-  split_mode: auto
+  split_mode: punctuation
 
 # =============================================================================
 # 步骤2：描述小结
 # =============================================================================
 step2:
   # 可选：mimo / kimi / deepseek / siliconflow / openrouter / volcengine
-  llm_server: volcengine
-  llm_model: doubao-seed-2-0-lite-260428
+  llm_server: deepseek
+  llm_model: deepseek-flash
   # 小结生成随机性，范围通常为 0-1。越大越发散。
   llm_temperature_description: 0.5
 
@@ -78,9 +77,9 @@ step2:
 step3:
   # 音色 ID。.env 的 BYTEDANCE_TTS_VOICE_ID 优先。声音复刻音色（S_ 开头）使用 seed-icl-2.0，
   # 2.0 音色（*_uranus_bigtts）使用 seed-tts-2.0，1.0 音色（*_moon_bigtts）使用 seed-tts-1.0；资源会按音色自动匹配。
-  voice: zh_female_vv_uranus_bigtts
+  voice: S_MKj17k802
   # 资源 ID：seed-tts-2.0 (语音合成2.0) / seed-icl-2.0 (声音复刻2.0，默认)
-  resource_id: seed-tts-2.0
+  resource_id: seed-icl-2.0
   # TTS 模型示例：seed-tts-2.0-standard / seed-tts-2.0-expressive
   tts_model: seed-tts-2.0-standard
   # 情感示例：neutral / happy / sad 等，具体取决于供应商支持。
@@ -102,25 +101,25 @@ step3:
 step4:
   # 画面生成模式：
   # - static_image：调用图像模型生成 segment_i.png
-  # - hyperframes_agent：调用 Claude Agent + HyperFrames 生成 segment_i.mp4
-  # - mixed：读取 text/script.json 中每段的 visualizer 字段；image 走静态图，hf 走 HyperFrames
+  # - motion_agent：调用 Claude Agent + HTML 动画 生成 segment_i.mp4
+  # - mixed：读取 text/script.json 中每段的 visualizer 字段；image 走静态图，hf 走 HTML 动画
   visual_mode: static_image
 
-  # HyperFrames 动态画面参数，仅 visual_mode=hyperframes_agent 或 mixed 且段落 visualizer=hf 时生效。
-  hyperframes_style_preset: data_driven
-  hyperframes_max_turns: 60
-  hyperframes_render_fps: 30
-  # HyperFrames 画面生成（Agent + 浏览器渲染）的并发数。
+  # HTML 动画 动态画面参数，仅 visual_mode=motion_agent 或 mixed 且段落 visualizer=hf 时生效。
+  motion_style_preset: data_driven
+  motion_max_turns: 60
+  motion_render_fps: 30
+  # HTML 动画 画面生成（Agent + 浏览器渲染）的并发数。
   # 默认值为 1。对于有 API 频率限制（Rate Limit）的通道（如 mimo 建议 1-2），调大可能触发 429 报错。
   # 若有高限额 Key 可调大至 2-4 以加速生成。
-  hyperframes_concurrency: 1
+  motion_concurrency: 1
 
   # 步骤4专用 LLM：
   # - static_image：用于图像提示词脱敏/润色
-  # - hyperframes_agent：用于驱动 Claude Agent 生成 HyperFrames HTML
+  # - motion_agent：用于驱动 Claude Agent 生成 HTML 动画 HTML
   # - mixed：同时用于上述两类任务
-  llm_server: volcengine
-  llm_model: doubao-seed-2-0-pro-260215
+  llm_server: deepseek
+  llm_model: deepseek-flash
 
   # 图像供应商（visual_mode=static_image，或 mixed 且段落 visualizer=image 时生效）：
   # - google：使用 GOOGLE_CLOUD_API_KEY
@@ -131,7 +130,7 @@ step4:
   # - gemini-3.1-flash-image
   # - doubao-seedream-5-0-260128
   # - doubao-seedream-4-0-250828
-  image_model: doubao-seedream-4-0-250828
+  image_model: doubao-seedream-5-0-pro-260628
   # 图像生成尺寸。建议与目标视频比例一致，例如 2560x1440 / 1920x1080 / 1080x1920。
   image_size: 2560x1440
   # 段落图像风格预设，见 core/prompts.py 的 IMAGE_STYLE_PRESETS。
@@ -142,11 +141,13 @@ step4:
   image_prompt_template: keywords
   # 图像生成并发。Google/高成本模型建议 1，稳定后再提高。
   max_concurrent_image_generation: 1
+  # 图像服务为火山引擎 Seedream（doubao）时改用这个并发数，其他服务仍用上面的值。
+  seedream_max_concurrent_image_generation: 3
 
 # =============================================================================
-# HyperFrames 开场视频
+# HTML 动画 开场视频
 # =============================================================================
-hyperframes_opening:
+motion_opening:
   # 开场左上角刊头（频道或作者名）。留空则不显示。
   ip_name: ""
   duration_seconds: 5.0
@@ -206,14 +207,9 @@ step5:
   transition_style: slide_right
 
   # 混合图片/视频素材时的处理方式。
-  image_material_target_fps: 15
   video_material_remove_audio: true
   # 长视频对齐口播：crop 截取前段；compress 均匀压缩到音频时长。
   video_material_longer_than_audio_mode: crop
-  # 旧字段，保留兼容。新配置优先使用 video_material_longer_than_audio_mode。
-  video_material_duration_adjust: stretch
-  # 视频素材尺寸调整：crop / stretch。
-  video_material_resize_method: crop
 
 # =============================================================================
 # 3:4 贴片版（在横屏母版上下加贴片，横屏母版始终导出）
@@ -280,11 +276,11 @@ step6:
     "4:3": 3000x2250
     "3:4": 2250x3000
     "1:1": 2500x2500
-  # 封面尺寸预设 key。可选：16:9 / 9:16 / 4:3 / 3:4 / 1:1
-  default_cover_image_size_key: "1:1"
+  # 一次生成的封面尺寸（预设 key，可多选）：16:9 / 9:16 / 4:3 / 3:4 / 1:1
+  cover_image_size_keys: ["16:9", "3:4"]
   cover_image_model: gemini-3.1-flash-image
   # 可选：google / google_adc / doubao
   cover_image_server: google_adc
   # 封面风格预设，见 core/prompts.py 的 COVER_IMAGE_STYLE_PRESETS。
-  cover_image_style: cover06
+  cover_image_style: cover01
   cover_image_count: 1
