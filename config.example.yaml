@@ -139,10 +139,10 @@ step4:
   # - keywords：原有图示+中文关键词模板（默认）
   # - pure_images：无文字的电影感叙事画面
   image_prompt_template: keywords
-  # 图像生成并发。Google/高成本模型建议 1，稳定后再提高。
+  # 图像生成并发。Google API key / ADC 的请求上限固定为 1。
   max_concurrent_image_generation: 1
-  # 图像服务为火山引擎 Seedream（doubao）时改用这个并发数，其他服务仍用上面的值。
-  seedream_max_concurrent_image_generation: 3
+  # Seedream（doubao）最多并发 5 个请求；可调低。上限跨项目、封面和画面任务共享。
+  seedream_max_concurrent_image_generation: 5
 
 # =============================================================================
 # HTML 动画 开场视频

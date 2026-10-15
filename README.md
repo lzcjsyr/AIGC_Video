@@ -121,6 +121,8 @@ step4:
 
 Install the pinned JS dependencies with `npm ci --prefix core/infra/motion`. Set `AIGC_BROWSER_PATH` to Chrome/Chromium if it is not in a standard location. Optional `AIGC_MOTION_MODULES`, `AIGC_FFMPEG_PATH` and `AIGC_FFPROBE_PATH` select packaged tools. Use `visual_mode: motion_agent` and the `motion_style_preset`, `motion_max_turns`, `motion_render_fps`, `motion_concurrency` options. Older YAML option names and `【motion】` markers are read for compatibility; new manual motion lines can end in `【motion】`. Skills for Step 4 are project-owned HTML motion guides.
 
+Image generation is capped at **1 concurrent request for Google** (API key and ADC share the limit) and **5 for Seedream**. These limits apply across project, cover and segment jobs. Seedream's `seedream_max_concurrent_image_generation` setting may reduce its worker count below 5.
+
 Agent 可运行 render.py capabilities / check / preview / render，自主完成实际渲染、抽帧审阅和修复。Chrome、Node 和 FFmpeg 由共享脚本控制；不再安装视频框架 CLI。未改变的已验证预览会被复用。
 
 ### Segmentation and voice controls

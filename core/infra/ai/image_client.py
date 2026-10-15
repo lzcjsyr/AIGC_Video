@@ -19,6 +19,7 @@ from core.prompts import (
 )
 from core.shared import logger, ensure_directory_exists
 from core.infra.ai.image_providers import IMAGE_PROVIDERS
+from core.infra.ai.image_concurrency import provider_slot
 from core.infra.ai.llm_client import text_to_text
 from core.infra.ai.tts_client import text_to_audio_bytedance
 
@@ -73,7 +74,8 @@ def _request_image_result(image_server: str, prompt: str, size: str, model: str)
     provider = IMAGE_PROVIDERS.get(provider_key)
     if not provider:
         raise ValueError(f"不支持的图像服务商: {image_server}")
-    return provider.generate(prompt=prompt, size=size, model=model)
+    with provider_slot(provider_key):
+        return provider.generate(prompt=prompt, size=size, model=model)
 
 
 def _strip_code_fences(text: str) -> str:
@@ -279,9 +281,10 @@ def _generate_single_image(args) -> Dict[str, Any]:
 
 
 def image_generation_workers(image_server: str) -> int:
-    """Seedream (doubao) has its own concurrency setting; every other image service uses the shared one."""
+    """Provider ceilings also apply to older or manually edited project settings."""
     key = "SEEDREAM_MAX_CONCURRENT_IMAGE_GENERATION" if image_server == "doubao" else "MAX_CONCURRENT_IMAGE_GENERATION"
-    return max(1, int(getattr(config, key, 1) or 1))
+    ceiling = 5 if image_server == "doubao" else 1
+    return min(ceiling, max(1, int(getattr(config, key, ceiling) or 1)))
 
 
 def generate_images_for_segments(
